@@ -1,0 +1,70 @@
+[package]
+name = "tsinghua_kit"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Rust campus service and domain library for TsinghuaKit"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/canxin121/TsinghuaKit"
+
+[lib]
+path = "src/lib.rs"
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+async-trait = "0.1.92"
+base64 = "0.22.1"
+chrono = { version = "0.4.45", default-features = false, features = ["clock", "serde"] }
+cookie_store = "0.22.0"
+
+hmac = "0.12.1"
+flutter_rust_bridge = "=2.13.0"
+md-5 = "0.10.6"
+reqwest = { version = "0.13.5", default-features = false, features = [
+    "rustls",
+    "json",
+    "query",
+    "form",
+    "cookies",
+    "charset",
+    "http2",
+] }
+rsa = "0.9.9"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = { version = "1.0.151", features = ["raw_value"] }
+scraper = { version = "=0.27.0", default-features = false }
+sm2 = { version = "0.14.0-rc.15", default-features = false, features = [
+    "arithmetic",
+    "pke",
+    "getrandom",
+    "precomputed-tables",
+    "std",
+] }
+sm3 = { version = "0.5.0", default-features = false }
+sha1 = "0.11.0"
+thiserror = "2.0.20"
+tokio = { version = "1.53.1", features = ["rt", "sync", "time", "macros"] }
+uuid = { version = "1.26.1", features = ["serde", "v4"] }
+tracing = { version = "0.1.44", default-features = false, features = ["std"] }
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["registry", "std"] }
+tracing-appender = "0.2.5"
+fs2 = "0.4.3"
+ring = "0.17.14"
+rpassword = { version = "7.5.4", optional = true }
+zeroize = { version = "1.9.0", optional = true }
+libc = "0.2.189"
+
+[features]
+terminal-check = ["dep:rpassword", "dep:zeroize", "tokio/signal", "tokio/macros"]
+
+[[bin]]
+name = "tsinghua-kit-check"
+path = "src/bin/tsinghua_kit_check.rs"
+required-features = ["terminal-check"]
+
+
+
+
+
+[dev-dependencies]
+tokio = { version = "1.53.1", features = ["macros", "rt"] }

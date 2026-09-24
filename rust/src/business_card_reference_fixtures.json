@@ -1,0 +1,35 @@
+[
+  {
+    "body": {
+      "data": "0123456789ABCDEF1hNo0rW19l4y9EX46A2MsGVH3bWNyLVXzkaL4vswXomeVVYtkUY+hxymoKVijxBYJ467ZhHC7X7pmydOyA7hpA=="
+    },
+    "ok": true
+  },
+  {
+    "body": {
+      "success": null,
+      "data": "0123456789ABCDEF1hNo0rW19l4y9EX46A2MsGVH3bWNyLVXzkaL4vswXomeVVYtkUY+hxymoKVijxBYJ467ZhHC7X7pmydOyA7hpA=="
+    },
+    "ok": true
+  },
+  {
+    "body": {
+      "success": false,
+      "data": "0123456789ABCDEF1hNo0rW19l4y9EX46A2MsGVH3bWNyLVXzkaL4vswXomeVVYtkUY+hxymoKVijxBYJ467ZhHC7X7pmydOyA7hpA=="
+    },
+    "ok": true
+  },
+  {
+    "body": {
+      "success": 0,
+      "data": "0123456789ABCDEF1hNo0rW19l4y9EX46A2MsGVH3bWNyLVXzkaL4vswXomeVVYtkUY+hxymoKVijxBYJ467ZhHC7X7pmydOyA7hpA=="
+    },
+    "ok": true
+  },
+  {
+    "body": {
+      "data": "0123456789ABCDEFlhGfe/ucKvF36Mc25MR4AQ9tquxOWmiKxf0YYvBpiP2+apyGJ/8lXRmHFCSETP9OLhQjvzEM+2yETAJVl00WJg=="
+    },
+    "ok": false
+  }
+]

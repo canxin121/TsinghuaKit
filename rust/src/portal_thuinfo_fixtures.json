@@ -1,0 +1,34 @@
+[
+  {
+    "input": "https://info.tsinghua.edu.cn/",
+    "expected": "https://oauth.tsinghua.edu.cn/lb-auth/lbredirect?scheme=https&host=info.tsinghua.edu.cn&port=443&uri=/"
+  },
+  {
+    "input": "https://info.tsinghua.edu.cn/f/info/gxfw_fg/common/index?ticket=FIXTURE",
+    "expected": "https://oauth.tsinghua.edu.cn/lb-auth/lbredirect?scheme=https&host=info.tsinghua.edu.cn&port=443&uri=/f/info/gxfw_fg/common/index?ticket=FIXTURE"
+  },
+  {
+    "input": "https://info.tsinghua.edu.cn/f/info/gxfw_fg/common/index?ticket=FIXTURE%2Babc%3D",
+    "expected": "https://oauth.tsinghua.edu.cn/lb-auth/lbredirect?scheme=https&host=info.tsinghua.edu.cn&port=443&uri=/f/info/gxfw_fg/common/index?ticket=FIXTURE%2Babc%3D"
+  },
+  {
+    "input": "https://info.tsinghua.edu.cn/f/info/gxfw_fg/common/index?ticket=FIXTURE+abc=&lang=zh",
+    "expected": "https://oauth.tsinghua.edu.cn/lb-auth/lbredirect?scheme=https&host=info.tsinghua.edu.cn&port=443&uri=/f/info/gxfw_fg/common/index?ticket=FIXTURE+abc=&lang=zh"
+  },
+  {
+    "input": "https://info.tsinghua.edu.cn/f/info/gxfw_fg/common/index?next=%2Ff%2Fhome&mode=test",
+    "expected": "https://oauth.tsinghua.edu.cn/lb-auth/lbredirect?scheme=https&host=info.tsinghua.edu.cn&port=443&uri=/f/info/gxfw_fg/common/index?next=%2Ff%2Fhome&mode=test"
+  },
+  {
+    "input": "https://info.tsinghua.edu.cn:443/f/info/gxfw_fg/common/index?ticket=FIXTURE",
+    "expected": "https://oauth.tsinghua.edu.cn/lb-auth/lbredirect?scheme=https&host=info.tsinghua.edu.cn&port=443&uri=/f/info/gxfw_fg/common/index?ticket=FIXTURE"
+  },
+  {
+    "input": "https://oauth.tsinghua.edu.cn/lb-auth/lbredirect?scheme=https&host=info.tsinghua.edu.cn&port=443&uri=/f/info/gxfw_fg/common/index?ticket=FIXTURE&lang=zh",
+    "expected": "https://oauth.tsinghua.edu.cn/lb-auth/lbredirect?scheme=https&host=info.tsinghua.edu.cn&port=443&uri=/f/info/gxfw_fg/common/index?ticket=FIXTURE&lang=zh"
+  },
+  {
+    "input": "https://oauth.tsinghua.edu.cn/thu-oauth/auth?ticket=FIXTURE%2Babc&state=fixture",
+    "expected": "https://oauth.tsinghua.edu.cn/thu-oauth/auth?ticket=FIXTURE%2Babc&state=fixture"
+  }
+]

@@ -1,0 +1,114 @@
+{
+  "synthetic_only": true,
+  "network_requests": 0,
+  "reference_commit": "1dd651b331d2401caa016e141ad12d00ca5375e6",
+  "cheerio_version": "1.2.0",
+  "library": {
+    "wire": {
+      "data": {
+        "list": [
+          {
+            "day": "2026-09-19",
+            "id": 71,
+            "startTime": {
+              "date": "1970-01-01 08:00:00.000000"
+            },
+            "endTime": {
+              "date": "1970-01-01 22:30:00.000000"
+            }
+          }
+        ]
+      }
+    },
+    "expected": {
+      "day": "2026-09-19",
+      "startTime": "08:00",
+      "endTime": "22:30",
+      "segmentId": 71,
+      "today": true
+    }
+  },
+  "card": {
+    "wire": {
+      "success": true,
+      "resultData": {
+        "idserial": "fixture-user",
+        "username": "Fixture",
+        "departname": "Fixture",
+        "departid": 1,
+        "identifyeffectdate": 1767225600000,
+        "validatevalue": 1893456000000,
+        "baseAccount": {
+          "balance": 12345
+        },
+        "cardInfos": [
+          {
+            "cardid": "fixture-card",
+            "accstatus": "0",
+            "lasttxdate": 1789732800000,
+            "maxconstolamt": 20000,
+            "maxconsamt": 5000
+          }
+        ]
+      }
+    },
+    "expected": {
+      "effective_ms": 1767225600000,
+      "valid_ms": 1893456000000,
+      "last_ms": 1789732800000,
+      "balance_cents": 12345
+    }
+  },
+  "classrooms": [
+    {
+      "html": "<html><body><table><tr><td class=w30><a href='/http/fixturemap/pk.classroomctrl.do?m=qyClassroomState&amp;classroom=Fixture&amp;weeknumber=3'>Fixture Building</a><td>Other</table>",
+      "expected": [
+        {
+          "name": "Fixture Building",
+          "weekNumber": 3,
+          "searchName": "Fixture"
+        }
+      ]
+    },
+    {
+      "html": "<div class=w30><a href='/http/fixturemap/help'>Help</a><a href='/http/fixturemap/pk.classroomctrl.do?m=qyClassroomState&amp;classroom=Fixture&amp;weeknumber=3'>Fixture Building</a></div>",
+      "expected": [
+        {
+          "name": "Fixture Building",
+          "weekNumber": 3,
+          "searchName": "Fixture"
+        }
+      ]
+    }
+  ],
+  "news": [
+    {
+      "url": "https://webvpn.tsinghua.edu.cn/http/77726476706e69737468656265737421fdee49932a3526446d0187ab9040227bca90a6e14cc9/notice.aspx",
+      "html": "<html><div class=box3><table><tr><td>Fixture home announcement content</td></tr></table></div></html>",
+      "expected": [
+        "",
+        "<tbody><tr><td>Fixture home announcement content</td></tr></tbody>",
+        "Fixturehomeannouncementcontent"
+      ]
+    },
+    {
+      "url": "https://webvpn.tsinghua.edu.cn/https/77726476706e69737468656265737421f3f65399222226446d0187ab9040227b8e4026c4ffd2/article",
+      "html": "<html><h1>Fixture Office Title</h1><div class=WordSection1><p>Fixture office announcement content</p></div></html>",
+      "expected": [
+        "Fixture Office Title",
+        "<p>Fixture office announcement content</p>",
+        "Fixtureofficeannouncementcontent"
+      ]
+    }
+  ],
+  "electricity": [
+    {
+      "input": "http://myhome.tsinghua.edu.cn/default.aspx?ticket=FIXTURE%2Babc",
+      "expected": "https://oauth.tsinghua.edu.cn/lb-auth/lbredirect?scheme=http&host=myhome.tsinghua.edu.cn&port=80&uri=/default.aspx?ticket=FIXTURE%2Babc"
+    },
+    {
+      "input": "https://myhome.tsinghua.edu.cn/default.aspx?ticket=FIXTURE%2Babc",
+      "expected": "https://oauth.tsinghua.edu.cn/lb-auth/lbredirect?scheme=https&host=myhome.tsinghua.edu.cn&port=443&uri=/default.aspx?ticket=FIXTURE%2Babc"
+    }
+  ]
+}

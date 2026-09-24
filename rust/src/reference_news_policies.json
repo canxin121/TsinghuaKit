@@ -1,0 +1,135 @@
+[
+  [
+    "jwcbg",
+    [
+      ".TD4",
+      "td[colspan=4]:not(td[height])"
+    ]
+  ],
+  [
+    "kybg",
+    [
+      ".style1",
+      "table[width='95%'][cellpadding='3'] tr:nth(1)"
+    ]
+  ],
+  [
+    "gjc",
+    [
+      ".style11",
+      "[width='85%'] td"
+    ]
+  ],
+  [
+    "77726476706e69737468656265737421f2fa598421322653770bc7b88b5c2d32530b094045c3bd5cabf3",
+    [
+      ".TD1",
+      "td[colspan=4]:not(td[height])"
+    ]
+  ],
+  [
+    "77726476706e69737468656265737421e0f852882e3e6e5f301c9aa596522b2043f84ba24ebecaf8",
+    [
+      ".cont_doc_box h5 span",
+      "div.field-item"
+    ]
+  ],
+  [
+    "77726476706e69737468656265737421e9fd528569336153301c9aa596522b20735d12f268e561f0",
+    [
+      "h3",
+      "[style='text-align:left; width:90%; magin:0px auto; padding-top:20px;  padding-bottom:20px;word-break:break-all;']"
+    ]
+  ],
+  [
+    "77726476706e69737468656265737421f8e60f8834396657761d88e29d51367b523e",
+    [
+      "h1",
+      ".r_cont > ul"
+    ]
+  ],
+  [
+    "77726476706e69737468656265737421e8ef439b69336153301c9aa596522b20e1a870705b76e399",
+    [
+      ".TD1",
+      ".td4"
+    ]
+  ],
+  [
+    "rscbg",
+    [
+      "[height=40]",
+      "[width='95%'] > tbody > tr:nth(3)"
+    ]
+  ],
+  [
+    "77726476706e69737468656265737421e7e056d234297b437c0bc7b88b5c2d3212b31e4d37621d4714d6",
+    [
+      "",
+      "[style='text-align:left']"
+    ]
+  ],
+  [
+    "ghxt",
+    [
+      "",
+      "[valign=top]:not([class])"
+    ]
+  ],
+  [
+    "fgc",
+    [
+      ".title_b",
+      "[style='width:647px;margin-left:6px;font-size:13px;line-height:20px;text-align:justify']"
+    ]
+  ],
+  [
+    "77726476706e69737468656265737421e8e442d23323615e79009cadd6502720f9b87b",
+    [
+      ".bt",
+      ".xqbox"
+    ]
+  ],
+  [
+    "77726476706e69737468656265737421e4ff459d207e6b597d469dbf915b243de94c4812e5c2e1599f",
+    [
+      ".TD_right > font",
+      "td[colspan=4]:not(td[height])"
+    ]
+  ],
+  [
+    "jdbsc",
+    [
+      ".TD1",
+      "[width=95%]:nth-child(2) > tr:nth-child(1)"
+    ]
+  ],
+  [
+    "xsglxt",
+    [
+      ".sideleft p:first",
+      ".sideleft"
+    ]
+  ],
+  [
+    "77726476706e69737468656265737421fdee49932a3526446d0187ab9040227bca90a6e14cc9",
+    [
+      "",
+      ".box3 table"
+    ]
+  ],
+  [
+    "77726476706e69737468656265737421fcfe43d23323615e79009cadd6502720703f47",
+    [
+      "h2",
+      ".concon"
+    ]
+  ],
+  [
+    "77726476706e69737468656265737421f3f65399222226446d0187ab9040227b8e4026c4ffd2",
+    [
+      "h1",
+      ".WordSection1"
+    ]
+  ]
+]
