@@ -2537,38 +2537,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tsinghua_kit"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "base64 0.22.1",
- "chrono",
- "cookie_store",
- "flutter_rust_bridge",
- "fs2",
- "hmac",
- "libc",
- "md-5",
- "reqwest",
- "ring",
- "rpassword",
- "rsa",
- "scraper",
- "serde",
- "serde_json",
- "sha1",
- "sm2",
- "sm3",
- "thiserror",
- "tokio",
- "tracing",
- "tracing-appender",
- "tracing-subscriber",
- "uuid",
- "zeroize",
-]
-
-[[package]]
 name = "time"
 version = "0.3.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2768,6 +2736,38 @@ name = "try-lock"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
+
+[[package]]
+name = "tsinghua_kit"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.22.1",
+ "chrono",
+ "cookie_store",
+ "flutter_rust_bridge",
+ "fs2",
+ "hmac",
+ "libc",
+ "md-5",
+ "reqwest",
+ "ring",
+ "rpassword",
+ "rsa",
+ "scraper",
+ "serde",
+ "serde_json",
+ "sha1",
+ "sm2",
+ "sm3",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+ "uuid",
+ "zeroize",
+]
 
 [[package]]
 name = "typenum"
