@@ -11,7 +11,7 @@ dependencies:
   tsinghua_kit:
     git:
       url: https://github.com/canxin121/TsinghuaKit.git
-      ref: v0.1.0
+      ref: v0.1.1
 ```
 
 The Rust crate is at `rust/`. Its `Cargo.toml` builds the native library consumed by this repository's Flutter FFI plugin. A consumer should generate its Dart bridge against the crate API using the same `flutter_rust_bridge` version as this package.
