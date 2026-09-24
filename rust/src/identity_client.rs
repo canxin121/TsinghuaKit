@@ -477,7 +477,7 @@ impl IdentityClientConfig {
 
     /// Replaces the additional origins which may complete a ticketless
     /// Cookie-backed handoff.  These origins are never accepted as ticket
-    /// sources by [`Self::find_anchor_ticket_url`].
+    /// sources by the anchor-ticket selection algorithm.
     pub fn with_cookie_backed_handoff_origins(
         mut self,
         origins: impl IntoIterator<Item = impl Into<String>>,

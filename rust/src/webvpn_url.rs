@@ -2,7 +2,7 @@
 //!
 //! Url::join treats a route beginning with '/' as an origin absolute path.
 //! That is correct for a normal origin, but it silently removes the
-//! /https/<mapping>/ or /http/<mapping>/ prefix used by Tsinghua WebVPN.
+//! `/https/<mapping>/` or `/http/<mapping>/` prefix used by Tsinghua WebVPN.
 //! Keep this small helper at the request boundary so every adapter applies the
 //! same path and origin policy.
 

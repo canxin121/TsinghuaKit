@@ -1,4 +1,4 @@
-#![doc = "TsinghuaKit's platform-independent Rust domain and service layer."]
+#![doc = include_str!("../README.md")]
 #![allow(unexpected_cfgs)]
 // FRB 2.13 emits one newer lint name; keep older supported Rust toolchains
 // quiet while leaving the generated file itself untouched.

@@ -149,7 +149,7 @@ impl FixtureCampusService {
     ///
     /// The hard-coded records are compiled only for Rust unit tests.  In a
     /// production build this returns an inert source whose operations fail
-    /// closed through [`ensure_fixture_build`].
+    /// closed through a private build-mode check.
     pub fn fixture_on(date: NaiveDate) -> Self {
         #[cfg(test)]
         {

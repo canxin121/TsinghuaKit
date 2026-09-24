@@ -16,6 +16,10 @@ dependencies:
 
 The Rust crate is at `rust/`. Its `Cargo.toml` builds the native library consumed by this repository's Flutter FFI plugin. A consumer should generate its Dart bridge against the crate API using the same `flutter_rust_bridge` version as this package.
 
+## Rust API reference
+
+The [`tsinghua_kit` Rustdoc API reference](https://canxin121.github.io/TsinghuaKit/tsinghua_kit/) is built from the Rust crate and published with GitHub Pages. The [crate guide](rust/README.md) covers the runtime model and local documentation workflow.
+
 ## Repository layout
 
 - `rust/`: Rust library, terminal read-only verifier, and Rust contract fixtures.
