@@ -9,6 +9,7 @@ export 'tsinghua_kit.dart'
         MemoryOnlyIdentitySessionPersistence,
         MemoryOnlyNetworkProfilePersistence,
         NetworkProfilePersistence,
+        PlatformSecureStorageNetworkProfilePersistence,
         TsinghuaKit,
         TsinghuaKitClient,
         TsinghuaKitException;

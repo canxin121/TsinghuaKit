@@ -94,6 +94,15 @@ pub enum NetworkProfileStoragePolicy {
     /// Persist profiles in an encrypted file scoped to a host application
     /// namespace. The selected root must be an application-private directory.
     EncryptedDirectory { root: PathBuf, namespace: String },
+    /// Persist profiles in an encrypted file using a key supplied by the
+    /// host's operating-system credential store. Unlike `EncryptedDirectory`,
+    /// the key is never written beside the ciphertext. This remains available
+    /// only on Unix targets where the store can enforce private file modes.
+    KeychainEncryptedDirectory {
+        root: PathBuf,
+        namespace: String,
+        key: Zeroizing<[u8; 32]>,
+    },
 }
 
 impl NetworkProfileStoragePolicy {
@@ -123,6 +132,40 @@ impl NetworkProfileStoragePolicy {
         }
         Ok(Self::EncryptedDirectory { root, namespace })
     }
+
+    /// Constructs encrypted file storage whose key comes from the host's
+    /// operating-system credential store. `key` must be a random 32-byte key;
+    /// callers should keep it in Keychain/Keystore/Credential Manager and pass
+    /// it only while creating the owning Client.
+    pub fn keychain_encrypted_directory(
+        root: impl Into<PathBuf>,
+        namespace: impl Into<String>,
+        key: Vec<u8>,
+    ) -> Result<Self, Error> {
+        let key = Zeroizing::new(key);
+        let root = root.into();
+        let namespace = namespace.into();
+        if !root.is_absolute()
+            || root.components().count() < 2
+            || namespace.is_empty()
+            || namespace.len() > 128
+            || !namespace
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || b".-_".contains(&byte))
+            || key.len() != 32
+        {
+            return Err(Error::new(Service::Network, ErrorCode::InvalidInput));
+        }
+        let key: [u8; 32] = key
+            .as_slice()
+            .try_into()
+            .map_err(|_| Error::new(Service::Network, ErrorCode::InvalidInput))?;
+        Ok(Self::KeychainEncryptedDirectory {
+            root,
+            namespace,
+            key: Zeroizing::new(key),
+        })
+    }
 }
 
 impl Default for NetworkProfileStoragePolicy {
@@ -137,6 +180,10 @@ impl fmt::Debug for NetworkProfileStoragePolicy {
             Self::MemoryOnly => f.write_str("NetworkProfileStoragePolicy::MemoryOnly"),
             Self::EncryptedDirectory { .. } => f
                 .debug_struct("NetworkProfileStoragePolicy::EncryptedDirectory")
+                .field("configured", &true)
+                .finish(),
+            Self::KeychainEncryptedDirectory { .. } => f
+                .debug_struct("NetworkProfileStoragePolicy::KeychainEncryptedDirectory")
                 .field("configured", &true)
                 .finish(),
         }

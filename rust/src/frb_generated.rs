@@ -2277,6 +2277,7 @@ fn wire__crate__sdk_api__ClientHandle_new_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_profile_storage_root = <Option<String>>::sse_decode(&mut deserializer);
             let api_application_namespace = <Option<String>>::sse_decode(&mut deserializer);
+            let api_profile_storage_key = <Option<Vec<u8>>>::sse_decode(&mut deserializer);
             let api_identity_session_root = <Option<String>>::sse_decode(&mut deserializer);
             let api_identity_session_namespace = <Option<String>>::sse_decode(&mut deserializer);
             deserializer.end();
@@ -2285,6 +2286,7 @@ fn wire__crate__sdk_api__ClientHandle_new_impl(
                     let output_ok = crate::sdk_api::ClientHandle::new(
                         api_profile_storage_root,
                         api_application_namespace,
+                        api_profile_storage_key,
                         api_identity_session_root,
                         api_identity_session_namespace,
                     )?;
@@ -6165,6 +6167,17 @@ impl SseDecode for Option<u64> {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         if (<bool>::sse_decode(deserializer)) {
             return Some(<u64>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<Vec<u8>> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<Vec<u8>>::sse_decode(deserializer));
         } else {
             return None;
         }
@@ -11963,6 +11976,16 @@ impl SseEncode for Option<u64> {
         <bool>::sse_encode(self.is_some(), serializer);
         if let Some(value) = self {
             <u64>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<Vec<u8>> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <Vec<u8>>::sse_encode(value, serializer);
         }
     }
 }

@@ -38,6 +38,7 @@ const KEY_FILE: &str = "profiles-key-v1.bin";
 const DATA_FILE: &str = "profiles-v1.bin";
 const LOCK_FILE: &str = "profiles.lock";
 const PRIVATE_DIR: &str = "tsinghua-kit-network-profiles";
+const EXTERNAL_KEY_SOURCE: &str = "platform_secure_storage";
 
 pub(crate) struct NetworkProfileStore {
     pub(crate) profiles: HashMap<NetworkProfileId, StoredNetworkProfile>,
@@ -54,7 +55,20 @@ impl NetworkProfileStore {
                 backend: None,
             }),
             NetworkProfileStoragePolicy::EncryptedDirectory { root, namespace } => {
-                let backend = EncryptedDirectoryStore::open(root, namespace)?;
+                let backend = EncryptedDirectoryStore::open(root, namespace, None)?;
+                let (generation, profiles) = backend.load()?;
+                Ok(Self {
+                    profiles,
+                    generation,
+                    backend: Some(backend),
+                })
+            }
+            NetworkProfileStoragePolicy::KeychainEncryptedDirectory {
+                root,
+                namespace,
+                key,
+            } => {
+                let backend = EncryptedDirectoryStore::open(root, namespace, Some(key))?;
                 let (generation, profiles) = backend.load()?;
                 Ok(Self {
                     profiles,
@@ -86,14 +100,19 @@ struct EncryptedDirectoryStore {
     directory: PathBuf,
     namespace: String,
     key: Zeroizing<[u8; KEY_BYTES]>,
+    external_key: bool,
     _lock: File,
 }
 
 impl EncryptedDirectoryStore {
-    fn open(root: PathBuf, namespace: String) -> Result<Self, Error> {
+    fn open(
+        root: PathBuf,
+        namespace: String,
+        external_key: Option<Zeroizing<[u8; KEY_BYTES]>>,
+    ) -> Result<Self, Error> {
         #[cfg(not(unix))]
         {
-            let _ = (root, namespace);
+            let _ = (root, namespace, external_key);
             return Err(Error::new(Service::Network, ErrorCode::Unsupported));
         }
         #[cfg(unix)]
@@ -121,12 +140,58 @@ impl EncryptedDirectoryStore {
             set_private_file_permissions(&lock_path)?;
             lock.try_lock_exclusive().map_err(|_| storage_error())?;
 
-            let key_path = directory.join(KEY_FILE);
-            let key = load_or_create_key(&key_path)?;
+            let (key, uses_external_key) = match external_key {
+                Some(key) => {
+                    reject_symlink(&directory.join(DATA_FILE))?;
+                    let key_path = directory.join(KEY_FILE);
+                    match fs::symlink_metadata(&key_path) {
+                        Ok(_) => {
+                            reject_symlink(&key_path)?;
+                            if has_external_key_source(&directory.join(DATA_FILE))? {
+                                fs::remove_file(&key_path).map_err(|_| storage_error())?;
+                                return Ok(Self {
+                                    directory,
+                                    namespace,
+                                    key,
+                                    external_key: true,
+                                    _lock: lock,
+                                });
+                            }
+                            // Migrate the older colocated-key format only after
+                            // the host explicitly supplies its secure-store key.
+                            // The ciphertext is rewritten before the old key is
+                            // removed, so a failed write keeps the old store usable.
+                            let legacy_key = load_or_create_key(&key_path)?;
+                            let mut store = Self {
+                                directory: directory.clone(),
+                                namespace,
+                                key: legacy_key,
+                                external_key: false,
+                                _lock: lock,
+                            };
+                            let (generation, profiles) = store.load()?;
+                            store.key = key;
+                            store.external_key = true;
+                            if !profiles.is_empty() || generation > 0 {
+                                store.persist(generation, &profiles)?;
+                            }
+                            fs::remove_file(&key_path).map_err(|_| storage_error())?;
+                            return Ok(store);
+                        }
+                        Err(error) if error.kind() == std::io::ErrorKind::NotFound => (key, true),
+                        Err(_) => return Err(storage_error()),
+                    }
+                }
+                None => {
+                    let key_path = directory.join(KEY_FILE);
+                    (load_or_create_key(&key_path)?, false)
+                }
+            };
             Ok(Self {
                 directory,
                 namespace,
                 key,
+                external_key: uses_external_key,
                 _lock: lock,
             })
         }
@@ -157,7 +222,13 @@ impl EncryptedDirectoryStore {
         }
         let envelope: StoreEnvelope =
             serde_json::from_slice(&bytes).map_err(|_| storage_error())?;
-        if envelope.schema != SCHEMA {
+        if envelope.schema != SCHEMA
+            || match envelope.key_source.as_deref() {
+                None => self.external_key,
+                Some(EXTERNAL_KEY_SOURCE) => !self.external_key,
+                Some(_) => true,
+            }
+        {
             return Err(storage_error());
         }
         let nonce_bytes = BASE64
@@ -273,6 +344,7 @@ impl EncryptedDirectoryStore {
         }
         let envelope = StoreEnvelope {
             schema: SCHEMA,
+            key_source: self.external_key.then(|| EXTERNAL_KEY_SOURCE.to_owned()),
             nonce: BASE64.encode(nonce_bytes),
             ciphertext: BASE64.encode(ciphertext.as_slice()),
         };
@@ -289,6 +361,8 @@ impl EncryptedDirectoryStore {
 #[serde(deny_unknown_fields)]
 struct StoreEnvelope {
     schema: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    key_source: Option<String>,
     nonce: String,
     ciphertext: String,
 }
@@ -363,6 +437,38 @@ fn valid_namespace(value: &str) -> bool {
         && value
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || b".-_".contains(&byte))
+}
+
+#[cfg(unix)]
+fn has_external_key_source(path: &Path) -> Result<bool, Error> {
+    match fs::symlink_metadata(path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(_) => return Err(storage_error()),
+        Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_file() => {
+            return Err(storage_error());
+        }
+        Ok(_) => {}
+    }
+    verify_private_file(path)?;
+    let mut bytes = Vec::new();
+    File::open(path)
+        .and_then(|file| {
+            file.take((MAX_STORE_BYTES + 1) as u64)
+                .read_to_end(&mut bytes)
+        })
+        .map_err(|_| storage_error())?;
+    if bytes.is_empty() || bytes.len() > MAX_STORE_BYTES {
+        return Err(storage_error());
+    }
+    let envelope: StoreEnvelope = serde_json::from_slice(&bytes).map_err(|_| storage_error())?;
+    if envelope.schema != SCHEMA {
+        return Err(storage_error());
+    }
+    match envelope.key_source.as_deref() {
+        None => Ok(false),
+        Some(EXTERNAL_KEY_SOURCE) => Ok(true),
+        Some(_) => Err(storage_error()),
+    }
 }
 
 fn valid_profile_text(value: &str, max_bytes: usize) -> bool {
@@ -560,6 +666,138 @@ mod tests {
             Err(error) => error,
         };
         assert_eq!(corrupted.code(), ErrorCode::StorageUnavailable);
+    }
+
+    #[test]
+    fn backend_refactor_keychain_profile_store_never_writes_its_key_to_disk() {
+        let temporary = TestDirectory::new();
+        let key = vec![0x4a; KEY_BYTES];
+        let policy = NetworkProfileStoragePolicy::keychain_encrypted_directory(
+            temporary.path(),
+            "org.example.keychain-profile-test",
+            key.clone(),
+        )
+        .unwrap();
+        let mut store = NetworkProfileStore::open(policy.clone()).unwrap();
+        let mut profiles = store.profiles.clone();
+        let input = NetworkProfileInput::new(
+            "System Wi-Fi",
+            "eap-account",
+            NetworkAccessMethod::SystemWifiEap,
+        )
+        .unwrap()
+        .save_password("synthetic-eap-secret")
+        .unwrap();
+        let (label, username, method, password) = input.into_parts();
+        let id = NetworkProfileId::new();
+        profiles.insert(
+            id,
+            StoredNetworkProfile {
+                id,
+                label,
+                username,
+                method,
+                password,
+                revision: 1,
+            },
+        );
+        store.commit(profiles).unwrap();
+        let directory = &store.backend.as_ref().unwrap().directory;
+        assert!(!directory.join(KEY_FILE).exists());
+        let data = fs::read(directory.join(DATA_FILE)).unwrap();
+        assert!(!String::from_utf8_lossy(&data).contains("synthetic-eap-secret"));
+        drop(store);
+
+        let restored = NetworkProfileStore::open(policy).unwrap();
+        assert_eq!(restored.profiles.len(), 1);
+        let wrong_key = NetworkProfileStoragePolicy::keychain_encrypted_directory(
+            temporary.path(),
+            "org.example.keychain-profile-test",
+            vec![0x4b; KEY_BYTES],
+        )
+        .unwrap();
+        assert!(!format!("{wrong_key:?}").contains(&format!("{key:?}")));
+        let error = match NetworkProfileStore::open(wrong_key) {
+            Ok(_) => panic!("a different key must not open the profile store"),
+            Err(error) => error,
+        };
+        assert_eq!(error.code(), ErrorCode::StorageUnavailable);
+    }
+
+    #[test]
+    fn backend_refactor_keychain_profile_store_rejects_invalid_key_length() {
+        let temporary = TestDirectory::new();
+        let error = NetworkProfileStoragePolicy::keychain_encrypted_directory(
+            temporary.path(),
+            "org.example.keychain-profile-test",
+            vec![0x4a; KEY_BYTES - 1],
+        )
+        .unwrap_err();
+        assert_eq!(error.code(), ErrorCode::InvalidInput);
+    }
+
+    #[test]
+    fn backend_refactor_keychain_opt_in_migrates_the_legacy_colocated_key() {
+        let temporary = TestDirectory::new();
+        let namespace = "org.example.keychain-profile-migration";
+        let legacy =
+            NetworkProfileStoragePolicy::encrypted_directory(temporary.path(), namespace).unwrap();
+        let mut store = NetworkProfileStore::open(legacy).unwrap();
+        let mut profiles = store.profiles.clone();
+        let input =
+            NetworkProfileInput::new("Portal", "portal-account", NetworkAccessMethod::Portal)
+                .unwrap()
+                .save_password("synthetic-portal-secret")
+                .unwrap();
+        let (label, username, method, password) = input.into_parts();
+        let id = NetworkProfileId::new();
+        profiles.insert(
+            id,
+            StoredNetworkProfile {
+                id,
+                label,
+                username,
+                method,
+                password,
+                revision: 1,
+            },
+        );
+        store.commit(profiles).unwrap();
+        let directory = store.backend.as_ref().unwrap().directory.clone();
+        let legacy_key_bytes = fs::read(directory.join(KEY_FILE)).unwrap();
+        drop(store);
+
+        let key = vec![0x39; KEY_BYTES];
+        let secure = NetworkProfileStoragePolicy::keychain_encrypted_directory(
+            temporary.path(),
+            namespace,
+            key.clone(),
+        )
+        .unwrap();
+        let migrated = NetworkProfileStore::open(secure.clone()).unwrap();
+        assert_eq!(migrated.profiles.len(), 1);
+        assert_eq!(
+            migrated
+                .profiles
+                .get(&id)
+                .unwrap()
+                .password
+                .as_ref()
+                .map(|secret| secret.as_str()),
+            Some("synthetic-portal-secret")
+        );
+        assert!(!directory.join(KEY_FILE).exists());
+        let data = fs::read(directory.join(DATA_FILE)).unwrap();
+        assert!(!String::from_utf8_lossy(&data).contains("synthetic-portal-secret"));
+        drop(migrated);
+
+        // Simulate a crash after the new ciphertext was committed but before
+        // the old colocated key was removed.
+        fs::write(directory.join(KEY_FILE), legacy_key_bytes).unwrap();
+        set_private_file_permissions(&directory.join(KEY_FILE)).unwrap();
+        let restored = NetworkProfileStore::open(secure).unwrap();
+        assert!(restored.profiles.contains_key(&id));
+        assert!(!directory.join(KEY_FILE).exists());
     }
 
     #[test]

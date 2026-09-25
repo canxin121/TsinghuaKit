@@ -21,6 +21,10 @@ void main() {
     expect(_publicType<core.TsinghuaKitException>(), isNull);
     expect(auth.SecondFactorMethod.sms.name, 'sms');
     expect(network.NetworkAccessMethod.systemWifiEap.name, 'systemWifiEap');
+    expect(
+      _publicType<network.PlatformSecureStorageNetworkProfilePersistence>(),
+      isNull,
+    );
     expect(service_hall.ServiceHallTaskView.phases.name, 'phases');
     expect(news.NewsCatalogCoverage.complete.name, 'complete');
     expect(learn.LearnHomeworkState.pending.name, 'pending');

@@ -99,17 +99,24 @@ partitioning. Schema 1 snapshots are rejected without migration. Restored
 Identity appears as `restoredUnverified`; call
 `client.auth.identity.revalidateRestoredSession()` only when the app explicitly
 wants Rust to perform the read-only check. SelfService status and network
-online proof are not restored. OS Keychain/host secret-store support and
-complete two-account restoration are still in progress.
+online proof are not restored. The directory-backed Identity snapshot still
+keeps its key beside the ciphertext and is a migration-only option, not an OS
+Keychain. Identity and SelfService credential/session persistence remain
+unfinished.
 
 It also supports explicit captcha/code steps, profile editing, version-bound
 form preparation, and user-requested password filling. Identity and
 SelfService remain the only Auth accounts. Portal and system Wi-Fi/EAP data
 are local profiles; creating or filling one does not connect the device or
 restore either Auth session. Profile persistence is memory-only by default;
-the optional Unix encrypted-directory backend is not an OS Keychain.
-Identity-session persistence is a separate opt-in and never reuses profile
-passwords.
+the legacy Unix encrypted-directory backend stores its key beside the data.
+For persistent profiles, use
+`NetworkProfilePersistence.platformSecureStorage(root: ..., namespace: ...)`:
+Flutter Secure Storage keeps the encryption key in the platform secure store,
+while Rust keeps the encrypted profile file under the selected private app
+directory. This key protects Portal/EAP profile data only; it is never an Auth
+password or session key. Identity-session persistence is a separate opt-in and
+never reuses profile passwords.
 
 Logout scope is explicit: `client.auth.identity.logout()` closes Identity and
 its derived service proofs; a selected SelfService account remains visible as

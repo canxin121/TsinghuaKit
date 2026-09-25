@@ -236,9 +236,16 @@ directory and a stable host namespace. On Unix targets the SDK encrypts profile
 records, atomically replaces the data file, and enforces owner-only directory
 and file modes. The key is stored beside the ciphertext, so this backend is
 not an OS keychain and does not protect against the same OS user or an
-administrator; non-Unix targets return `Unsupported`. Profile persistence
-restores form data only and never restores an Auth session or network-online
-proof. The selected store is locked to one Client at a time.
+administrator. A host with its own secure key store can instead use
+`NetworkProfileStoragePolicy::keychain_encrypted_directory(root, namespace, key)`;
+the 32-byte key is zeroized by Rust and never written beside the ciphertext.
+The Flutter facade obtains that key from Flutter Secure Storage. Both
+persistent file modes are currently supported on Unix targets; non-Unix
+targets return `Unsupported`. Profile persistence restores form data only and
+never restores an Auth session or network-online proof. The selected store is
+locked to one Client at a time. Switching an existing colocated-key store to
+the secure-key policy migrates the encrypted records under that lock and
+removes the old on-disk key after the new ciphertext has been committed.
 
 Building Rustdoc or compiling these packages does not log in or contact
 campus services.

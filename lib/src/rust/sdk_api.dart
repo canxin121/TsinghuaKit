@@ -176,18 +176,25 @@ abstract class ClientHandle implements RustOpaqueInterface {
   ///
   /// Network profiles and Identity session snapshots use separate policies.
   /// When the optional network profile arguments are absent, profile data is
-  /// memory-only. Supplying both opts into its Unix encrypted-directory
-  /// backend. Supplying both Identity session arguments opts into the
-  /// encrypted Identity snapshot under a separate app-namespaced directory;
-  /// the cache uses that same directory. Neither option saves passwords.
+  /// memory-only. Supplying the root and namespace without a key opts into
+  /// the legacy Unix encrypted-directory backend whose key is stored beside
+  /// the ciphertext. Supplying all three opts into that backend with an
+  /// operating-system credential-store key; the key is zeroized from this
+  /// Client's temporary construction data and is never written beside the
+  /// ciphertext. Supplying both Identity session arguments opts into the
+  /// separate encrypted Identity snapshot, whose current directory backend
+  /// still stores its key beside the data. Neither option saves Auth
+  /// passwords.
   static Future<ClientHandle> newInstance(
           {String? profileStorageRoot,
           String? applicationNamespace,
+          Uint8List? profileStorageKey,
           String? identitySessionRoot,
           String? identitySessionNamespace}) =>
       RustLib.instance.api.crateSdkApiClientHandleNew(
           profileStorageRoot: profileStorageRoot,
           applicationNamespace: applicationNamespace,
+          profileStorageKey: profileStorageKey,
           identitySessionRoot: identitySessionRoot,
           identitySessionNamespace: identitySessionNamespace);
 

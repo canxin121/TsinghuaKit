@@ -16,8 +16,11 @@ account.
 TUNet's registration status for the current IPv4 address. Profiles are not
 Auth accounts and their existence does not prove a connection. The SDK does
 not yet execute Portal login or configure operating-system Wi-Fi/EAP. THOS
-write operations and a platform secure-storage adapter also remain outside the
-current public API.
+write operations and Identity/SelfService credential restoration also remain
+outside the current public API. The Flutter facade can use Flutter Secure
+Storage to hold the encryption key for persistent local network profiles;
+Rust receives that key only while constructing the Client and never writes it
+beside the encrypted profile file.
 
 The SDK does not depend on Flutter or `flutter_rust_bridge`. It does depend on
 the internal `tsinghua_kit_engine` crate, which contains Rust-owned transport,

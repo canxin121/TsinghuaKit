@@ -2,7 +2,7 @@
 
 状态：设计与分阶段实现并行。更新日期：2026-09-26。对应 [公共 API 重构方案](api-refactor-plan.md)；源码基线为 `a4db9fbe1c1480bcbaa3bab203d1bd9e37556621`。
 
-公共 SDK crate 和内部 engine 已拆开；Rust `Client` 目前支持一个共享 Runtime、Identity 登录/二次认证、独立 SelfService 验证码登录、双账号状态、网上服务大厅、INFO、Learn、Registrar/Calendar、Library、Classroom、CampusCard、Electricity，以及要求 SelfService 会话的账号摘要、在线设备和用量/余额读取。在线设备可通过 `DeviceRef` 显式断开，引用只对创建它的 Client 和最近一次完整设备列表有效。Learn、Library 和 Classroom 的资源选择由不透明引用绑定到 Client 与当前目录；作业和文件引用还有五分钟时效。Auth 默认只驻留内存；Rust 与 Flutter 现可显式选择 Identity 的加密目录快照，并在进程重启后以 `RestoredUnverified` 状态恢复，只有调用 `identity.revalidateRestoredSession()` 才发起有界只读重新验证。SDK 只在一个成功的 Identity 持久化边界保存一次当时的共享 Cookie jar；之后业务和 SelfService handoff 新增的 Cookie 只留在进程内，不会刷新磁盘快照。这个一次性检查点不构成严格的 Cookie 分区，快照中仍可能有保存时已存在的非 Identity Cookie；新 Client 也不会据此恢复或授权 SelfService。密码不会保存在会话快照中，旧 envelope schema 1 不自动迁移。该目录后端的密钥与密文同处，不能等同 OS Keychain，也不能用于高保证的生产存储。网络资料默认只在 owning Client 生命周期内保存；调用者显式启用 `NetworkProfileStoragePolicy::EncryptedDirectory` 后可跨进程恢复，且与 Auth 恢复目录分离。资料密码需要显式 opt-in，可通过版本绑定的 `NetworkProfilePassword` 显式取得以填入表单。当前未发布的 Flutter `0.2.0-alpha.1` facade 已接入双账号 Auth、会话恢复查询、网络资料 CRUD/显式填写、网上服务大厅、SelfService、Registrar/Calendar、INFO、Learn、Library、Classroom、CampusCard 与 Electricity 的首批 API；THYou App 仍使用 `v0.1.1` 兼容 API，尚未切换。SelfService 登录挑战的本地 `phase()` 与 Identity `interaction()` 查询已桥接；SelfService 跨进程状态恢复、OS Keychain/宿主 secret-store adapter、Portal 连接器及操作系统 Wi-Fi/EAP 适配器仍未实现。下面未标为“已实现”的接口图均为目标设计。
+公共 SDK crate 和内部 engine 已拆开；Rust `Client` 目前支持一个共享 Runtime、Identity 登录/二次认证、独立 SelfService 验证码登录、双账号状态、网上服务大厅、INFO、Learn、Registrar/Calendar、Library、Classroom、CampusCard、Electricity，以及要求 SelfService 会话的账号摘要、在线设备和用量/余额读取。在线设备可通过 `DeviceRef` 显式断开，引用只对创建它的 Client 和最近一次完整设备列表有效。Learn、Library 和 Classroom 的资源选择由不透明引用绑定到 Client 与当前目录；作业和文件引用还有五分钟时效。Auth 默认只驻留内存；Rust 与 Flutter 现可显式选择 Identity 的加密目录快照，并在进程重启后以 `RestoredUnverified` 状态恢复，只有调用 `identity.revalidateRestoredSession()` 才发起有界只读重新验证。SDK 只在一个成功的 Identity 持久化边界保存一次当时的共享 Cookie jar；之后业务和 SelfService handoff 新增的 Cookie 只留在进程内，不会刷新磁盘快照。这个一次性检查点不构成严格的 Cookie 分区，快照中仍可能有保存时已存在的非 Identity Cookie；新 Client 也不会据此恢复或授权 SelfService。密码不会保存在会话快照中，旧 envelope schema 1 不自动迁移。该目录后端的密钥与密文同处，不能等同 OS Keychain，暂不用于 App 的恢复策略。网络资料默认只在 owning Client 生命周期内保存；Flutter facade 新增 `NetworkProfilePersistence.platformSecureStorage`，将密钥放在平台安全存储中、密文放入宿主私有目录；旧 `EncryptedDirectory` 策略仍是较弱的兼容选项。Profile key 仅用于 Portal/EAP 本机资料，不与 Auth 会话或密码复用。资料密码需要显式 opt-in，可通过版本绑定的 `NetworkProfilePassword` 显式取得以填入表单。当前 `0.2.0-alpha.1` facade 已接入双账号 Auth、会话恢复查询、网络资料 CRUD/显式填写、网上服务大厅、SelfService、Registrar/Calendar、INFO、Learn、Library、Classroom、CampusCard 与 Electricity 的首批 API；THYou App 仍未迁移生产 gateway、认证 hydration 或页面数据流。SelfService 跨进程恢复、Identity/SelfService 的平台凭据保管、Portal 连接器及操作系统 Wi-Fi/EAP 适配器仍未实现。下面未标为“已实现”的接口图均为目标设计。
 
 本设计采用用户明确的产品模型：Auth 可能同时有统一身份、网络自助两个账号；校园网连接是本地网络操作，可保存资料和自动填写，不作为需要持久维护的第三个账号会话。
 
@@ -38,7 +38,7 @@ WebVPN、Learn、教务、校园卡等仍然可以有业务 Cookie 和服务证�
 
 证据：[当前 Runtime 中的认证与网络实现](../rust/crates/tsinghua-kit-engine/src/api/runtime.rs)、[凭据存储实现](../rust/crates/tsinghua-kit-engine/src/credential_store.rs)。
 
-以上是当前源码边界变化；真实账号登录、验证码、Portal 连接和系统 Wi-Fi 配置均未执行。Rust API 已有 Client 生命周期内的资料编辑、版本绑定的显式表单填充和 Rust 内存密码；显式 opt-in 的 Unix 加密目录可跨进程恢复资料，但文件密钥同处私有目录，不等同 OS Keychain。Flutter/FRB 已有 Auth 与网络资料首批 facade，并通过 macOS 临时消费者验证初始化、双账号状态和结构化错误映射；尚无面向用户的网络资料页面，也没有实际连接器或 OS 802.1X 配置能力。
+以上是当前源码边界变化；真实账号登录、验证码、Portal 连接和系统 Wi-Fi 配置均未执行。Rust API 已有 Client 生命周期内的资料编辑、版本绑定的显式表单填充和 Rust 内存密码；Flutter facade 新增显式平台安全存储密钥策略，文件密钥不再必须和密文放在一起。此策略尚未在真实 macOS Keychain 或其它平台安全存储上做运行时验证；旧目录策略仍不等同 OS Keychain。Flutter/FRB 已有 Auth 与网络资料首批 facade，并通过 macOS 临时消费者验证初始化、双账号状态和结构化错误映射；尚无面向用户的网络资料页面，也没有实际连接器或 OS 802.1X 配置能力。
 
 ## 3. 公共 API 的归属
 
@@ -236,7 +236,7 @@ if let Some(password) = password.as_ref() {
 }
 ```
 
-常规资料 DTO 不含口令。读取密码需要最新的同 Client 资料引用，且产生脱敏、不可克隆/序列化、drop 时零化的 Rust 值；把值复制到 Flutter 字段是用户显式填写动作的边界。跨进程存储现支持显式 opt-in 的 Unix 加密目录，路径须由宿主提供。Flutter/FRB 首版 facade 已提供准备表单和显式密码句柄调用；目前没有可视化产品流程。OS Keychain 尚未实现。未来连接入口应接收 profile handle，在 Rust connector 内按方式读取口令；这部分还没有落地。也允许未来的 `connect` 使用当次手动输入，不要求先保存。选择/填写默认资料不产生网络提交；本轮不把后台自动连接加入需求。
+常规资料 DTO 不含口令。读取密码需要最新的同 Client 资料引用，且产生脱敏、不可克隆/序列化、drop 时零化的 Rust 值；把值复制到 Flutter 字段是用户显式填写动作的边界。跨进程存储支持两种 opt-in Unix 路径：旧目录密钥模式，以及新增由 Flutter Secure Storage 保管密钥的加密目录模式。第二种已完成 Dart/FRB/Rust 接线，但尚未在真实平台 Keychain 上运行验证；THYou App 也尚未启用。Flutter facade 已提供准备表单和显式密码句柄调用；目前没有可视化产品流程。未来连接入口应接收 profile handle，在 Rust connector 内按方式读取口令；这部分还没有落地。也允许未来的 `connect` 使用当次手动输入，不要求先保存。选择/填写默认资料不产生网络提交；本轮不把后台自动连接加入需求。
 
 ### 6.5 与 Tsinghua Secure 的关系
 
@@ -359,7 +359,7 @@ Flutter 分别维护 IdentityAuth、SelfServiceAuth、NetworkConnection 和 Netw
 1. **先定域和返回类型**：`AuthDomain` 只有两项；定义双账号状态、本机连接资料、操作结果与观测类型，更新 Rustdoc 和方法迁移表。
 2. **保留并显式化 USEREG 双主体保护**：拆出其账号槽与代次，保留 `identity_owner` 所代表的访问通道约束；补齐 A/B 不同与同 username 不同用途的契约。
 3. **把 TUNet 从 Auth 注册/恢复链移出**：将当前 username/IP 状态改为受限短期连接上下文；成功后返回连接结果，不写 `Authenticated`。网络读取也不刷新身份恢复快照。
-4. **增加本机连接资料存储和填写接口（进行中）**：Rust 已分开建模 Portal 与 `SystemWifiEap`、可选密码、资料版本与显式 `NetworkProfilePassword` 填写边界；默认 memory-only，宿主可 opt-in 使用 Unix 加密目录恢复资料。Flutter facade 已暴露资料 CRUD 和用户显式填入流程。待完成：OS Keychain adapter、默认资料选择和产品 UI；保存/填写本身不联网，也不改写 OS Wi-Fi 配置。
+4. **增加本机连接资料存储和填写接口（首批完成）**：Rust 已分开建模 Portal 与 `SystemWifiEap`、可选密码、资料版本与显式 `NetworkProfilePassword` 填写边界；默认 memory-only。Flutter facade 可显式选择平台安全存储来保管文件加密密钥，并可选择较弱的旧 Unix 目录模式。待完成：真实 Keychain/Keystore 运行验证、App 接入、默认资料选择和产品 UI；保存/填写本身不联网，也不改写 OS Wi-Fi 配置。
 5. **拆分注销和恢复**：两个域分别维护权威，加入上述依赖失效矩阵；保留旧 bridge 的明确兼容包装。
 6. **更新 Flutter/CLI 消费与生成代码（进行中）**：新的 FRB 绑定与 Dart facade 已生成并覆盖 Auth 和本地资料首批方法，macOS 插件构建及无登录启动 smoke test 通过。THYou App 仍在 `v0.1.1` 旧 Runtime facade；在其它业务方法也迁入并通过同一 Client 提供前，不应在 App 中同时维护新旧 Rust Client。后续分别消费双账号状态和连接结果，系统 Wi-Fi 每个平台显式报告连接/配置能力和授权结果。只读网络定向用例不人为依赖两个账号都登录；全量验收的执行顺序不等于能力本身的认证依赖。
 7. **迁移保存格式并发布候选版本**：旧明确属于 Identity 的凭据只迁移到 Identity；没有已保存的 USEREG/网络密码就保持缺省，不能从 Identity 推测填充。持久化过的旧 TUNet 标志不能当作新账号会话或本次在线证明。

@@ -224,6 +224,7 @@ abstract class RustLibApi extends BaseApi {
   Future<ClientHandle> crateSdkApiClientHandleNew(
       {String? profileStorageRoot,
       String? applicationNamespace,
+      Uint8List? profileStorageKey,
       String? identitySessionRoot,
       String? identitySessionNamespace});
 
@@ -1494,6 +1495,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Future<ClientHandle> crateSdkApiClientHandleNew(
       {String? profileStorageRoot,
       String? applicationNamespace,
+      Uint8List? profileStorageKey,
       String? identitySessionRoot,
       String? identitySessionNamespace}) {
     return handler.executeNormal(NormalTask(
@@ -1501,6 +1503,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         sse_encode_opt_String(profileStorageRoot, serializer);
         sse_encode_opt_String(applicationNamespace, serializer);
+        sse_encode_opt_list_prim_u_8_strict(profileStorageKey, serializer);
         sse_encode_opt_String(identitySessionRoot, serializer);
         sse_encode_opt_String(identitySessionNamespace, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
@@ -1515,6 +1518,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       argValues: [
         profileStorageRoot,
         applicationNamespace,
+        profileStorageKey,
         identitySessionRoot,
         identitySessionNamespace
       ],
@@ -1527,6 +1531,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         argNames: [
           "profileStorageRoot",
           "applicationNamespace",
+          "profileStorageKey",
           "identitySessionRoot",
           "identitySessionNamespace"
         ],
@@ -4207,6 +4212,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  Uint8List? dco_decode_opt_list_prim_u_8_strict(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_list_prim_u_8_strict(raw);
+  }
+
+  @protected
   PortalAddressRegistrationDto dco_decode_portal_address_registration_dto(
       dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
@@ -6600,6 +6611,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  Uint8List? sse_decode_opt_list_prim_u_8_strict(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_list_prim_u_8_strict(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
   PortalAddressRegistrationDto sse_decode_portal_address_registration_dto(
       SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
@@ -8629,6 +8651,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self != null, serializer);
     if (self != null) {
       sse_encode_box_autoadd_u_64(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_list_prim_u_8_strict(
+      Uint8List? self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_list_prim_u_8_strict(self, serializer);
     }
   }
 

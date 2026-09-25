@@ -3414,20 +3414,37 @@ impl ClientHandle {
     ///
     /// Network profiles and Identity session snapshots use separate policies.
     /// When the optional network profile arguments are absent, profile data is
-    /// memory-only. Supplying both opts into its Unix encrypted-directory
-    /// backend. Supplying both Identity session arguments opts into the
-    /// encrypted Identity snapshot under a separate app-namespaced directory;
-    /// the cache uses that same directory. Neither option saves passwords.
+    /// memory-only. Supplying the root and namespace without a key opts into
+    /// the legacy Unix encrypted-directory backend whose key is stored beside
+    /// the ciphertext. Supplying all three opts into that backend with an
+    /// operating-system credential-store key; the key is zeroized from this
+    /// Client's temporary construction data and is never written beside the
+    /// ciphertext. Supplying both Identity session arguments opts into the
+    /// separate encrypted Identity snapshot, whose current directory backend
+    /// still stores its key beside the data. Neither option saves Auth
+    /// passwords.
     pub fn new(
         profile_storage_root: Option<String>,
         application_namespace: Option<String>,
+        profile_storage_key: Option<Vec<u8>>,
         identity_session_root: Option<String>,
         identity_session_namespace: Option<String>,
     ) -> Result<Self, SdkErrorDto> {
-        let policy = match (profile_storage_root, application_namespace) {
-            (None, None) => NetworkProfileStoragePolicy::MemoryOnly,
-            (Some(root), Some(namespace)) => {
+        let policy = match (
+            profile_storage_root,
+            application_namespace,
+            profile_storage_key,
+        ) {
+            (None, None, None) => NetworkProfileStoragePolicy::MemoryOnly,
+            (Some(root), Some(namespace), None) => {
                 NetworkProfileStoragePolicy::encrypted_directory(PathBuf::from(root), namespace)?
+            }
+            (Some(root), Some(namespace), Some(key)) => {
+                NetworkProfileStoragePolicy::keychain_encrypted_directory(
+                    PathBuf::from(root),
+                    namespace,
+                    key,
+                )?
             }
             _ => {
                 let Err(error) = NetworkProfileStoragePolicy::encrypted_directory("/", "") else {
@@ -4515,7 +4532,7 @@ mod tests {
     };
 
     fn client() -> ClientHandle {
-        ClientHandle::new(None, None, None, None).expect("memory-only client")
+        ClientHandle::new(None, None, None, None, None).expect("memory-only client")
     }
 
     #[test]
@@ -4563,6 +4580,7 @@ mod tests {
             uuid::Uuid::new_v4().simple()
         ));
         let mut client = ClientHandle::new(
+            None,
             None,
             None,
             Some(root.to_string_lossy().into_owned()),
@@ -4646,13 +4664,35 @@ mod tests {
 
     #[test]
     fn unmatched_storage_configuration_is_rejected_before_client_creation() {
-        let error = match ClientHandle::new(Some("/tmp/profiles".to_owned()), None, None, None) {
-            Ok(_) => panic!("mismatched storage options must be rejected"),
-            Err(error) => error,
-        };
+        let error =
+            match ClientHandle::new(Some("/tmp/profiles".to_owned()), None, None, None, None) {
+                Ok(_) => panic!("mismatched storage options must be rejected"),
+                Err(error) => error,
+            };
         assert_eq!(error.service, "network");
         assert_eq!(error.code, "invalid_input");
         assert!(!error.diagnostic_id.is_empty());
+    }
+
+    #[test]
+    fn bridge_accepts_a_host_secure_storage_key_for_network_profiles() {
+        let root = std::env::temp_dir().join(format!(
+            "tsinghua-kit-keychain-profile-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let mut client = ClientHandle::new(
+            Some(root.to_string_lossy().into_owned()),
+            Some("org.example.keychain-profile-test".to_owned()),
+            Some(vec![0x4a; 32]),
+            None,
+            None,
+        )
+        .expect("an OS-keychain-backed profile store builds a local client");
+        let status = client.inner.auth().status();
+        assert_eq!(status.identity().state(), AccountAuthState::SignedOut);
+        assert_eq!(status.self_service().state(), AccountAuthState::SignedOut);
+        drop(client);
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
