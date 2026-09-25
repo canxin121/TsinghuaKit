@@ -1,24 +1,31 @@
 [package]
-name = "tsinghua_kit"
+name = "tsinghua_kit_ffi"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
-description = "Rust campus service and domain library for TsinghuaKit"
+description = "Flutter FFI bridge and compatibility runtime for TsinghuaKit"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/canxin121/TsinghuaKit"
 
 [lib]
+name = "tsinghua_kit"
 path = "src/lib.rs"
 crate-type = ["cdylib", "staticlib", "rlib"]
 
+[workspace]
+members = ["crates/tsinghua-kit", "crates/tsinghua-kit-engine"]
+resolver = "3"
+
 [dependencies]
+tsinghua_kit_engine = { path = "crates/tsinghua-kit-engine", features = ["ffi-compat"] }
 async-trait = "0.1.92"
 base64 = "0.22.1"
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "serde"] }
 cookie_store = "0.22.0"
+tsinghua_kit_sdk = { package = "tsinghua_kit", path = "crates/tsinghua-kit", features = ["ffi-compat"] }
 
 hmac = "0.12.1"
-flutter_rust_bridge = "=2.13.0"
+flutter_rust_bridge = { version = "=2.13.0", optional = true }
 md-5 = "0.10.6"
 reqwest = { version = "0.13.5", default-features = false, features = [
     "rustls",
@@ -51,11 +58,13 @@ tracing-appender = "0.2.5"
 fs2 = "0.4.3"
 ring = "0.17.14"
 rpassword = { version = "7.5.4", optional = true }
-zeroize = { version = "1.9.0", optional = true }
+zeroize = "1.9.0"
 libc = "0.2.189"
 
 [features]
-terminal-check = ["dep:rpassword", "dep:zeroize", "tokio/signal", "tokio/macros"]
+default = ["ffi-bridge"]
+ffi-bridge = ["dep:flutter_rust_bridge", "tsinghua_kit_engine/ffi-bridge"]
+terminal-check = ["dep:rpassword", "tokio/signal", "tokio/macros"]
 
 [[bin]]
 name = "tsinghua-kit-check"

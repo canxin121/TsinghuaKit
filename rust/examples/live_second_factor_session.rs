@@ -68,7 +68,10 @@ async fn main() {
         return;
     };
 
-    let Ok(status) = runtime.login(username, password, false).await else {
+    let Ok(status) = runtime
+        .login(username, password, None, false, false, false)
+        .await
+    else {
         emit("probe=primary_login_failure");
         return;
     };

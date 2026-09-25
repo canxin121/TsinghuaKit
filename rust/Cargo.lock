@@ -2739,6 +2739,48 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
 name = "tsinghua_kit"
+version = "0.2.0-alpha.1"
+dependencies = [
+ "chrono",
+ "tokio",
+ "tsinghua_kit_engine",
+ "zeroize",
+]
+
+[[package]]
+name = "tsinghua_kit_engine"
+version = "0.2.0-alpha.1"
+dependencies = [
+ "async-trait",
+ "base64 0.22.1",
+ "chrono",
+ "cookie_store",
+ "flutter_rust_bridge",
+ "fs2",
+ "hmac",
+ "libc",
+ "md-5",
+ "reqwest",
+ "ring",
+ "rpassword",
+ "rsa",
+ "scraper",
+ "serde",
+ "serde_json",
+ "sha1",
+ "sm2",
+ "sm3",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+ "uuid",
+ "zeroize",
+]
+
+[[package]]
+name = "tsinghua_kit_ffi"
 version = "0.1.0"
 dependencies = [
  "async-trait",
@@ -2765,6 +2807,8 @@ dependencies = [
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
+ "tsinghua_kit",
+ "tsinghua_kit_engine",
  "uuid",
  "zeroize",
 ]

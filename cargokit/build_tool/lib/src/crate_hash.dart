@@ -9,6 +9,7 @@ import 'package:collection/collection.dart';
 import 'package:convert/convert.dart';
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as path;
+import 'package:toml/toml.dart';
 
 class CrateHash {
   /// Computes a hash uniquely identifying crate content. This takes into account
@@ -24,10 +25,7 @@ class CrateHash {
     )._compute();
   }
 
-  CrateHash._({
-    required this.manifestDir,
-    required this.tempStorage,
-  });
+  CrateHash._({required this.manifestDir, required this.tempStorage});
 
   String _compute() {
     final files = getFiles();
@@ -116,6 +114,39 @@ class CrateHash {
     addFile('Cargo.lock');
     addFile('build.rs');
     addFile('cargokit.yaml');
+
+    // A Flutter FFI crate can depend on workspace crates whose source is
+    // outside its own `src/` tree. Include every explicit workspace member in
+    // the artifact key so editing SDK code cannot reuse a stale native binary.
+    final manifest = TomlDocument.parse(
+      File(path.join(manifestDir, 'Cargo.toml')).readAsStringSync(),
+    ).toMap();
+    final workspace = manifest['workspace'];
+    final members = workspace is Map ? workspace['members'] : null;
+    if (members is List) {
+      for (final member in members.whereType<String>()) {
+        if (member.contains('*') || member.contains('?')) {
+          throw FormatException(
+            'Cargokit hash currently requires explicit workspace member paths: $member',
+          );
+        }
+        final memberDirectory = path.normalize(path.join(manifestDir, member));
+        final memberSource = Directory(path.join(memberDirectory, 'src'));
+        if (memberSource.existsSync()) {
+          files.addAll(
+            memberSource
+                .listSync(recursive: true, followLinks: false)
+                .whereType<File>(),
+          );
+        }
+        for (final relative in ['Cargo.toml', 'build.rs', 'cargokit.yaml']) {
+          final file = File(path.join(memberDirectory, relative));
+          if (file.existsSync()) {
+            files.add(file);
+          }
+        }
+      }
+    }
     return files;
   }
 

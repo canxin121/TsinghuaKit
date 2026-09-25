@@ -1,0 +1,9 @@
+rust_input: crate::sdk_api
+rust_root: rust
+rust_output: rust/src/frb_generated.rs
+dart_root: .
+dart_output: lib/src/rust
+rust_features:
+  - ffi-bridge
+add_mod_to_lib: false
+build_runner: false

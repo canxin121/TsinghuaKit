@@ -1,6 +1,6 @@
 name: tsinghua_kit
 description: "Flutter FFI plugin for the TsinghuaKit Rust library"
-version: 0.1.0
+version: 0.2.0-alpha.1
 publish_to: none
 
 environment:
@@ -10,6 +10,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_rust_bridge: 2.13.0
   plugin_platform_interface: ^2.0.2
 
 dev_dependencies:

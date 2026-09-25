@@ -1,28 +1,169 @@
 # TsinghuaKit
 
-TsinghuaKit is a Rust campus service library with a Flutter FFI plugin. Rust owns authentication, HTTP transport, session state, parsing, caching, and domain rules. The Flutter plugin builds the Rust crate for Android, iOS, Linux, macOS, and Windows; generated Dart bindings remain in the consuming Flutter application.
+TsinghuaKit is split into a Flutter-independent Rust SDK, its internal Rust engine, and a Flutter FFI compatibility package. Rust owns authentication, HTTP transport, session state, parsing, caching, and domain rules. The public Rust SDK is `rust/crates/tsinghua-kit`; the engine is `rust/crates/tsinghua-kit-engine`; the existing bridge implementation remains under `rust/` while its Dart facade is migrated.
 
 ## Use from Flutter
 
-Add the public package to `pubspec.yaml`:
+The next Flutter API is an unreleased `0.2.0-alpha.1` facade in this working
+tree. The existing `v0.1.1` tag remains the older compatibility API and does
+not contain the new methods. During local development, consume the checkout by
+path:
 
 ```yaml
 dependencies:
   tsinghua_kit:
-    git:
-      url: https://github.com/canxin121/TsinghuaKit.git
-      ref: v0.1.1
+    path: ../TsinghuaKit
 ```
 
-The Rust crate is at `rust/`. Its `Cargo.toml` builds the native library consumed by this repository's Flutter FFI plugin. A consumer should generate its Dart bridge against the crate API using the same `flutter_rust_bridge` version as this package.
+`tsinghua_kit.dart` is the convenience umbrella. Applications can instead
+import `core.dart` for initialization, client creation, and common errors, then
+add focused entry points such as `auth.dart`, `network.dart`,
+`service_hall.dart`, `self_service.dart`, `registrar_calendar.dart`,
+`news.dart`, or `learn.dart` for a feature's types. All domain clients still
+come from the same `TsinghuaKitClient`; importing a domain library does not
+create another Rust runtime.
+
+The new facade exposes the two separate Auth domains, local campus-network
+profile management, the online service hall, SelfService account data,
+Registrar/Calendar, library and classroom reads, campus-card and electricity
+reads, Learn, and INFO through one Rust Client:
+
+The returned `TsinghuaKitClient` owns the native Client. Call `client.dispose()`
+when its application scope ends to release the Rust session and any profile
+store lock. Disposal is idempotent; its domain facades must not be used after
+the Client is disposed.
+
+`client.auth.status()` returns separate Identity and SelfService states and
+their optional account names. The names are presentation data rather than
+session proof; Rust `Debug` output redacts them.
+
+```dart
+import 'package:tsinghua_kit/tsinghua_kit.dart';
+
+final client = await TsinghuaKit.createClient();
+final auth = await client.auth.status();
+final profiles = await client.network.profiles.list();
+final pending = await client.serviceHall.pending(
+  policy: ServiceHallReadPolicy.preferFreshCache,
+);
+final phases = await client.serviceHall.tasks(
+  view: ServiceHallTaskView.phases,
+  policy: ServiceHallReadPolicy.preferFreshCache,
+);
+final schedule = await client.registrar.semesterSchedule();
+final terms = await client.calendar.learnTerms();
+final schoolCalendar = await client.calendar.schoolCalendarImage(
+  semester: SchoolCalendarSemester.autumn,
+  language: SchoolCalendarLanguage.chinese,
+);
+final news = await client.news.articles(
+  page: 1,
+  policy: ReadPolicy.preferFreshCache,
+);
+// After an explicit Identity login:
+final courses = await client.learn.courses();
+if (courses.data.courses.isNotEmpty) {
+  final course = courses.data.courses.first;
+  final assignments = await client.learn.homework(course.reference);
+}
+if (phases.data.tasks.isNotEmpty) {
+  final reference = phases.data.tasks.first.phaseReference;
+  if (reference != null) {
+    final details = await client.serviceHall.phaseDetails(
+      reference: reference,
+      policy: ServiceHallReadPolicy.preferFreshCache,
+    );
+  }
+}
+```
+
+Auth sessions are memory-only by default. Flutter can explicitly opt in to the
+current Identity cookie snapshot backend:
+
+```dart
+final client = await TsinghuaKit.createClient(
+  identitySession: IdentitySessionPersistence.encryptedDirectory(
+    // Replace this host-provided value with an absolute app-private directory.
+    root: appPrivateDataDirectory,
+    namespace: 'org.example.campus-app',
+  ),
+);
+```
+
+That snapshot is device-bound and encrypted, but its key is stored beside the
+ciphertext; it is not an OS Keychain. No password is saved. The SDK stores the
+shared Cookie jar once at the first successful Identity checkpoint; later
+business and SelfService responses do not refresh it. Cookies already present
+at that checkpoint may be included, so this is not per-account Cookie
+partitioning. Schema 1 snapshots are rejected without migration. Restored
+Identity appears as `restoredUnverified`; call
+`client.auth.identity.revalidateRestoredSession()` only when the app explicitly
+wants Rust to perform the read-only check. SelfService status and network
+online proof are not restored. OS Keychain/host secret-store support and
+complete two-account restoration are still in progress.
+
+It also supports explicit captcha/code steps, profile editing, version-bound
+form preparation, and user-requested password filling. Identity and
+SelfService remain the only Auth accounts. Portal and system Wi-Fi/EAP data
+are local profiles; creating or filling one does not connect the device or
+restore either Auth session. Profile persistence is memory-only by default;
+the optional Unix encrypted-directory backend is not an OS Keychain.
+Identity-session persistence is a separate opt-in and never reuses profile
+passwords.
+
+Logout scope is explicit: `client.auth.identity.logout()` closes Identity and
+its derived service proofs; a selected SelfService account remains visible as
+expired if its shared Identity/WebVPN access route has closed.
+`client.auth.selfService.logout()` clears only SelfService state and its
+pending device targets, while `client.auth.logoutAll()` closes both account
+domains. All three leave local network profiles and the current Wi-Fi
+connection alone.
+
+All successful service-hall, SelfService, Registrar, Calendar, Library,
+Classroom, CampusCard, Electricity, Learn, and News reads carry source and
+freshness metadata; bounded collections also report completeness.
+Pending tasks, the service directory, completed items, drafts, copies, phase
+workflows, and phase details are bridged; phase-detail references stay opaque
+and Client-bound. Registrar exposes the full semester schedule, grades, and
+exams. Calendar exposes Learn term dates and verified published calendar
+images. INFO catalog/list/search/detail/favorites/subscription reads are now
+bridged through opaque Client-bound references. Learn courses, announcements,
+assignments, assignment details, files, categories, discussions, and explicit
+file saving are now bridged through the same Client. Library locations, hours,
+seats and sockets; classroom buildings and weekly availability; campus-card
+account and bounded transactions; and electricity remainder and payment
+history now have Flutter facades on the same Client. Local network observation
+is bridged, while Portal connection execution and OS Wi-Fi/EAP configuration
+remain unsupported. Only the opt-in Identity snapshot described above is
+available for Auth restoration; it is not a complete release-ready two-account
+solution. The THYou App remains pinned to `v0.1.1`; it is not migrated until
+its required service calls use this same Client lifecycle and the new package
+has a reproducible public revision.
+
+The standalone Rust SDK `tsinghua_kit` is at `rust/crates/tsinghua-kit`. Its
+unreleased working-tree API includes service-hall pending tasks, catalogue,
+four task views, and Client-bound phase details; SelfService
+account/device/usage reads with explicit `DeviceRef`-selected disconnection;
+Registrar schedule/grade/exam reports; Learn term dates and published school
+calendar images; Learn course/announcement/assignment/file/discussion reads
+and explicitly selected file saving; and INFO news
+catalog/list/search/detail/favorites/subscription reads selected with opaque
+references, and Library, Classroom, CampusCard, and Electricity reads. See
+the Rustdoc reference for the current Rust surface and the migration matrix
+for the distinction between package facades and the still-unmigrated THYou
+application.
+
+The [Flutter API migration matrix](docs/flutter-api-migration-matrix.md) maps
+the App's old gateway methods to their new Rust ownership and bridge status.
 
 ## Rust API reference
 
-The [`tsinghua_kit` Rustdoc API reference](https://canxin121.github.io/TsinghuaKit/tsinghua_kit/) is built from the Rust crate and published with GitHub Pages. The [crate guide](rust/README.md) covers the runtime model and local documentation workflow.
+The [`tsinghua_kit` Rustdoc API reference](https://canxin121.github.io/TsinghuaKit/tsinghua_kit/) is built from the public SDK crate and published with GitHub Pages. The [Rust workspace guide](rust/README.md) covers the current FFI compatibility package and documentation workflow.
 
 ## Repository layout
 
-- `rust/`: Rust library, terminal read-only verifier, and Rust contract fixtures.
+- `rust/crates/tsinghua-kit/`: Flutter-independent Rust SDK crate.
+- `rust/`: existing Flutter FFI compatibility package, terminal read-only verifier, and protocol contract fixtures.
 - `android/`, `ios/`, `linux/`, `macos/`, `windows/`: Flutter FFI plugin platform glue.
 - `cargokit/`: Rust build integration used by the Flutter plugin.
 

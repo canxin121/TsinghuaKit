@@ -4,8 +4,7 @@ use std::{
     thread::{self, JoinHandle},
 };
 
-#[path = "../src/registrar_exam.rs"]
-mod registrar_exam;
+use tsinghua_kit::registrar_client::registrar_exam;
 
 use registrar_exam::{
     RegistrarExamCourseQuery, RegistrarExamError, RegistrarExamHttpResponse,

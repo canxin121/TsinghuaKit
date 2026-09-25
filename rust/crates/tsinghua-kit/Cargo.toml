@@ -1,0 +1,22 @@
+[package]
+name = "tsinghua_kit"
+version = "0.2.0-alpha.1"
+edition = "2024"
+rust-version = "1.85"
+description = "Public Rust SDK for Tsinghua campus services"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/canxin121/TsinghuaKit"
+readme = "README.md"
+
+[dependencies]
+tsinghua_kit_engine = { version = "0.2.0-alpha.1", path = "../tsinghua-kit-engine", features = ["internal-sdk"] }
+chrono = { version = "0.4.45", default-features = false, features = ["std"] }
+zeroize = "1.9.0"
+
+[features]
+default = []
+ffi-compat = ["tsinghua_kit_engine/ffi-compat"]
+terminal-check = ["ffi-compat", "tsinghua_kit_engine/terminal-check"]
+
+[dev-dependencies]
+tokio = { version = "1.53.1", features = ["macros", "rt"] }

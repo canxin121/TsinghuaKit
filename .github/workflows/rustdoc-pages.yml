@@ -33,7 +33,7 @@ jobs:
       - name: Generate Rustdoc
         env:
           RUSTDOCFLAGS: -D warnings
-        run: cargo doc --locked --no-deps --manifest-path rust/Cargo.toml
+        run: cargo doc --locked --no-deps --manifest-path rust/Cargo.toml -p tsinghua_kit
 
       - name: Add site landing page
         run: cp docs/index.html rust/target/doc/index.html

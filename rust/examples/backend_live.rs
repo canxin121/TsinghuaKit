@@ -213,7 +213,10 @@ async fn main() {
     emit(serde_json::json!({"state":"fresh_login_started","session_origin":"empty_cookie_jar"}));
     // Exactly one primary login. Never automatically send a verification code,
     // register a new trusted device, retry login, or change network connectivity.
-    let mut status = match runtime.login(username, password, false).await {
+    let mut status = match runtime
+        .login(username, password, None, false, false, false)
+        .await
+    {
         Ok(status) => status,
         Err(error) => {
             emit(serde_json::json!({"state":"fresh_login_failed","reason":login_reason(&error)}));
