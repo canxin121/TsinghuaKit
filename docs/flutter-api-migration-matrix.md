@@ -1,6 +1,6 @@
 # Flutter 旧 API 到 TsinghuaKit 的迁移矩阵
 
-状态：迁移进行中，尚未完成生产切换。App 工作树的 Git 依赖现固定到 public SDK commit `5ba172a`，依赖解析和 macOS Debug 构建通过；生产 provider 仍创建旧 `CampusRuntime`，页面仍经 `FrbCampusRuntimeGateway`，`lib/` 下仍无 `package:tsinghua_kit` 生产导入。静态消费者工具不作为迁移完成证据。公共 SDK 工作树当前为 `0.2.0-alpha.1`。清单来自 App 的 `CampusRuntimeGateway` 及其 companion gateway 接口，合计 72 个旧异步入口，不包含页面状态、缓存展示器和纯模型校验器。此文档不表示线上服务已验证。
+状态：迁移进行中，尚未完成生产切换。App 的 Git 依赖已从 `v0.1.1` 改为 `0.2.0-alpha.1` 分支上的精确 commit，但生产 provider 仍创建旧 `CampusRuntime`，页面仍经 `FrbCampusRuntimeGateway`。静态消费者工具和插件构建不作为迁移完成证据。清单来自 App 的 `CampusRuntimeGateway` 及其 companion gateway 接口，合计 72 个旧异步入口，不包含页面状态、缓存展示器和纯模型校验器。此文档不表示新 SDK 的线上服务已验证。
 
 迁移的主约束是，一个 Flutter `TsinghuaKitClient` 只持有一个 Rust `Client`。身份、网络自助和业务服务共享该 Client 的 Runtime/transport；门户本机连接资料留在 `client.network.profiles`，不增加 Auth slot。引用型选择必须由前一次 SDK 读取产生，并由 Rust 绑定 Client 与目录代次；Flutter 不传 URL、学校 selector、数组下标或自由拼装的业务 ID。
 
@@ -13,7 +13,7 @@ SDK 现将业务缓存目录、Identity 会话快照与 NetworkProfile 存储分
 | `reconcileSession`, `hydrateLocalSession` | `client.auth.identity.revalidateRestoredSession()`；本机网络资料仍由 `client.network.profiles` 独立读取 | Identity JSON 快照与显式重新验证已桥接；SelfService 持久状态及 App hydration 尚未迁 | 默认 Auth 仍为内存；可选目录模式保存普通 JSON Cookie 快照，明文包含认证 Cookie，Unix 权限为 `0700`/`0600`，不使用 Keychain、Keystore 或 Flutter Secure Storage。Identity、SelfService 凭据和网络资料分别存放。首次成功 Identity 检查点只写一次当时共享 Cookie jar，后续业务/SelfService Cookie 不刷新快照，但保存时已有 Cookie 仍可能在其中，因此不是 Cookie 分区。恢复状态为 `RestoredUnverified`，必须显式重新验证；无效/旧格式文件保留并报错。SelfService 跨进程会话恢复尚未实现；两个账号域的显式凭据保存已由独立 Rust credential store 覆盖。App 生产 provider 仍未切换。 |
 | `serviceCatalog` | App 自己的显示目录与 capability registry | 不进入 TsinghuaKit facade | 图标、本地化 key、首页偏好和服务卡片属于 THYou UI。Rust capability 证明只由实际 SDK 服务方法表达，不能作为 UI 展示对象。 |
 | `establishServiceSession` | 不单独公开；由首次实际业务读取按需建立 handoff | 迁移时删除旧调用 | 不允许页面先预建会话再读取；共享服务 handoff 由同一 Rust Client 管理，避免重复认证链。 |
-| `loadOverview`, `peekOverview`, `refreshOverview` | App 高层组合多个类型化服务结果 | 未桥接 | 不是新的底层认证/HTTP API。迁移后 Overview repository 可在同一 Client 上并行查询独立服务，保留各分区错误和 source metadata，不把请求失败压成空结果。 |
+| `loadOverview`, `peekOverview`, `refreshOverview` | Rust `client.overview().day(date, ReadPolicy)`；Flutter `client.overview.day(date, policy: …)` | Rust 公共 crate、Flutter bridge 与 Dart facade 已接入；旧 App 尚未迁 | 同一 Rust runtime 复用已验证的 Learn/Registrar 聚合；`CacheOnly` 绝不联网且未命中明确报错，`Refresh` 不接受旧缓存冒充实时，`RefreshOrCached` 允许标记陈旧回退。部分分区失败保留 flags 和 partial coverage。Learn 作业计数不是服务大厅待办数。 |
 | `loadGrades`, `loadSemesterSchedule`, `loadExams` | Rust `client.registrar().grades()`, `semester_schedule()`, `exams()`；Flutter `client.registrar.grades()`, `semesterSchedule()`, `exams()` | Rust 与 Flutter/FRB 已接入同一个 ClientHandle；旧 App 未迁 | 统一用带来源、新鲜度和覆盖证明的 `ReadResult`；删除旧的普通/`Result` 重复入口。考试日期不补造缺失年份，研究生考试标签按原始服务数据呈现。 |
 | `loadThosPending`, `loadThosServices`, `loadThosTaskList`, `loadThosPhaseSteps` | `client.service_hall().pending/services/tasks/phase_details` | 待办、目录、四种任务视图、阶段详情均已桥接到同一 handle | 完整分页、首页单独计数、退回合并和 freshness 保留。Dart 不接收 selector；阶段详情引用 Client-bound，不能用 task ID 或 list index 替代。 |
 | `loadInfoNews`, `searchInfoNews`, `loadInfoNewsDetail`, `loadInfoNewsDetailResult`, `loadInfoNewsCatalog`, `loadInfoNewsSubscriptions`, `loadInfoNewsFavorites`, `loadInfoNewsSubscriptionPage` | Rust `client.news().catalog/subscriptions/favorites/articles/article/subscription_articles`；Flutter `client.news.catalog/articles/search/article/favorites/subscriptions/subscriptionArticles` | Rust 与 Flutter/FRB 已接入同一个 ClientHandle；旧 App 未迁 | source/channel 与 subscription 只能从本 Client 最近一次目录/订阅读取取得不透明引用。详情必须使用当前 news page 产生的 `NewsArticleReference`，不接收任意 `articleId`。普通 detail 与 detail result 收敛为一个保留 provenance 的结果。 |
@@ -37,7 +37,7 @@ SDK 现将业务缓存目录、Identity 会话快照与 NetworkProfile 存储分
 2. Identity 会话快照与 Auth credential vault 仅在用户显式选择后写为普通 JSON 文件；两个 Auth 域仍隔离，逐次 remember opt-in 默认关闭。不调用系统凭据存储，也不加密文件；读取应用目录的同一用户进程可直接读取。SelfService 跨进程会话恢复尚未实现。恢复失败必须给出类型化状态，不触发隐式重复登录。不得把 Portal/EAP profile、Auth 会话与业务缓存合并存储。
 3. 实现 SelfService 跨进程会话策略和操作系统 Wi-Fi/EAP 能力。Portal 显式连接与断开已进入 SDK/Dart facade，尚需在用户明确操作后做线上验证。所有入口仍增加到同一个 `ClientHandle`，不建立平行 runtime；Profile 内容不能和两个 Auth 会话合并持久化。
 4. 对照 App 实际引用点迁移 repositories/controllers：使用 package 的领域类型和稳定错误；App 可以做 UI 排版及调用编排，不复制 Rust selector、HTTP、解析、缓存策略、账号绑定或错误分类。
-5. 在全量调用映射、相同 Client 生命周期、session recovery 方案、平台构建和必要业务验收证据齐全后，切换生产 provider 到同一个 `TsinghuaKitClient`，删除旧 `FrbCampusRuntimeGateway` 与 App 自有 `lib/src/rust` 生成目录。`pubspec.yaml` 已固定到 public TsinghuaKit commit `5ba172a`；后续只在 SDK API 变更时更新精确 commit。
+5. 在全量调用映射、相同 Client 生命周期、session recovery 方案、平台构建和必要业务验收证据齐全后，切换生产 provider 到同一个 `TsinghuaKitClient`，删除旧 `FrbCampusRuntimeGateway` 与 App 自有 `lib/src/rust` 生成目录。App 依赖须固定到涵盖最终接口的公共 TsinghuaKit commit；后续只在 SDK API 变更时更新精确 commit。
 
 ## 暂未纳入迁移的 App 职责
 

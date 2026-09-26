@@ -65,6 +65,7 @@ use crate::{
         NewsChannel, NewsChannelRef, NewsFavorites, NewsPage, NewsQuery, NewsQueryKind, NewsSource,
         NewsSourceRef, NewsSubscription, NewsSubscriptionRef, NewsSubscriptions,
     },
+    overview_api::OverviewClient,
     read::{CacheFreshness, IncompleteReason, ReadCoverage, ReadMetadata, ReadResult, ReadSource},
     registrar_api::{
         AcademicStage, CourseGrade, Exam, ExamReport, ExamWeekday, GradeReport, GradeReportKind,
@@ -179,8 +180,9 @@ impl IdentityLoginRequest {
     /// Opts this Identity account into Rust-owned credential recovery.
     ///
     /// The Client must have a CredentialStoragePolicy configured.
-    /// The account password is stored separately from the encrypted cookie
-    /// snapshot and is never saved for SelfService or local network profiles.
+    /// The account password is stored as a readable JSON file separately
+    /// from the Identity cookie snapshot. SelfService has its own independent
+    /// credential opt-in, and local network profiles use another policy.
     pub fn remember_credentials(mut self, remember: bool) -> Self {
         self.remember_credentials = remember;
         self
@@ -835,6 +837,19 @@ impl Client {
     /// Borrows Registrar schedule, grade, and exam reads from this runtime.
     pub fn registrar(&mut self) -> RegistrarClient<'_> {
         RegistrarClient {
+            runtime: &mut self.runtime,
+            cache_source: if self.remove_cache_on_drop {
+                ReadSource::ClientCache
+            } else {
+                ReadSource::PersistentCache
+            },
+        }
+    }
+
+    /// Borrows an account-bound daily overview from the shared Rust runtime.
+    /// Cache-only reads never create a service session or send a request.
+    pub fn overview(&mut self) -> OverviewClient<'_> {
+        OverviewClient {
             runtime: &mut self.runtime,
             cache_source: if self.remove_cache_on_drop {
                 ReadSource::ClientCache

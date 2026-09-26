@@ -17,6 +17,7 @@ import 'src/rust/sdk_api.dart' as native;
 
 export 'src/second_factor_method.dart' show SecondFactorMethod;
 part 'src/read.dart';
+part 'src/overview.dart';
 part 'src/library.dart';
 part 'src/classrooms.dart';
 part 'src/campus_card.dart';
@@ -116,11 +117,10 @@ abstract final class TsinghuaKit {
     };
     final (storageRoot, applicationNamespace) = switch (networkProfiles) {
       MemoryOnlyNetworkProfilePersistence() => (null, null),
-      JsonDirectoryNetworkProfilePersistence(
-        :final root,
-        :final namespace
-      ) =>
-        (root, namespace),
+      JsonDirectoryNetworkProfilePersistence(:final root, :final namespace) => (
+          root,
+          namespace
+        ),
     };
     final (identitySessionRoot, identitySessionNamespace) =
         switch (identitySession) {
@@ -308,6 +308,7 @@ class TsinghuaKitClient {
         auth = AuthClient._(handle),
         network = NetworkClient._(handle),
         registrar = RegistrarClient._(handle),
+        overview = OverviewClient._(handle),
         calendar = CalendarClient._(handle),
         library = LibraryClient._(handle),
         classrooms = ClassroomsClient._(handle),
@@ -328,6 +329,9 @@ class TsinghuaKitClient {
 
   /// Academic schedule, grades, and examination reads.
   final RegistrarClient registrar;
+
+  /// Account-bound daily academic summary with source-aware cache reads.
+  final OverviewClient overview;
 
   /// Learn term dates and published school-calendar images.
   final CalendarClient calendar;

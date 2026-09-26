@@ -19,7 +19,7 @@ dependencies:
 import `core.dart` for initialization, client creation, and common errors, then
 add focused entry points such as `auth.dart`, `network.dart`,
 `service_hall.dart`, `self_service.dart`, `registrar_calendar.dart`,
-`news.dart`, or `learn.dart` for a feature's types. All domain clients still
+`news.dart`, `overview.dart`, or `learn.dart` for a feature's types. All domain clients still
 come from the same `TsinghuaKitClient`; importing a domain library does not
 create another Rust runtime.
 
@@ -209,9 +209,9 @@ history now have Flutter facades on the same Client. Local network observation
 is bridged, while Portal connection execution and OS Wi-Fi/EAP configuration
 remain unsupported. Only the opt-in Identity snapshot described above is
 available for Auth restoration; it is not a complete release-ready two-account
-solution. The THYou App remains pinned to `v0.1.1`; it is not migrated until
-its required service calls use this same Client lifecycle and the new package
-has a reproducible public revision.
+solution. The THYou App has resolved the current package but still uses its
+legacy runtime for production requests. The App migration is not complete
+until all service calls use one Client lifecycle.
 
 The standalone Rust SDK `tsinghua_kit` is at `rust/crates/tsinghua-kit`. Its
 unreleased working-tree API includes service-hall pending tasks, catalogue,
@@ -221,7 +221,8 @@ Registrar schedule/grade/exam reports; Learn term dates and published school
 calendar images; Learn course/announcement/assignment/file/discussion reads
 and explicitly selected file saving; and INFO news
 catalog/list/search/detail/favorites/subscription reads selected with opaque
-references, and Library, Classroom, CampusCard, and Electricity reads. See
+references; an account-bound, cache-aware daily Overview; and Library,
+Classroom, CampusCard, and Electricity reads. See
 the Rustdoc reference for the current Rust surface and the migration matrix
 for the distinction between package facades and the still-unmigrated THYou
 application.

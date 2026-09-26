@@ -16,6 +16,8 @@ pub enum Service {
     Learn,
     /// Registration-office schedules, grades, and examinations.
     Registrar,
+    /// Account-bound daily summary of independent academic sections.
+    Overview,
     /// School-wide calendar data.
     Calendar,
     /// INFO news and subscriptions.
@@ -46,6 +48,7 @@ impl Service {
             Self::Auth(AuthDomain::SelfService) => "self_service_auth",
             Self::Learn => "learn",
             Self::Registrar => "registrar",
+            Self::Overview => "overview",
             Self::Calendar => "calendar",
             Self::News => "news",
             Self::ServiceHall => "service_hall",

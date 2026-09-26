@@ -44,6 +44,7 @@ pub mod library_read;
 pub mod network;
 mod network_profile_store;
 pub mod news;
+pub mod overview_api;
 pub mod protocol;
 pub mod read;
 pub mod registrar;

@@ -126,6 +126,33 @@ pub mod news {
     };
 }
 
+/// Account-bound daily academic summary with explicit cache provenance.
+///
+/// ```no_run
+/// use tsinghua_kit::{Client, overview::NaiveDate, read::ReadPolicy};
+/// # async fn example() -> tsinghua_kit::Result<()> {
+/// let mut client = Client::builder().build()?;
+/// let date = NaiveDate::from_ymd_opt(2026, 9, 26).unwrap();
+/// match client.overview().day(date, ReadPolicy::CacheOnly).await {
+///     Ok(result) => {
+///         let _source = result.metadata().source();
+///         let _failures = result.data().section_failures();
+///     }
+///     Err(error) if error.code() == tsinghua_kit::error::ErrorCode::CacheMiss => {}
+///     Err(error) => return Err(error),
+/// }
+/// # Ok(())
+/// # }
+/// ```
+pub mod overview {
+    pub use crate::client::OverviewClient;
+    pub use chrono::{NaiveDate, Utc};
+    pub use tsinghua_kit_engine::overview_api::{
+        DailyOverview, OverviewSchedule, OverviewScheduleKind, OverviewSectionFailures,
+        OverviewTodo,
+    };
+}
+
 pub mod read {
     pub use tsinghua_kit_engine::read::{
         CacheFreshness, IncompleteReason, ReadCoverage, ReadMetadata, ReadPolicy, ReadResult,

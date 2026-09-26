@@ -68,7 +68,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0';
 
   @override
-  int get rustContentHash => -1973216546;
+  int get rustContentHash => -690782467;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -277,6 +277,11 @@ abstract class RustLibApi extends BaseApi {
 
   Future<NewsSubscriptionsResultDto> crateSdkApiClientHandleNewsSubscriptions(
       {required ClientHandle that});
+
+  Future<DailyOverviewResultDto> crateSdkApiClientHandleOverviewDay(
+      {required ClientHandle that,
+      required String date,
+      required ReadPolicyDto policy});
 
   Future<PreparedNetworkProfile>
       crateSdkApiClientHandlePrepareNetworkProfileFill(
@@ -1910,6 +1915,37 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  Future<DailyOverviewResultDto> crateSdkApiClientHandleOverviewDay(
+      {required ClientHandle that,
+      required String date,
+      required ReadPolicyDto policy}) {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
+            that, serializer);
+        sse_encode_String(date, serializer);
+        sse_encode_read_policy_dto(policy, serializer);
+        pdeCallFfi(generalizedFrbRustBinding, serializer,
+            funcId: 50, port: port_);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_daily_overview_result_dto,
+        decodeErrorData: sse_decode_sdk_error_dto,
+      ),
+      constMeta: kCrateSdkApiClientHandleOverviewDayConstMeta,
+      argValues: [that, date, policy],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateSdkApiClientHandleOverviewDayConstMeta =>
+      const TaskConstMeta(
+        debugName: "ClientHandle_overview_day",
+        argNames: ["that", "date", "policy"],
+      );
+
+  @override
   Future<PreparedNetworkProfile>
       crateSdkApiClientHandlePrepareNetworkProfileFill(
           {required ClientHandle that, required String id}) {
@@ -1920,7 +1956,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             that, serializer);
         sse_encode_String(id, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 50, port: port_);
+            funcId: 51, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData:
@@ -1950,7 +1986,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
             that, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 51, port: port_);
+            funcId: 52, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_self_service_captcha_dto,
@@ -1978,7 +2014,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
             that, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 52, port: port_);
+            funcId: 53, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_exam_report_result_dto,
@@ -2005,7 +2041,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
             that, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 53, port: port_);
+            funcId: 54, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_grade_report_result_dto,
@@ -2033,7 +2069,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
             that, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 54, port: port_);
+            funcId: 55, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_semester_schedule_result_dto,
@@ -2069,7 +2105,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_network_access_method_dto(method, serializer);
         sse_encode_opt_String(password, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 55, port: port_);
+            funcId: 56, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_network_profile_dto,
@@ -2096,7 +2132,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
             that, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 56, port: port_);
+            funcId: 57, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_self_service_account_result_dto,
@@ -2124,7 +2160,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             that, serializer);
         sse_encode_String(referenceId, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 57, port: port_);
+            funcId: 58, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_unit,
@@ -2152,7 +2188,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
             that, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 58, port: port_);
+            funcId: 59, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_self_service_login_phase_dto,
@@ -2180,7 +2216,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
             that, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 59, port: port_);
+            funcId: 60, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_self_service_devices_result_dto,
@@ -2207,7 +2243,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
             that, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 60, port: port_);
+            funcId: 61, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_self_service_usage_result_dto,
@@ -2235,7 +2271,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             that, serializer);
         sse_encode_second_factor_method_dto(method, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 61, port: port_);
+            funcId: 62, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_identity_login_result_dto,
@@ -2263,7 +2299,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             that, serializer);
         sse_encode_service_hall_read_policy_dto(policy, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 62, port: port_);
+            funcId: 63, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_service_hall_pending_result_dto,
@@ -2295,7 +2331,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_String(referenceId, serializer);
         sse_encode_service_hall_read_policy_dto(policy, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 63, port: port_);
+            funcId: 64, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_service_hall_phase_details_result_dto,
@@ -2325,7 +2361,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             that, serializer);
         sse_encode_service_hall_read_policy_dto(policy, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 64, port: port_);
+            funcId: 65, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_service_hall_directory_result_dto,
@@ -2356,7 +2392,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_service_hall_task_view_dto(view, serializer);
         sse_encode_service_hall_read_policy_dto(policy, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 65, port: port_);
+            funcId: 66, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_service_hall_task_list_result_dto,
@@ -2385,7 +2421,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             that, serializer);
         sse_encode_String(username, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 66, port: port_);
+            funcId: 67, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_self_service_captcha_dto,
@@ -2419,7 +2455,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_String(password, serializer);
         sse_encode_bool(rememberCredentials, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 67, port: port_);
+            funcId: 68, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_self_service_captcha_dto,
@@ -2450,7 +2486,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_second_factor_method_dto(method, serializer);
         sse_encode_String(code, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 68, port: port_);
+            funcId: 69, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_identity_login_result_dto,
@@ -2482,7 +2518,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_String(answer, serializer);
         sse_encode_opt_String(smsCode, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 69, port: port_);
+            funcId: 70, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_self_service_login_result_dto,
@@ -2519,7 +2555,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_network_access_method_dto(method, serializer);
         sse_encode_opt_String(password, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 70, port: port_);
+            funcId: 71, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_network_profile_dto,
@@ -2546,7 +2582,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerNetworkProfilePasswordHandle(
             that, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 71, port: port_);
+            funcId: 72, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_String,
@@ -2574,7 +2610,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPreparedNetworkProfile(
             that, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 72, port: port_);
+            funcId: 73, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_network_profile_fill_dto,
@@ -2600,7 +2636,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         sse_encode_String(username, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 73, port: port_);
+            funcId: 74, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_opt_box_autoadd_login_stage_dto,
@@ -2857,6 +2893,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  OverviewScheduleDto dco_decode_box_autoadd_overview_schedule_dto(
+      dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_overview_schedule_dto(raw);
+  }
+
+  @protected
   int dco_decode_box_autoadd_u_32(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as int;
@@ -3074,6 +3117,37 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       grade: dco_decode_String(arr[2]),
       gradePoint: dco_decode_opt_box_autoadd_f_64(arr[3]),
       semester: dco_decode_String(arr[4]),
+    );
+  }
+
+  @protected
+  DailyOverviewDto dco_decode_daily_overview_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 9)
+      throw Exception('unexpected arr length: expect 9 but see ${arr.length}');
+    return DailyOverviewDto(
+      date: dco_decode_String(arr[0]),
+      semester: dco_decode_opt_String(arr[1]),
+      courseCount: dco_decode_u_32(arr[2]),
+      pendingTodoCount: dco_decode_u_32(arr[3]),
+      completedTodoCount: dco_decode_u_32(arr[4]),
+      todaySchedule: dco_decode_list_overview_schedule_dto(arr[5]),
+      upcomingTodos: dco_decode_list_overview_todo_dto(arr[6]),
+      nextSchedule: dco_decode_opt_box_autoadd_overview_schedule_dto(arr[7]),
+      sectionFailures: dco_decode_overview_section_failures_dto(arr[8]),
+    );
+  }
+
+  @protected
+  DailyOverviewResultDto dco_decode_daily_overview_result_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return DailyOverviewResultDto(
+      data: dco_decode_daily_overview_dto(arr[0]),
+      metadata: dco_decode_read_metadata_dto(arr[1]),
     );
   }
 
@@ -4022,6 +4096,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<OverviewScheduleDto> dco_decode_list_overview_schedule_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>)
+        .map(dco_decode_overview_schedule_dto)
+        .toList();
+  }
+
+  @protected
+  List<OverviewTodoDto> dco_decode_list_overview_todo_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_overview_todo_dto).toList();
+  }
+
+  @protected
   Uint32List dco_decode_list_prim_u_32_strict(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as Uint32List;
@@ -4366,6 +4454,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  OverviewScheduleDto? dco_decode_opt_box_autoadd_overview_schedule_dto(
+      dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null
+        ? null
+        : dco_decode_box_autoadd_overview_schedule_dto(raw);
+  }
+
+  @protected
   int? dco_decode_opt_box_autoadd_u_32(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_u_32(raw);
@@ -4375,6 +4472,56 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   BigInt? dco_decode_opt_box_autoadd_u_64(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_u_64(raw);
+  }
+
+  @protected
+  OverviewScheduleDto dco_decode_overview_schedule_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+    return OverviewScheduleDto(
+      title: dco_decode_String(arr[0]),
+      kind: dco_decode_overview_schedule_kind_dto(arr[1]),
+      startsAtUtc: dco_decode_String(arr[2]),
+      endsAtUtc: dco_decode_opt_String(arr[3]),
+      allDay: dco_decode_bool(arr[4]),
+      location: dco_decode_opt_String(arr[5]),
+    );
+  }
+
+  @protected
+  OverviewScheduleKindDto dco_decode_overview_schedule_kind_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return OverviewScheduleKindDto.values[raw as int];
+  }
+
+  @protected
+  OverviewSectionFailuresDto dco_decode_overview_section_failures_dto(
+      dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    return OverviewSectionFailuresDto(
+      courses: dco_decode_bool(arr[0]),
+      schedule: dco_decode_bool(arr[1]),
+      todos: dco_decode_bool(arr[2]),
+      services: dco_decode_bool(arr[3]),
+      updates: dco_decode_bool(arr[4]),
+    );
+  }
+
+  @protected
+  OverviewTodoDto dco_decode_overview_todo_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return OverviewTodoDto(
+      title: dco_decode_String(arr[0]),
+      dueAtUtc: dco_decode_opt_String(arr[1]),
+    );
   }
 
   @protected
@@ -5127,6 +5274,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  OverviewScheduleDto sse_decode_box_autoadd_overview_schedule_dto(
+      SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_overview_schedule_dto(deserializer));
+  }
+
+  @protected
   int sse_decode_box_autoadd_u_32(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_u_32(deserializer));
@@ -5346,6 +5500,41 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         grade: var_grade,
         gradePoint: var_gradePoint,
         semester: var_semester);
+  }
+
+  @protected
+  DailyOverviewDto sse_decode_daily_overview_dto(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_date = sse_decode_String(deserializer);
+    var var_semester = sse_decode_opt_String(deserializer);
+    var var_courseCount = sse_decode_u_32(deserializer);
+    var var_pendingTodoCount = sse_decode_u_32(deserializer);
+    var var_completedTodoCount = sse_decode_u_32(deserializer);
+    var var_todaySchedule = sse_decode_list_overview_schedule_dto(deserializer);
+    var var_upcomingTodos = sse_decode_list_overview_todo_dto(deserializer);
+    var var_nextSchedule =
+        sse_decode_opt_box_autoadd_overview_schedule_dto(deserializer);
+    var var_sectionFailures =
+        sse_decode_overview_section_failures_dto(deserializer);
+    return DailyOverviewDto(
+        date: var_date,
+        semester: var_semester,
+        courseCount: var_courseCount,
+        pendingTodoCount: var_pendingTodoCount,
+        completedTodoCount: var_completedTodoCount,
+        todaySchedule: var_todaySchedule,
+        upcomingTodos: var_upcomingTodos,
+        nextSchedule: var_nextSchedule,
+        sectionFailures: var_sectionFailures);
+  }
+
+  @protected
+  DailyOverviewResultDto sse_decode_daily_overview_result_dto(
+      SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_data = sse_decode_daily_overview_dto(deserializer);
+    var var_metadata = sse_decode_read_metadata_dto(deserializer);
+    return DailyOverviewResultDto(data: var_data, metadata: var_metadata);
   }
 
   @protected
@@ -6377,6 +6566,32 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<OverviewScheduleDto> sse_decode_list_overview_schedule_dto(
+      SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <OverviewScheduleDto>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_overview_schedule_dto(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<OverviewTodoDto> sse_decode_list_overview_todo_dto(
+      SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <OverviewTodoDto>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_overview_todo_dto(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
   Uint32List sse_decode_list_prim_u_32_strict(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var len_ = sse_decode_i_32(deserializer);
@@ -6769,6 +6984,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  OverviewScheduleDto? sse_decode_opt_box_autoadd_overview_schedule_dto(
+      SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_overview_schedule_dto(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
   int? sse_decode_opt_box_autoadd_u_32(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -6788,6 +7015,58 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     } else {
       return null;
     }
+  }
+
+  @protected
+  OverviewScheduleDto sse_decode_overview_schedule_dto(
+      SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_title = sse_decode_String(deserializer);
+    var var_kind = sse_decode_overview_schedule_kind_dto(deserializer);
+    var var_startsAtUtc = sse_decode_String(deserializer);
+    var var_endsAtUtc = sse_decode_opt_String(deserializer);
+    var var_allDay = sse_decode_bool(deserializer);
+    var var_location = sse_decode_opt_String(deserializer);
+    return OverviewScheduleDto(
+        title: var_title,
+        kind: var_kind,
+        startsAtUtc: var_startsAtUtc,
+        endsAtUtc: var_endsAtUtc,
+        allDay: var_allDay,
+        location: var_location);
+  }
+
+  @protected
+  OverviewScheduleKindDto sse_decode_overview_schedule_kind_dto(
+      SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return OverviewScheduleKindDto.values[inner];
+  }
+
+  @protected
+  OverviewSectionFailuresDto sse_decode_overview_section_failures_dto(
+      SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_courses = sse_decode_bool(deserializer);
+    var var_schedule = sse_decode_bool(deserializer);
+    var var_todos = sse_decode_bool(deserializer);
+    var var_services = sse_decode_bool(deserializer);
+    var var_updates = sse_decode_bool(deserializer);
+    return OverviewSectionFailuresDto(
+        courses: var_courses,
+        schedule: var_schedule,
+        todos: var_todos,
+        services: var_services,
+        updates: var_updates);
+  }
+
+  @protected
+  OverviewTodoDto sse_decode_overview_todo_dto(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_title = sse_decode_String(deserializer);
+    var var_dueAtUtc = sse_decode_opt_String(deserializer);
+    return OverviewTodoDto(title: var_title, dueAtUtc: var_dueAtUtc);
   }
 
   @protected
@@ -7532,6 +7811,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_overview_schedule_dto(
+      OverviewScheduleDto self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_overview_schedule_dto(self, serializer);
+  }
+
+  @protected
   void sse_encode_box_autoadd_u_32(int self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_u_32(self, serializer);
@@ -7697,6 +7983,30 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.grade, serializer);
     sse_encode_opt_box_autoadd_f_64(self.gradePoint, serializer);
     sse_encode_String(self.semester, serializer);
+  }
+
+  @protected
+  void sse_encode_daily_overview_dto(
+      DailyOverviewDto self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.date, serializer);
+    sse_encode_opt_String(self.semester, serializer);
+    sse_encode_u_32(self.courseCount, serializer);
+    sse_encode_u_32(self.pendingTodoCount, serializer);
+    sse_encode_u_32(self.completedTodoCount, serializer);
+    sse_encode_list_overview_schedule_dto(self.todaySchedule, serializer);
+    sse_encode_list_overview_todo_dto(self.upcomingTodos, serializer);
+    sse_encode_opt_box_autoadd_overview_schedule_dto(
+        self.nextSchedule, serializer);
+    sse_encode_overview_section_failures_dto(self.sectionFailures, serializer);
+  }
+
+  @protected
+  void sse_encode_daily_overview_result_dto(
+      DailyOverviewResultDto self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_daily_overview_dto(self.data, serializer);
+    sse_encode_read_metadata_dto(self.metadata, serializer);
   }
 
   @protected
@@ -8500,6 +8810,26 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_list_overview_schedule_dto(
+      List<OverviewScheduleDto> self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_overview_schedule_dto(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_overview_todo_dto(
+      List<OverviewTodoDto> self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_overview_todo_dto(item, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_list_prim_u_32_strict(
       Uint32List self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
@@ -8825,6 +9155,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_opt_box_autoadd_overview_schedule_dto(
+      OverviewScheduleDto? self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_overview_schedule_dto(self, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_opt_box_autoadd_u_32(int? self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -8842,6 +9183,44 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     if (self != null) {
       sse_encode_box_autoadd_u_64(self, serializer);
     }
+  }
+
+  @protected
+  void sse_encode_overview_schedule_dto(
+      OverviewScheduleDto self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.title, serializer);
+    sse_encode_overview_schedule_kind_dto(self.kind, serializer);
+    sse_encode_String(self.startsAtUtc, serializer);
+    sse_encode_opt_String(self.endsAtUtc, serializer);
+    sse_encode_bool(self.allDay, serializer);
+    sse_encode_opt_String(self.location, serializer);
+  }
+
+  @protected
+  void sse_encode_overview_schedule_kind_dto(
+      OverviewScheduleKindDto self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
+  void sse_encode_overview_section_failures_dto(
+      OverviewSectionFailuresDto self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_bool(self.courses, serializer);
+    sse_encode_bool(self.schedule, serializer);
+    sse_encode_bool(self.todos, serializer);
+    sse_encode_bool(self.services, serializer);
+    sse_encode_bool(self.updates, serializer);
+  }
+
+  @protected
+  void sse_encode_overview_todo_dto(
+      OverviewTodoDto self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.title, serializer);
+    sse_encode_opt_String(self.dueAtUtc, serializer);
   }
 
   @protected
@@ -9617,6 +9996,13 @@ class ClientHandleImpl extends RustOpaque implements ClientHandle {
       RustLib.instance.api.crateSdkApiClientHandleNewsSubscriptions(
         that: this,
       );
+
+  /// Reads a validated, account-bound campus day. CacheOnly performs no
+  /// network request and a missing cache yields an explicit CacheMiss.
+  Future<DailyOverviewResultDto> overviewDay(
+          {required String date, required ReadPolicyDto policy}) =>
+      RustLib.instance.api.crateSdkApiClientHandleOverviewDay(
+          that: this, date: date, policy: policy);
 
   /// Prepares non-secret form fields and a Client/version-bound handle.
   Future<PreparedNetworkProfile> prepareNetworkProfileFill(

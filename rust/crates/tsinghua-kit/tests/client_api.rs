@@ -8,6 +8,8 @@ use tsinghua_kit::{
     config::{ClientCachePolicy, CredentialStoragePolicy, IdentitySessionStoragePolicy},
     error::{ErrorCode, Service},
     learn::{CourseDiscussion, CourseFile, CourseFileCategory, CourseFileRef, CourseRef},
+    overview::NaiveDate,
+    read::ReadPolicy,
     self_service::SelfServiceClient,
     service_hall::PendingReadPolicy,
 };
@@ -104,6 +106,24 @@ async fn cache_only_service_hall_read_fails_explicitly_without_a_session() {
 
     assert_eq!(error.service(), Service::ServiceHall);
     assert_eq!(error.code(), ErrorCode::SessionRequired);
+}
+
+#[tokio::test]
+async fn public_overview_cache_only_miss_does_not_require_login() {
+    let mut client = Client::builder().build().unwrap();
+    let date = NaiveDate::from_ymd_opt(2026, 9, 26).unwrap();
+    let error = client
+        .overview()
+        .day(date, ReadPolicy::CacheOnly)
+        .await
+        .unwrap_err();
+
+    assert_eq!(error.service(), Service::Overview);
+    assert_eq!(error.code(), ErrorCode::CacheMiss);
+    assert_eq!(
+        client.auth().status().identity().state(),
+        AccountAuthState::SignedOut
+    );
 }
 
 #[tokio::test]

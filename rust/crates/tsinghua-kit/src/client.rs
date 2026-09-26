@@ -43,7 +43,8 @@ use tsinghua_kit_engine::{
         ArticleDetail, ArticleRef, NewsCatalog, NewsFavorites, NewsPage, NewsQuery,
         NewsSubscriptionRef, NewsSubscriptions,
     },
-    read::ReadResult,
+    overview_api::{DailyOverview, OverviewClient as EngineOverviewClient},
+    read::{ReadPolicy, ReadResult},
     registrar_api::{ExamReport, GradeReport, SemesterSchedule},
     self_service::{AccountProfile, DeviceRef, OnlineDevice, UsageBalance},
     service_hall::{
@@ -231,6 +232,13 @@ impl Client {
     pub fn registrar(&mut self) -> RegistrarClient<'_> {
         RegistrarClient {
             inner: self.inner.registrar(),
+        }
+    }
+
+    /// Borrows the account-bound daily overview from this Client.
+    pub fn overview(&mut self) -> OverviewClient<'_> {
+        OverviewClient {
+            inner: self.inner.overview(),
         }
     }
 
@@ -551,6 +559,23 @@ pub struct LearnClient<'client> {
 /// Schedule, grade, and examination reads through the shared Rust runtime.
 pub struct RegistrarClient<'client> {
     inner: EngineRegistrarClient<'client>,
+}
+
+/// A daily academic summary built inside the same authenticated runtime.
+pub struct OverviewClient<'client> {
+    inner: EngineOverviewClient<'client>,
+}
+
+impl OverviewClient<'_> {
+    /// Reads a campus date using the specified cache policy. Cache-only reads
+    /// never send a request. A partial result retains section-failure flags.
+    pub async fn day(
+        &mut self,
+        date: chrono::NaiveDate,
+        policy: ReadPolicy,
+    ) -> Result<ReadResult<DailyOverview>, Error> {
+        self.inner.day(date, policy).await
+    }
 }
 
 /// Library directory, opening-window, seat, and socket reads.

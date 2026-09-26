@@ -8,6 +8,7 @@ import 'package:tsinghua_kit/learn.dart' as learn;
 import 'package:tsinghua_kit/library.dart' as library_api;
 import 'package:tsinghua_kit/network.dart' as network;
 import 'package:tsinghua_kit/news.dart' as news;
+import 'package:tsinghua_kit/overview.dart' as overview;
 import 'package:tsinghua_kit/read.dart' as read;
 import 'package:tsinghua_kit/registrar_calendar.dart' as calendar;
 import 'package:tsinghua_kit/self_service.dart' as self_service;
@@ -71,5 +72,8 @@ void main() {
     expect(_publicType<auth.SelfServiceAuthClient>(), isNull);
     expect(_publicType<electricity.ElectricityClient>(), isNull);
     expect(_publicType<read.ReadResult<int>>(), isNull);
+    expect(_publicType<overview.OverviewClient>(), isNull);
+    expect(_publicType<overview.DailyOverview>(), isNull);
+    expect(overview.OverviewScheduleKind.course.name, 'course');
   });
 }

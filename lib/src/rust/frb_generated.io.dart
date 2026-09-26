@@ -128,6 +128,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   LoginStageDto dco_decode_box_autoadd_login_stage_dto(dynamic raw);
 
   @protected
+  OverviewScheduleDto dco_decode_box_autoadd_overview_schedule_dto(dynamic raw);
+
+  @protected
   int dco_decode_box_autoadd_u_32(dynamic raw);
 
   @protected
@@ -189,6 +192,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   CourseGradeDto dco_decode_course_grade_dto(dynamic raw);
+
+  @protected
+  DailyOverviewDto dco_decode_daily_overview_dto(dynamic raw);
+
+  @protected
+  DailyOverviewResultDto dco_decode_daily_overview_result_dto(dynamic raw);
 
   @protected
   ElectricityPaymentHistoryDto dco_decode_electricity_payment_history_dto(
@@ -487,6 +496,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<NewsSubscriptionDto> dco_decode_list_news_subscription_dto(dynamic raw);
 
   @protected
+  List<OverviewScheduleDto> dco_decode_list_overview_schedule_dto(dynamic raw);
+
+  @protected
+  List<OverviewTodoDto> dco_decode_list_overview_todo_dto(dynamic raw);
+
+  @protected
   Uint32List dco_decode_list_prim_u_32_strict(dynamic raw);
 
   @protected
@@ -603,10 +618,27 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   LoginStageDto? dco_decode_opt_box_autoadd_login_stage_dto(dynamic raw);
 
   @protected
+  OverviewScheduleDto? dco_decode_opt_box_autoadd_overview_schedule_dto(
+      dynamic raw);
+
+  @protected
   int? dco_decode_opt_box_autoadd_u_32(dynamic raw);
 
   @protected
   BigInt? dco_decode_opt_box_autoadd_u_64(dynamic raw);
+
+  @protected
+  OverviewScheduleDto dco_decode_overview_schedule_dto(dynamic raw);
+
+  @protected
+  OverviewScheduleKindDto dco_decode_overview_schedule_kind_dto(dynamic raw);
+
+  @protected
+  OverviewSectionFailuresDto dco_decode_overview_section_failures_dto(
+      dynamic raw);
+
+  @protected
+  OverviewTodoDto dco_decode_overview_todo_dto(dynamic raw);
 
   @protected
   PortalAddressRegistrationDto dco_decode_portal_address_registration_dto(
@@ -869,6 +901,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
       SseDeserializer deserializer);
 
   @protected
+  OverviewScheduleDto sse_decode_box_autoadd_overview_schedule_dto(
+      SseDeserializer deserializer);
+
+  @protected
   int sse_decode_box_autoadd_u_32(SseDeserializer deserializer);
 
   @protected
@@ -939,6 +975,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   CourseGradeDto sse_decode_course_grade_dto(SseDeserializer deserializer);
+
+  @protected
+  DailyOverviewDto sse_decode_daily_overview_dto(SseDeserializer deserializer);
+
+  @protected
+  DailyOverviewResultDto sse_decode_daily_overview_result_dto(
+      SseDeserializer deserializer);
 
   @protected
   ElectricityPaymentHistoryDto sse_decode_electricity_payment_history_dto(
@@ -1287,6 +1330,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
       SseDeserializer deserializer);
 
   @protected
+  List<OverviewScheduleDto> sse_decode_list_overview_schedule_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  List<OverviewTodoDto> sse_decode_list_overview_todo_dto(
+      SseDeserializer deserializer);
+
+  @protected
   Uint32List sse_decode_list_prim_u_32_strict(SseDeserializer deserializer);
 
   @protected
@@ -1418,10 +1469,29 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
       SseDeserializer deserializer);
 
   @protected
+  OverviewScheduleDto? sse_decode_opt_box_autoadd_overview_schedule_dto(
+      SseDeserializer deserializer);
+
+  @protected
   int? sse_decode_opt_box_autoadd_u_32(SseDeserializer deserializer);
 
   @protected
   BigInt? sse_decode_opt_box_autoadd_u_64(SseDeserializer deserializer);
+
+  @protected
+  OverviewScheduleDto sse_decode_overview_schedule_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  OverviewScheduleKindDto sse_decode_overview_schedule_kind_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  OverviewSectionFailuresDto sse_decode_overview_section_failures_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  OverviewTodoDto sse_decode_overview_todo_dto(SseDeserializer deserializer);
 
   @protected
   PortalAddressRegistrationDto sse_decode_portal_address_registration_dto(
@@ -1711,6 +1781,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
       LoginStageDto self, SseSerializer serializer);
 
   @protected
+  void sse_encode_box_autoadd_overview_schedule_dto(
+      OverviewScheduleDto self, SseSerializer serializer);
+
+  @protected
   void sse_encode_box_autoadd_u_32(int self, SseSerializer serializer);
 
   @protected
@@ -1783,6 +1857,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_course_grade_dto(
       CourseGradeDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_daily_overview_dto(
+      DailyOverviewDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_daily_overview_result_dto(
+      DailyOverviewResultDto self, SseSerializer serializer);
 
   @protected
   void sse_encode_electricity_payment_history_dto(
@@ -2133,6 +2215,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
       List<NewsSubscriptionDto> self, SseSerializer serializer);
 
   @protected
+  void sse_encode_list_overview_schedule_dto(
+      List<OverviewScheduleDto> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_overview_todo_dto(
+      List<OverviewTodoDto> self, SseSerializer serializer);
+
+  @protected
   void sse_encode_list_prim_u_32_strict(
       Uint32List self, SseSerializer serializer);
 
@@ -2268,10 +2358,30 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
       LoginStageDto? self, SseSerializer serializer);
 
   @protected
+  void sse_encode_opt_box_autoadd_overview_schedule_dto(
+      OverviewScheduleDto? self, SseSerializer serializer);
+
+  @protected
   void sse_encode_opt_box_autoadd_u_32(int? self, SseSerializer serializer);
 
   @protected
   void sse_encode_opt_box_autoadd_u_64(BigInt? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_overview_schedule_dto(
+      OverviewScheduleDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_overview_schedule_kind_dto(
+      OverviewScheduleKindDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_overview_section_failures_dto(
+      OverviewSectionFailuresDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_overview_todo_dto(
+      OverviewTodoDto self, SseSerializer serializer);
 
   @protected
   void sse_encode_portal_address_registration_dto(

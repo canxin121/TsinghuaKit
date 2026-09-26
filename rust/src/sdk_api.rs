@@ -49,6 +49,7 @@ use tsinghua_kit_sdk::{
         ArticleDetail, ArticleRef, NewsArticle, NewsCatalog, NewsCatalogCoverage, NewsChannelRef,
         NewsFavorites, NewsPage, NewsQuery, NewsSourceRef, NewsSubscriptionRef, NewsSubscriptions,
     },
+    overview::{DailyOverview, OverviewSchedule, OverviewScheduleKind, OverviewTodo},
     read::{
         CacheFreshness, IncompleteReason, ReadCoverage, ReadMetadata, ReadPolicy, ReadResult,
         ReadSource,
@@ -351,6 +352,162 @@ impl From<&ReadMetadata> for ReadMetadataDto {
             coverage: value.coverage().into(),
             refresh_failure_code: value.refresh_failure().map(|code| code.as_str().to_owned()),
         }
+    }
+}
+
+/// Stable categories for a verified daily overview schedule row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OverviewScheduleKindDto {
+    Course,
+    Exam,
+    Event,
+    Deadline,
+    Reminder,
+    Unknown,
+}
+
+impl From<OverviewScheduleKind> for OverviewScheduleKindDto {
+    fn from(value: OverviewScheduleKind) -> Self {
+        match value {
+            OverviewScheduleKind::Course => Self::Course,
+            OverviewScheduleKind::Exam => Self::Exam,
+            OverviewScheduleKind::Event => Self::Event,
+            OverviewScheduleKind::Deadline => Self::Deadline,
+            OverviewScheduleKind::Reminder => Self::Reminder,
+            _ => Self::Unknown,
+        }
+    }
+}
+
+/// One schedule row supplied by the Rust overview resolver.
+#[derive(Clone, PartialEq, Eq)]
+pub struct OverviewScheduleDto {
+    pub title: String,
+    pub kind: OverviewScheduleKindDto,
+    pub starts_at_utc: String,
+    pub ends_at_utc: Option<String>,
+    pub all_day: bool,
+    pub location: Option<String>,
+}
+
+impl fmt::Debug for OverviewScheduleDto {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("OverviewScheduleDto")
+            .field("kind", &self.kind)
+            .field("title_present", &!self.title.is_empty())
+            .finish()
+    }
+}
+
+/// One current Learn assignment in the daily overview.
+#[derive(Clone, PartialEq, Eq)]
+pub struct OverviewTodoDto {
+    pub title: String,
+    pub due_at_utc: Option<String>,
+}
+
+impl fmt::Debug for OverviewTodoDto {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("OverviewTodoDto")
+            .field("title_present", &!self.title.is_empty())
+            .field("due_at_present", &self.due_at_utc.is_some())
+            .finish()
+    }
+}
+
+/// Section-level failure flags; a partial summary is never labeled complete.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OverviewSectionFailuresDto {
+    pub courses: bool,
+    pub schedule: bool,
+    pub todos: bool,
+    pub services: bool,
+    pub updates: bool,
+}
+
+/// One account-bound daily summary without protocol selectors.
+#[derive(Clone, PartialEq, Eq)]
+pub struct DailyOverviewDto {
+    pub date: String,
+    pub semester: Option<String>,
+    pub course_count: u32,
+    pub pending_todo_count: u32,
+    pub completed_todo_count: u32,
+    pub today_schedule: Vec<OverviewScheduleDto>,
+    pub upcoming_todos: Vec<OverviewTodoDto>,
+    pub next_schedule: Option<OverviewScheduleDto>,
+    pub section_failures: OverviewSectionFailuresDto,
+}
+
+impl fmt::Debug for DailyOverviewDto {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("DailyOverviewDto")
+            .field("date", &self.date)
+            .field("schedule_count", &self.today_schedule.len())
+            .field("todo_count", &self.upcoming_todos.len())
+            .field("section_failures", &self.section_failures)
+            .finish()
+    }
+}
+
+/// A daily summary with source, freshness, and completeness evidence.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DailyOverviewResultDto {
+    pub data: DailyOverviewDto,
+    pub metadata: ReadMetadataDto,
+}
+
+fn overview_schedule_dto(value: &OverviewSchedule) -> OverviewScheduleDto {
+    OverviewScheduleDto {
+        title: value.title().to_owned(),
+        kind: value.kind().into(),
+        starts_at_utc: value.starts_at().to_rfc3339(),
+        ends_at_utc: value.ends_at().map(|instant| instant.to_rfc3339()),
+        all_day: value.is_all_day(),
+        location: value.location().map(ToOwned::to_owned),
+    }
+}
+
+fn overview_todo_dto(value: &OverviewTodo) -> OverviewTodoDto {
+    OverviewTodoDto {
+        title: value.title().to_owned(),
+        due_at_utc: value.due_at().map(|instant| instant.to_rfc3339()),
+    }
+}
+
+fn daily_overview_result(value: ReadResult<DailyOverview>) -> DailyOverviewResultDto {
+    let (overview, metadata) = value.into_parts();
+    let failures = overview.section_failures();
+    DailyOverviewResultDto {
+        data: DailyOverviewDto {
+            date: overview.date().to_string(),
+            semester: overview.semester().map(ToOwned::to_owned),
+            course_count: overview.course_count(),
+            pending_todo_count: overview.pending_todo_count(),
+            completed_todo_count: overview.completed_todo_count(),
+            today_schedule: overview
+                .today_schedule()
+                .iter()
+                .map(overview_schedule_dto)
+                .collect(),
+            upcoming_todos: overview
+                .upcoming_todos()
+                .iter()
+                .map(overview_todo_dto)
+                .collect(),
+            next_schedule: overview.next_schedule().map(overview_schedule_dto),
+            section_failures: OverviewSectionFailuresDto {
+                courses: failures.courses,
+                schedule: failures.schedule,
+                todos: failures.todos,
+                services: failures.services,
+                updates: failures.updates,
+            },
+        },
+        metadata: ReadMetadataDto::from(&metadata),
     }
 }
 
@@ -3547,6 +3704,22 @@ impl ClientHandle {
         map_auth_status(self.inner.auth().status())
     }
 
+    /// Reads a validated, account-bound campus day. CacheOnly performs no
+    /// network request and a missing cache yields an explicit CacheMiss.
+    pub async fn overview_day(
+        &mut self,
+        date: String,
+        policy: ReadPolicyDto,
+    ) -> Result<DailyOverviewResultDto, SdkErrorDto> {
+        let parsed = chrono::NaiveDate::parse_from_str(&date, "%Y-%m-%d")
+            .map_err(|_| invalid_input("overview"))?;
+        if parsed.to_string() != date {
+            return Err(invalid_input("overview"));
+        }
+        let result = self.inner.overview().day(parsed, policy.into()).await?;
+        Ok(daily_overview_result(result))
+    }
+
     /// Reads the current Identity second-factor interaction without starting
     /// or replaying a login operation.
     pub fn identity_interaction(&mut self) -> Result<Option<IdentityLoginResultDto>, SdkErrorDto> {
@@ -4641,6 +4814,28 @@ mod tests {
 
     fn client() -> ClientHandle {
         ClientHandle::new(None, None, None, None, None, None, None).expect("memory-only client")
+    }
+
+    #[tokio::test]
+    async fn overview_bridge_validates_canonical_day_and_cache_miss() {
+        let mut client = client();
+        let invalid = client
+            .overview_day("2026-9-26".to_owned(), ReadPolicyDto::CacheOnly)
+            .await
+            .unwrap_err();
+        assert_eq!(invalid.service, "overview");
+        assert_eq!(invalid.code, "invalid_input");
+
+        let miss = client
+            .overview_day("2026-09-26".to_owned(), ReadPolicyDto::CacheOnly)
+            .await
+            .unwrap_err();
+        assert_eq!(miss.service, "overview");
+        assert_eq!(miss.code, "cache_miss");
+        assert_eq!(
+            client.auth_status().identity.state,
+            AccountStateDto::SignedOut
+        );
     }
 
     #[test]

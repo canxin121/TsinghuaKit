@@ -40,7 +40,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1973216546;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -690782467;
 
 // Section: executor
 
@@ -2922,6 +2922,68 @@ fn wire__crate__sdk_api__ClientHandle_news_subscriptions_impl(
         },
     )
 }
+fn wire__crate__sdk_api__ClientHandle_overview_day_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "ClientHandle_overview_day",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<ClientHandle>,
+            >>::sse_decode(&mut deserializer);
+            let api_date = <String>::sse_decode(&mut deserializer);
+            let api_policy = <crate::sdk_api::ReadPolicyDto>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, crate::sdk_api::SdkErrorDto>(
+                    (move || async move {
+                        let mut api_that_guard = None;
+                        let decode_indices_ =
+                            flutter_rust_bridge::for_generated::lockable_compute_decode_order(
+                                vec![flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                    &api_that, 0, true,
+                                )],
+                            );
+                        for i in decode_indices_ {
+                            match i {
+                                0 => {
+                                    api_that_guard =
+                                        Some(api_that.lockable_decode_async_ref_mut().await)
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
+                        let mut api_that_guard = api_that_guard.unwrap();
+                        let output_ok = crate::sdk_api::ClientHandle::overview_day(
+                            &mut *api_that_guard,
+                            api_date,
+                            api_policy,
+                        )
+                        .await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
 fn wire__crate__sdk_api__ClientHandle_prepare_network_profile_fill_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -4766,6 +4828,48 @@ impl SseDecode for crate::sdk_api::CourseGradeDto {
     }
 }
 
+impl SseDecode for crate::sdk_api::DailyOverviewDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_date = <String>::sse_decode(deserializer);
+        let mut var_semester = <Option<String>>::sse_decode(deserializer);
+        let mut var_courseCount = <u32>::sse_decode(deserializer);
+        let mut var_pendingTodoCount = <u32>::sse_decode(deserializer);
+        let mut var_completedTodoCount = <u32>::sse_decode(deserializer);
+        let mut var_todaySchedule =
+            <Vec<crate::sdk_api::OverviewScheduleDto>>::sse_decode(deserializer);
+        let mut var_upcomingTodos =
+            <Vec<crate::sdk_api::OverviewTodoDto>>::sse_decode(deserializer);
+        let mut var_nextSchedule =
+            <Option<crate::sdk_api::OverviewScheduleDto>>::sse_decode(deserializer);
+        let mut var_sectionFailures =
+            <crate::sdk_api::OverviewSectionFailuresDto>::sse_decode(deserializer);
+        return crate::sdk_api::DailyOverviewDto {
+            date: var_date,
+            semester: var_semester,
+            course_count: var_courseCount,
+            pending_todo_count: var_pendingTodoCount,
+            completed_todo_count: var_completedTodoCount,
+            today_schedule: var_todaySchedule,
+            upcoming_todos: var_upcomingTodos,
+            next_schedule: var_nextSchedule,
+            section_failures: var_sectionFailures,
+        };
+    }
+}
+
+impl SseDecode for crate::sdk_api::DailyOverviewResultDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_data = <crate::sdk_api::DailyOverviewDto>::sse_decode(deserializer);
+        let mut var_metadata = <crate::sdk_api::ReadMetadataDto>::sse_decode(deserializer);
+        return crate::sdk_api::DailyOverviewResultDto {
+            data: var_data,
+            metadata: var_metadata,
+        };
+    }
+}
+
 impl SseDecode for crate::sdk_api::ElectricityPaymentHistoryDto {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -5955,6 +6059,32 @@ impl SseDecode for Vec<crate::sdk_api::NewsSubscriptionDto> {
     }
 }
 
+impl SseDecode for Vec<crate::sdk_api::OverviewScheduleDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::sdk_api::OverviewScheduleDto>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::sdk_api::OverviewTodoDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::sdk_api::OverviewTodoDto>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<u32> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -6409,6 +6539,19 @@ impl SseDecode for Option<crate::sdk_api::LoginStageDto> {
     }
 }
 
+impl SseDecode for Option<crate::sdk_api::OverviewScheduleDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::sdk_api::OverviewScheduleDto>::sse_decode(
+                deserializer,
+            ));
+        } else {
+            return None;
+        }
+    }
+}
+
 impl SseDecode for Option<u32> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -6428,6 +6571,72 @@ impl SseDecode for Option<u64> {
         } else {
             return None;
         }
+    }
+}
+
+impl SseDecode for crate::sdk_api::OverviewScheduleDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_title = <String>::sse_decode(deserializer);
+        let mut var_kind = <crate::sdk_api::OverviewScheduleKindDto>::sse_decode(deserializer);
+        let mut var_startsAtUtc = <String>::sse_decode(deserializer);
+        let mut var_endsAtUtc = <Option<String>>::sse_decode(deserializer);
+        let mut var_allDay = <bool>::sse_decode(deserializer);
+        let mut var_location = <Option<String>>::sse_decode(deserializer);
+        return crate::sdk_api::OverviewScheduleDto {
+            title: var_title,
+            kind: var_kind,
+            starts_at_utc: var_startsAtUtc,
+            ends_at_utc: var_endsAtUtc,
+            all_day: var_allDay,
+            location: var_location,
+        };
+    }
+}
+
+impl SseDecode for crate::sdk_api::OverviewScheduleKindDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::sdk_api::OverviewScheduleKindDto::Course,
+            1 => crate::sdk_api::OverviewScheduleKindDto::Exam,
+            2 => crate::sdk_api::OverviewScheduleKindDto::Event,
+            3 => crate::sdk_api::OverviewScheduleKindDto::Deadline,
+            4 => crate::sdk_api::OverviewScheduleKindDto::Reminder,
+            5 => crate::sdk_api::OverviewScheduleKindDto::Unknown,
+            _ => unreachable!("Invalid variant for OverviewScheduleKindDto: {}", inner),
+        };
+    }
+}
+
+impl SseDecode for crate::sdk_api::OverviewSectionFailuresDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_courses = <bool>::sse_decode(deserializer);
+        let mut var_schedule = <bool>::sse_decode(deserializer);
+        let mut var_todos = <bool>::sse_decode(deserializer);
+        let mut var_services = <bool>::sse_decode(deserializer);
+        let mut var_updates = <bool>::sse_decode(deserializer);
+        return crate::sdk_api::OverviewSectionFailuresDto {
+            courses: var_courses,
+            schedule: var_schedule,
+            todos: var_todos,
+            services: var_services,
+            updates: var_updates,
+        };
+    }
+}
+
+impl SseDecode for crate::sdk_api::OverviewTodoDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_title = <String>::sse_decode(deserializer);
+        let mut var_dueAtUtc = <Option<String>>::sse_decode(deserializer);
+        return crate::sdk_api::OverviewTodoDto {
+            title: var_title,
+            due_at_utc: var_dueAtUtc,
+        };
     }
 }
 
@@ -7369,145 +7578,148 @@ fn pde_ffi_dispatcher_primary_impl(
             rust_vec_len,
             data_len,
         ),
-        50 => wire__crate__sdk_api__ClientHandle_prepare_network_profile_fill_impl(
+        50 => {
+            wire__crate__sdk_api__ClientHandle_overview_day_impl(port, ptr, rust_vec_len, data_len)
+        }
+        51 => wire__crate__sdk_api__ClientHandle_prepare_network_profile_fill_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        51 => wire__crate__sdk_api__ClientHandle_refresh_self_service_captcha_impl(
+        52 => wire__crate__sdk_api__ClientHandle_refresh_self_service_captcha_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        52 => wire__crate__sdk_api__ClientHandle_registrar_exams_impl(
+        53 => wire__crate__sdk_api__ClientHandle_registrar_exams_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        53 => wire__crate__sdk_api__ClientHandle_registrar_grades_impl(
+        54 => wire__crate__sdk_api__ClientHandle_registrar_grades_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        54 => wire__crate__sdk_api__ClientHandle_registrar_semester_schedule_impl(
+        55 => wire__crate__sdk_api__ClientHandle_registrar_semester_schedule_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        55 => wire__crate__sdk_api__ClientHandle_save_network_profile_impl(
+        56 => wire__crate__sdk_api__ClientHandle_save_network_profile_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        56 => wire__crate__sdk_api__ClientHandle_self_service_account_impl(
+        57 => wire__crate__sdk_api__ClientHandle_self_service_account_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        57 => wire__crate__sdk_api__ClientHandle_self_service_disconnect_device_impl(
+        58 => wire__crate__sdk_api__ClientHandle_self_service_disconnect_device_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        58 => wire__crate__sdk_api__ClientHandle_self_service_login_phase_impl(
+        59 => wire__crate__sdk_api__ClientHandle_self_service_login_phase_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        59 => wire__crate__sdk_api__ClientHandle_self_service_online_devices_impl(
+        60 => wire__crate__sdk_api__ClientHandle_self_service_online_devices_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        60 => wire__crate__sdk_api__ClientHandle_self_service_usage_impl(
+        61 => wire__crate__sdk_api__ClientHandle_self_service_usage_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        61 => wire__crate__sdk_api__ClientHandle_send_identity_code_impl(
+        62 => wire__crate__sdk_api__ClientHandle_send_identity_code_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        62 => wire__crate__sdk_api__ClientHandle_service_hall_pending_impl(
+        63 => wire__crate__sdk_api__ClientHandle_service_hall_pending_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        63 => wire__crate__sdk_api__ClientHandle_service_hall_phase_details_impl(
+        64 => wire__crate__sdk_api__ClientHandle_service_hall_phase_details_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        64 => wire__crate__sdk_api__ClientHandle_service_hall_services_impl(
+        65 => wire__crate__sdk_api__ClientHandle_service_hall_services_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        65 => wire__crate__sdk_api__ClientHandle_service_hall_tasks_impl(
+        66 => wire__crate__sdk_api__ClientHandle_service_hall_tasks_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        66 => wire__crate__sdk_api__ClientHandle_start_saved_self_service_login_impl(
+        67 => wire__crate__sdk_api__ClientHandle_start_saved_self_service_login_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        67 => wire__crate__sdk_api__ClientHandle_start_self_service_login_impl(
+        68 => wire__crate__sdk_api__ClientHandle_start_self_service_login_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        68 => wire__crate__sdk_api__ClientHandle_submit_identity_code_impl(
+        69 => wire__crate__sdk_api__ClientHandle_submit_identity_code_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        69 => wire__crate__sdk_api__ClientHandle_submit_self_service_captcha_impl(
+        70 => wire__crate__sdk_api__ClientHandle_submit_self_service_captcha_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        70 => wire__crate__sdk_api__ClientHandle_update_network_profile_impl(
+        71 => wire__crate__sdk_api__ClientHandle_update_network_profile_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        71 => wire__crate__sdk_api__NetworkProfilePasswordHandle_expose_for_form_impl(
+        72 => wire__crate__sdk_api__NetworkProfilePasswordHandle_expose_for_form_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        72 => wire__crate__sdk_api__PreparedNetworkProfile_form_fields_impl(
+        73 => wire__crate__sdk_api__PreparedNetworkProfile_form_fields_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        73 => wire__crate__sdk_api__suggest_identity_login_stage_impl(
+        74 => wire__crate__sdk_api__suggest_identity_login_stage_impl(
             port,
             ptr,
             rust_vec_len,
@@ -8123,6 +8335,55 @@ impl flutter_rust_bridge::IntoIntoDart<crate::sdk_api::CourseGradeDto>
     for crate::sdk_api::CourseGradeDto
 {
     fn into_into_dart(self) -> crate::sdk_api::CourseGradeDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::sdk_api::DailyOverviewDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.date.into_into_dart().into_dart(),
+            self.semester.into_into_dart().into_dart(),
+            self.course_count.into_into_dart().into_dart(),
+            self.pending_todo_count.into_into_dart().into_dart(),
+            self.completed_todo_count.into_into_dart().into_dart(),
+            self.today_schedule.into_into_dart().into_dart(),
+            self.upcoming_todos.into_into_dart().into_dart(),
+            self.next_schedule.into_into_dart().into_dart(),
+            self.section_failures.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::sdk_api::DailyOverviewDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::sdk_api::DailyOverviewDto>
+    for crate::sdk_api::DailyOverviewDto
+{
+    fn into_into_dart(self) -> crate::sdk_api::DailyOverviewDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::sdk_api::DailyOverviewResultDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.data.into_into_dart().into_dart(),
+            self.metadata.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::sdk_api::DailyOverviewResultDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::sdk_api::DailyOverviewResultDto>
+    for crate::sdk_api::DailyOverviewResultDto
+{
+    fn into_into_dart(self) -> crate::sdk_api::DailyOverviewResultDto {
         self
     }
 }
@@ -9750,6 +10011,101 @@ impl flutter_rust_bridge::IntoIntoDart<crate::sdk_api::NewsSubscriptionsResultDt
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::sdk_api::OverviewScheduleDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.title.into_into_dart().into_dart(),
+            self.kind.into_into_dart().into_dart(),
+            self.starts_at_utc.into_into_dart().into_dart(),
+            self.ends_at_utc.into_into_dart().into_dart(),
+            self.all_day.into_into_dart().into_dart(),
+            self.location.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::sdk_api::OverviewScheduleDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::sdk_api::OverviewScheduleDto>
+    for crate::sdk_api::OverviewScheduleDto
+{
+    fn into_into_dart(self) -> crate::sdk_api::OverviewScheduleDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::sdk_api::OverviewScheduleKindDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Course => 0.into_dart(),
+            Self::Exam => 1.into_dart(),
+            Self::Event => 2.into_dart(),
+            Self::Deadline => 3.into_dart(),
+            Self::Reminder => 4.into_dart(),
+            Self::Unknown => 5.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::sdk_api::OverviewScheduleKindDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::sdk_api::OverviewScheduleKindDto>
+    for crate::sdk_api::OverviewScheduleKindDto
+{
+    fn into_into_dart(self) -> crate::sdk_api::OverviewScheduleKindDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::sdk_api::OverviewSectionFailuresDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.courses.into_into_dart().into_dart(),
+            self.schedule.into_into_dart().into_dart(),
+            self.todos.into_into_dart().into_dart(),
+            self.services.into_into_dart().into_dart(),
+            self.updates.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::sdk_api::OverviewSectionFailuresDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::sdk_api::OverviewSectionFailuresDto>
+    for crate::sdk_api::OverviewSectionFailuresDto
+{
+    fn into_into_dart(self) -> crate::sdk_api::OverviewSectionFailuresDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::sdk_api::OverviewTodoDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.title.into_into_dart().into_dart(),
+            self.due_at_utc.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::sdk_api::OverviewTodoDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::sdk_api::OverviewTodoDto>
+    for crate::sdk_api::OverviewTodoDto
+{
+    fn into_into_dart(self) -> crate::sdk_api::OverviewTodoDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::sdk_api::PortalAddressRegistrationDto {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         match self {
@@ -11074,6 +11430,29 @@ impl SseEncode for crate::sdk_api::CourseGradeDto {
     }
 }
 
+impl SseEncode for crate::sdk_api::DailyOverviewDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.date, serializer);
+        <Option<String>>::sse_encode(self.semester, serializer);
+        <u32>::sse_encode(self.course_count, serializer);
+        <u32>::sse_encode(self.pending_todo_count, serializer);
+        <u32>::sse_encode(self.completed_todo_count, serializer);
+        <Vec<crate::sdk_api::OverviewScheduleDto>>::sse_encode(self.today_schedule, serializer);
+        <Vec<crate::sdk_api::OverviewTodoDto>>::sse_encode(self.upcoming_todos, serializer);
+        <Option<crate::sdk_api::OverviewScheduleDto>>::sse_encode(self.next_schedule, serializer);
+        <crate::sdk_api::OverviewSectionFailuresDto>::sse_encode(self.section_failures, serializer);
+    }
+}
+
+impl SseEncode for crate::sdk_api::DailyOverviewResultDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <crate::sdk_api::DailyOverviewDto>::sse_encode(self.data, serializer);
+        <crate::sdk_api::ReadMetadataDto>::sse_encode(self.metadata, serializer);
+    }
+}
+
 impl SseEncode for crate::sdk_api::ElectricityPaymentHistoryDto {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -11949,6 +12328,26 @@ impl SseEncode for Vec<crate::sdk_api::NewsSubscriptionDto> {
     }
 }
 
+impl SseEncode for Vec<crate::sdk_api::OverviewScheduleDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::sdk_api::OverviewScheduleDto>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::sdk_api::OverviewTodoDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::sdk_api::OverviewTodoDto>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<u32> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -12302,6 +12701,16 @@ impl SseEncode for Option<crate::sdk_api::LoginStageDto> {
     }
 }
 
+impl SseEncode for Option<crate::sdk_api::OverviewScheduleDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::sdk_api::OverviewScheduleDto>::sse_encode(value, serializer);
+        }
+    }
+}
+
 impl SseEncode for Option<u32> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -12319,6 +12728,57 @@ impl SseEncode for Option<u64> {
         if let Some(value) = self {
             <u64>::sse_encode(value, serializer);
         }
+    }
+}
+
+impl SseEncode for crate::sdk_api::OverviewScheduleDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.title, serializer);
+        <crate::sdk_api::OverviewScheduleKindDto>::sse_encode(self.kind, serializer);
+        <String>::sse_encode(self.starts_at_utc, serializer);
+        <Option<String>>::sse_encode(self.ends_at_utc, serializer);
+        <bool>::sse_encode(self.all_day, serializer);
+        <Option<String>>::sse_encode(self.location, serializer);
+    }
+}
+
+impl SseEncode for crate::sdk_api::OverviewScheduleKindDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::sdk_api::OverviewScheduleKindDto::Course => 0,
+                crate::sdk_api::OverviewScheduleKindDto::Exam => 1,
+                crate::sdk_api::OverviewScheduleKindDto::Event => 2,
+                crate::sdk_api::OverviewScheduleKindDto::Deadline => 3,
+                crate::sdk_api::OverviewScheduleKindDto::Reminder => 4,
+                crate::sdk_api::OverviewScheduleKindDto::Unknown => 5,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
+impl SseEncode for crate::sdk_api::OverviewSectionFailuresDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.courses, serializer);
+        <bool>::sse_encode(self.schedule, serializer);
+        <bool>::sse_encode(self.todos, serializer);
+        <bool>::sse_encode(self.services, serializer);
+        <bool>::sse_encode(self.updates, serializer);
+    }
+}
+
+impl SseEncode for crate::sdk_api::OverviewTodoDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.title, serializer);
+        <Option<String>>::sse_encode(self.due_at_utc, serializer);
     }
 }
 
