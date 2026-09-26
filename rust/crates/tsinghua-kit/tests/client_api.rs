@@ -1,11 +1,17 @@
 use std::path::Path;
 use tsinghua_kit::{
-    Client, ClientCachePolicy, ErrorCode, SelfServiceLoginRequest, Service,
+    Client,
     auth::{
-        AccountAuthState, AuthDomain, IdentityLoginRequest, IdentitySessionStoragePolicy,
-        SecondFactorMethod,
+        AccountAuthState, AuthDomain, IdentityLoginRequest, SecondFactorMethod,
+        SelfServiceLoginRequest,
     },
+    config::{
+        ClientCachePolicy, CredentialStorageKey, CredentialStoragePolicy,
+        IdentitySessionStorageKey, IdentitySessionStoragePolicy,
+    },
+    error::{ErrorCode, Service},
     learn::{CourseDiscussion, CourseFile, CourseFileCategory, CourseFileRef, CourseRef},
+    self_service::SelfServiceClient,
     service_hall::PendingReadPolicy,
 };
 
@@ -39,6 +45,45 @@ fn client_owns_two_signed_out_account_domains_without_logging_in() {
     assert_ne!(status.identity().domain(), status.self_service().domain());
     assert_eq!(SecondFactorMethod::Sms.as_str(), "sms");
     assert!(client.auth().identity().interaction().unwrap().is_none());
+}
+
+#[test]
+fn host_secure_storage_uses_separate_auth_keys_without_creating_sessions() {
+    let root = std::env::temp_dir().join(format!(
+        "tsinghua-kit-public-host-keys-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let identity_key = CredentialStorageKey::from_bytes(vec![0x21; 32]).unwrap();
+    let self_service_key = CredentialStorageKey::from_bytes(vec![0x31; 32]).unwrap();
+    let policy = CredentialStoragePolicy::HostSecureStorage {
+        root: root.join("credentials"),
+        namespace: "org.example.tsinghua-kit-auth".to_owned(),
+        identity_key,
+        self_service_key,
+    };
+    let debug = format!("{policy:?}");
+    assert!(!debug.contains("21"));
+    assert!(!debug.contains("31"));
+    assert!(debug.contains("configured: true"));
+
+    let session_key = IdentitySessionStorageKey::from_bytes(vec![0x41; 32]).unwrap();
+    let mut client = Client::builder()
+        .credential_storage(policy)
+        .identity_session_storage(IdentitySessionStoragePolicy::HostSecureStorage {
+            directory: root.join("identity"),
+            key: session_key,
+        })
+        .build()
+        .unwrap();
+
+    let status = client.auth().status();
+    assert_eq!(status.identity().state(), AccountAuthState::SignedOut);
+    assert_eq!(status.self_service().state(), AccountAuthState::SignedOut);
+    drop(client);
+    let _ = std::fs::remove_dir_all(root);
 }
 
 #[test]
@@ -128,7 +173,7 @@ async fn identity_session_persistence_is_explicit_and_fresh_revalidation_is_loca
 #[tokio::test]
 async fn self_service_readers_require_the_second_account_before_dispatch() {
     let mut client = Client::builder().build().unwrap();
-    let mut self_service = client.self_service();
+    let mut self_service: SelfServiceClient<'_> = client.self_service();
 
     let account_error = self_service.account().await.unwrap_err();
     let devices_error = self_service.online_devices().await.unwrap_err();

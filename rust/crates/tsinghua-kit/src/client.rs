@@ -53,6 +53,8 @@ use tsinghua_kit_engine::{
 };
 use zeroize::Zeroize;
 
+pub use tsinghua_kit_engine::client::CredentialStorageKey;
+
 /// Cache-directory behavior for one client instance.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -76,15 +78,41 @@ impl From<ClientCachePolicy> for EngineCachePolicy {
 /// Storage for credentials the user explicitly chooses to remember.
 ///
 /// This is independent from Identity session snapshots and local network
-/// profiles. The encrypted-directory backend keeps its key in the same
-/// private application directory and is not equivalent to an OS Keychain.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// profiles. The encrypted-directory backend is a compatibility option whose
+/// key is stored beside its data. Hosts should prefer `HostSecureStorage` and
+/// keep one independent key per Auth domain in their platform secure store.
 #[non_exhaustive]
 pub enum CredentialStoragePolicy {
     /// Do not persist Auth passwords.
     MemoryOnly,
     /// Store explicitly remembered credentials in this private directory.
     EncryptedDirectory { root: PathBuf, namespace: String },
+    /// Store encrypted credential files while the host keeps both independent
+    /// Auth-domain keys in operating-system secure storage.
+    HostSecureStorage {
+        root: PathBuf,
+        namespace: String,
+        identity_key: CredentialStorageKey,
+        self_service_key: CredentialStorageKey,
+    },
+}
+
+impl std::fmt::Debug for CredentialStoragePolicy {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::MemoryOnly => formatter.write_str("CredentialStoragePolicy::MemoryOnly"),
+            Self::EncryptedDirectory { .. } => formatter
+                .debug_struct("CredentialStoragePolicy::EncryptedDirectory")
+                .field("configured", &true)
+                .finish(),
+            Self::HostSecureStorage { .. } => formatter
+                .debug_struct("CredentialStoragePolicy::HostSecureStorage")
+                .field("configured", &true)
+                .field("identity_key", &"[REDACTED]")
+                .field("self_service_key", &"[REDACTED]")
+                .finish(),
+        }
+    }
 }
 
 impl From<CredentialStoragePolicy> for EngineCredentialStoragePolicy {
@@ -94,6 +122,17 @@ impl From<CredentialStoragePolicy> for EngineCredentialStoragePolicy {
             CredentialStoragePolicy::EncryptedDirectory { root, namespace } => {
                 Self::EncryptedDirectory { root, namespace }
             }
+            CredentialStoragePolicy::HostSecureStorage {
+                root,
+                namespace,
+                identity_key,
+                self_service_key,
+            } => Self::HostSecureStorage {
+                root,
+                namespace,
+                identity_key,
+                self_service_key,
+            },
         }
     }
 }

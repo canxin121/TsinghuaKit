@@ -117,10 +117,31 @@ abstract final class TsinghuaKit {
         :final namespace,
       ) =>
         (root, namespace),
+      PlatformSecureStorageAuthCredentialPersistence(
+        :final root,
+        :final namespace,
+      ) =>
+        (root, namespace),
     };
+    Uint8List? identityCredentialKey;
+    Uint8List? selfServiceCredentialKey;
     Uint8List? profileStorageKey;
     Uint8List? identitySessionKey;
     try {
+      if (authCredentials
+          case PlatformSecureStorageAuthCredentialPersistence(
+            :final namespace,
+          )) {
+        _validateSecureStorageNamespace(namespace);
+        identityCredentialKey = await _loadOrCreateAuthCredentialKey(
+          namespace,
+          'identity',
+        );
+        selfServiceCredentialKey = await _loadOrCreateAuthCredentialKey(
+          namespace,
+          'self_service',
+        );
+      }
       final (storageRoot, applicationNamespace, loadedProfileStorageKey) =
           switch (networkProfiles) {
         MemoryOnlyNetworkProfilePersistence() => (null, null, null),
@@ -159,10 +180,12 @@ abstract final class TsinghuaKit {
       };
       identitySessionKey = loadedIdentitySessionKey;
       final handle = await _sdkCall(
-        () => native.ClientHandle.newInstance(
+        () => native.ClientHandle.newWithCredentialKeys(
           cacheRoot: cacheRoot,
           credentialStorageRoot: authCredentialRoot,
           credentialStorageNamespace: authCredentialNamespace,
+          identityCredentialStorageKey: identityCredentialKey,
+          selfServiceCredentialStorageKey: selfServiceCredentialKey,
           profileStorageRoot: storageRoot,
           applicationNamespace: applicationNamespace,
           profileStorageKey: profileStorageKey,
@@ -173,6 +196,9 @@ abstract final class TsinghuaKit {
       );
       return TsinghuaKitClient._(handle);
     } finally {
+      identityCredentialKey?.fillRange(0, identityCredentialKey.length, 0);
+      selfServiceCredentialKey?.fillRange(
+          0, selfServiceCredentialKey.length, 0);
       profileStorageKey?.fillRange(0, profileStorageKey.length, 0);
       identitySessionKey?.fillRange(0, identitySessionKey.length, 0);
     }
@@ -226,6 +252,16 @@ sealed class AuthCredentialPersistence {
     required String root,
     required String namespace,
   }) = EncryptedDirectoryAuthCredentialPersistence;
+
+  /// Encrypts credential files with separate Identity and SelfService keys
+  /// held in platform secure storage. This is the preferred persistence mode
+  /// for applications that explicitly offer a “remember credentials” option.
+  /// The keys, credential files, session snapshot, network profiles, and
+  /// business cache use separate namespaces and policies.
+  const factory AuthCredentialPersistence.platformSecureStorage({
+    required String root,
+    required String namespace,
+  }) = PlatformSecureStorageAuthCredentialPersistence;
 }
 
 final class MemoryOnlyAuthCredentialPersistence
@@ -247,10 +283,72 @@ final class EncryptedDirectoryAuthCredentialPersistence
   final String namespace;
 }
 
+final class PlatformSecureStorageAuthCredentialPersistence
+    extends AuthCredentialPersistence {
+  const PlatformSecureStorageAuthCredentialPersistence({
+    required this.root,
+    required this.namespace,
+  });
+
+  /// Absolute app-private directory used for encrypted Auth credential files.
+  final String root;
+
+  /// Stable app namespace; never an account name.
+  final String namespace;
+}
+
+void _validateSecureStorageNamespace(String namespace) {
+  if (namespace.isEmpty ||
+      namespace.length > 128 ||
+      namespace == '.' ||
+      namespace == '..' ||
+      !RegExp(r'^[A-Za-z0-9._-]+$').hasMatch(namespace)) {
+    throw ArgumentError.value(namespace, 'namespace', 'Invalid app namespace');
+  }
+}
+
+final Map<String, Future<Uint8List>> _pendingAuthCredentialKeys = {};
+
+Future<Uint8List> _loadOrCreateAuthCredentialKey(
+  String namespace,
+  String domain,
+) {
+  final pendingKey = '$namespace:$domain';
+  final pending = _pendingAuthCredentialKeys.putIfAbsent(pendingKey, () async {
+    const storage = FlutterSecureStorage();
+    final storageKey =
+        'org.tsinghua_kit.auth_credential_key.$domain.$namespace';
+    final stored = await storage.read(key: storageKey);
+    if (stored != null) {
+      try {
+        final key = base64Url.decode(base64Url.normalize(stored));
+        if (key.length == 32) return Uint8List.fromList(key);
+      } on FormatException {
+        // Keep an unusable secure-store value visible as a storage error. A
+        // replacement key could make existing encrypted records unreadable.
+      }
+      throw StateError('The saved Auth credential key is unavailable.');
+    }
+    final key = Uint8List.fromList(
+      List<int>.generate(32, (_) => Random.secure().nextInt(256)),
+    );
+    await storage.write(key: storageKey, value: base64UrlEncode(key));
+    return key;
+  });
+  // Each Client construction owns and wipes its input buffer. Never hand the
+  // same mutable Uint8List to two concurrent constructions with this
+  // namespace: one caller's `finally` block could zero the other's key.
+  return pending.then(Uint8List.fromList).whenComplete(() {
+    if (identical(_pendingAuthCredentialKeys[pendingKey], pending)) {
+      _pendingAuthCredentialKeys.remove(pendingKey);
+    }
+  });
+}
+
 final Map<String, Future<Uint8List>> _pendingProfileKeys = {};
 
 Future<Uint8List> _loadOrCreateNetworkProfileKey(String namespace) {
-  return _pendingProfileKeys.putIfAbsent(namespace, () async {
+  final pending = _pendingProfileKeys.putIfAbsent(namespace, () async {
     const storage = FlutterSecureStorage();
     final storageKey = 'org.tsinghua_kit.network_profile_key.$namespace';
     final stored = await storage.read(key: storageKey);
@@ -269,13 +367,18 @@ Future<Uint8List> _loadOrCreateNetworkProfileKey(String namespace) {
     );
     await storage.write(key: storageKey, value: base64UrlEncode(key));
     return key;
-  }).whenComplete(() => _pendingProfileKeys.remove(namespace));
+  });
+  return pending.then(Uint8List.fromList).whenComplete(() {
+    if (identical(_pendingProfileKeys[namespace], pending)) {
+      _pendingProfileKeys.remove(namespace);
+    }
+  });
 }
 
 final Map<String, Future<Uint8List>> _pendingIdentitySessionKeys = {};
 
 Future<Uint8List> _loadOrCreateIdentitySessionKey(String namespace) {
-  return _pendingIdentitySessionKeys.putIfAbsent(namespace, () async {
+  final pending = _pendingIdentitySessionKeys.putIfAbsent(namespace, () async {
     const storage = FlutterSecureStorage();
     final storageKey = 'org.tsinghua_kit.identity_session_key.$namespace';
     final stored = await storage.read(key: storageKey);
@@ -294,7 +397,12 @@ Future<Uint8List> _loadOrCreateIdentitySessionKey(String namespace) {
     );
     await storage.write(key: storageKey, value: base64UrlEncode(key));
     return key;
-  }).whenComplete(() => _pendingIdentitySessionKeys.remove(namespace));
+  });
+  return pending.then(Uint8List.fromList).whenComplete(() {
+    if (identical(_pendingIdentitySessionKeys[namespace], pending)) {
+      _pendingIdentitySessionKeys.remove(namespace);
+    }
+  });
 }
 
 /// Persistence choices for the Identity-bound shared session snapshot.

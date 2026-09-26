@@ -52,6 +52,15 @@ impl CampusRuntime {
         self.credential_store_root = root;
     }
 
+    pub(crate) fn set_credential_store_keys(
+        &mut self,
+        identity: Option<zeroize::Zeroizing<[u8; 32]>>,
+        self_service: Option<zeroize::Zeroizing<[u8; 32]>>,
+    ) {
+        self.identity_credential_store_key = identity;
+        self.self_service_credential_store_key = self_service;
+    }
+
     pub(super) fn load_credential_for_current_authority(
         &self,
         username: &str,
@@ -60,11 +69,20 @@ impl CampusRuntime {
         crate::credential_store::CredentialStoreError,
     > {
         let load = || {
-            crate::credential_store::load_at_root(
-                &self.credential_store_root,
-                username,
-                &self.fingerprint,
-            )
+            if let Some(key) = self.identity_credential_store_key.as_ref() {
+                crate::credential_store::load_at_root_with_host_key(
+                    &self.credential_store_root,
+                    username,
+                    &self.fingerprint,
+                    key,
+                )
+            } else {
+                crate::credential_store::load_at_root(
+                    &self.credential_store_root,
+                    username,
+                    &self.fingerprint,
+                )
+            }
         };
         if !self.persist_sessions {
             return load();
@@ -85,14 +103,26 @@ impl CampusRuntime {
         stage: Option<AcademicStage>,
     ) -> Result<(), crate::credential_store::CredentialStoreError> {
         let save = || {
-            crate::credential_store::save_at_root_with_stage_selection(
-                &self.credential_store_root,
-                username,
-                password,
-                stage,
-                &self.fingerprint,
-                self.stage_selection_explicit,
-            )
+            if let Some(key) = self.identity_credential_store_key.as_ref() {
+                crate::credential_store::save_at_root_with_host_key(
+                    &self.credential_store_root,
+                    username,
+                    password,
+                    stage,
+                    &self.fingerprint,
+                    self.stage_selection_explicit,
+                    key,
+                )
+            } else {
+                crate::credential_store::save_at_root_with_stage_selection(
+                    &self.credential_store_root,
+                    username,
+                    password,
+                    stage,
+                    &self.fingerprint,
+                    self.stage_selection_explicit,
+                )
+            }
         };
         if !self.persist_sessions {
             return save();
@@ -131,11 +161,20 @@ impl CampusRuntime {
         Option<crate::credential_store::StoredCredential>,
         crate::credential_store::CredentialStoreError,
     > {
-        crate::credential_store::load_self_service_at_root(
-            &self.credential_store_root,
-            username,
-            &self.fingerprint,
-        )
+        if let Some(key) = self.self_service_credential_store_key.as_ref() {
+            crate::credential_store::load_self_service_at_root_with_host_key(
+                &self.credential_store_root,
+                username,
+                &self.fingerprint,
+                key,
+            )
+        } else {
+            crate::credential_store::load_self_service_at_root(
+                &self.credential_store_root,
+                username,
+                &self.fingerprint,
+            )
+        }
     }
 
     pub(crate) fn save_self_service_credential(
@@ -143,12 +182,22 @@ impl CampusRuntime {
         username: &str,
         password: &str,
     ) -> Result<(), crate::credential_store::CredentialStoreError> {
-        crate::credential_store::save_self_service_at_root(
-            &self.credential_store_root,
-            username,
-            password,
-            &self.fingerprint,
-        )
+        if let Some(key) = self.self_service_credential_store_key.as_ref() {
+            crate::credential_store::save_self_service_at_root_with_host_key(
+                &self.credential_store_root,
+                username,
+                password,
+                &self.fingerprint,
+                key,
+            )
+        } else {
+            crate::credential_store::save_self_service_at_root(
+                &self.credential_store_root,
+                username,
+                password,
+                &self.fingerprint,
+            )
+        }
     }
 
     pub(crate) fn clear_saved_self_service_credentials(

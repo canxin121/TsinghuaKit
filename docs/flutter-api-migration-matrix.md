@@ -34,8 +34,8 @@ SDK 现将业务缓存目录、Identity 会话快照与 NetworkProfile 存储分
 ## 迁移门禁与顺序
 
 1. Auth/网络资料、service-hall、SelfService、Registrar/Calendar、INFO、Learn、Library、Classroom、CampusCard 和 Electricity 均已有首批 Rust/Dart facade。FRB 绑定只由 codegen 产出；后续扩展仍沿用同一 Rust ClientHandle。
-2. Identity 会话快照现支持宿主安全存储密钥，并且 key mismatch 保留原快照；两个 Auth 域的逐次凭据 opt-in 与分命名空间存储已实现；仍需将 vault key 接入宿主安全存储，并设计 SelfService 跨进程会话恢复。恢复失败必须给出类型化状态，不触发隐式重复登录。不得把 Portal/EAP profile、Auth 会话与业务缓存合并存储。
-3. 对 NetworkProfile/Identity 快照与 Auth vault 的 secure-storage key 路径做真实平台验证；设计 SelfService 跨进程会话策略并实现操作系统 Wi-Fi/EAP 能力。Portal 显式连接与断开已进入 SDK/Dart facade，尚需在用户明确操作后做线上验证。所有入口仍增加到同一个 `ClientHandle`，不建立平行 runtime；Profile 内容不能和两个 Auth 会话合并持久化。
+2. Identity 会话快照与 Auth credential vault 均已支持由宿主安全存储保管独立 key；两个 Auth 域使用各自的 key，错误 key 保留原密文，逐次 remember opt-in 默认关闭。legacy EncryptedDirectory 仍将 key 与密文同处；THYou 必须选 platformSecureStorage。SelfService 跨进程会话恢复尚未实现。恢复失败必须给出类型化状态，不触发隐式重复登录。不得把 Portal/EAP profile、Auth 会话与业务缓存合并存储。
+3. 对 NetworkProfile、Identity 快照与 Auth vault 的 secure-storage key 路径做真实 Keychain/Keystore 验证；设计 SelfService 跨进程会话策略并实现操作系统 Wi-Fi/EAP 能力。Portal 显式连接与断开已进入 SDK/Dart facade，尚需在用户明确操作后做线上验证。所有入口仍增加到同一个 `ClientHandle`，不建立平行 runtime；Profile 内容不能和两个 Auth 会话合并持久化。
 4. 对照 App 实际引用点迁移 repositories/controllers：使用 package 的领域类型和稳定错误；App 可以做 UI 排版及调用编排，不复制 Rust selector、HTTP、解析、缓存策略、账号绑定或错误分类。
 5. 在全量调用映射、相同 Client 生命周期、session recovery 方案、平台构建和必要业务验收证据齐全后，切换生产 provider 到同一个 `TsinghuaKitClient`，删除旧 `FrbCampusRuntimeGateway` 与 App 自有 `lib/src/rust` 生成目录。`pubspec.yaml` 已固定到 public TsinghuaKit commit `5ba172a`；后续只在 SDK API 变更时更新精确 commit。
 

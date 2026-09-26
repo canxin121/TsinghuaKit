@@ -1,14 +1,13 @@
 //! Rust-owned opt-in credential storage for cross-process session recovery.
 //!
-//! Credentials are kept in a THYou-private file vault. This module never
+//! Credentials are kept in an app-private file vault. This module never
 //! calls an operating-system credential API and never exposes the password to
 //! Flutter, JSON caches, logs, command-line arguments, or session snapshots.
-//! The vault is an application-managed encrypted file store: it protects
-//! against ordinary accidental file reads, while its security boundary is the
-//! owner-only THYou application directory. It is intentionally not presented
-//! as equivalent to an OS-managed credential service against a local
-//! administrator or a process that can inspect this application's files or
-//! memory.
+//! The compatibility key-file policy protects against ordinary accidental
+//! file reads, while its security boundary is the owner-only application
+//! directory. The host-key policy keeps independent Auth-domain keys outside
+//! the vault in an operating-system secure store. Neither policy protects
+//! against a process that can inspect this application's memory.
 
 use base64::{
     Engine as _,
@@ -32,6 +31,7 @@ use crate::protocol::AcademicStage;
 
 const VAULT_DIRECTORY: &str = "credentials";
 const VAULT_KEY_FILE: &str = "vault-key-v1.bin";
+const HOST_KEY_CHECK_FILE: &str = "host-key-check-v2.bin";
 const VAULT_LOCK_FILE: &str = "vault.lock";
 const RECORD_FILE_PREFIX: &str = "credential-v1-";
 const RECORD_FILE_SUFFIX: &str = ".bin";
@@ -52,6 +52,8 @@ pub(crate) enum CredentialStoreError {
     Backend,
     #[error("credential storage record is invalid")]
     InvalidRecord,
+    #[error("credential storage key does not match the existing vault")]
+    KeyMismatch,
     #[error("credential storage record belongs to another device")]
     BindingMismatch,
 }
@@ -139,6 +141,10 @@ fn vault_directory(root: &Path) -> PathBuf {
 
 fn vault_key_path(vault: &Path) -> PathBuf {
     vault.join(VAULT_KEY_FILE)
+}
+
+fn host_key_check_path(vault: &Path) -> PathBuf {
+    vault.join(HOST_KEY_CHECK_FILE)
 }
 
 fn vault_lock_path(vault: &Path) -> PathBuf {
@@ -527,6 +533,39 @@ fn create_vault_key(vault: &Path) -> Result<[u8; VAULT_KEY_BYTES], CredentialSto
     Ok(key)
 }
 
+/// Verifies that a host-supplied key is still the key selected when this vault
+/// was first written. The marker contains only a SHA-256 digest of a uniformly
+/// random 256-bit key. A missing secure-store key must never be mistaken for
+/// permission to rotate the key and destroy access to existing credentials.
+fn verify_or_create_host_key_marker(
+    vault: &Path,
+    key: &[u8; VAULT_KEY_BYTES],
+) -> Result<(), CredentialStoreError> {
+    let path = host_key_check_path(vault);
+    let expected = digest(&SHA256, key).as_ref().to_vec();
+    if reject_non_regular_file(&path)? {
+        private_file_permissions(&path)?;
+        let actual = fs::read(&path).map_err(|_| CredentialStoreError::Backend)?;
+        return if actual == expected {
+            Ok(())
+        } else {
+            Err(CredentialStoreError::KeyMismatch)
+        };
+    }
+
+    // If a marker disappeared while records remain, keep those records and
+    // report the missing key binding. Do not silently bind them to a new key.
+    for entry in fs::read_dir(vault).map_err(|_| CredentialStoreError::Backend)? {
+        let entry = entry.map_err(|_| CredentialStoreError::Backend)?;
+        if entry.file_name().to_str().is_some_and(|name| {
+            name.starts_with(RECORD_FILE_PREFIX) && name.ends_with(RECORD_FILE_SUFFIX)
+        }) {
+            return Err(CredentialStoreError::KeyMismatch);
+        }
+    }
+    write_atomically(&path, &expected)
+}
+
 fn save_at(
     root: &Path,
     account: &str,
@@ -545,14 +584,41 @@ fn save_at_with_stage_selection(
     device_fingerprint: &str,
     stage_selection_explicit: bool,
 ) -> Result<(), CredentialStoreError> {
+    save_at_with_stage_selection_and_key(
+        root,
+        account,
+        password,
+        stage,
+        device_fingerprint,
+        stage_selection_explicit,
+        None,
+    )
+}
+
+fn save_at_with_stage_selection_and_key(
+    root: &Path,
+    account: &str,
+    password: &str,
+    stage: Option<AcademicStage>,
+    device_fingerprint: &str,
+    stage_selection_explicit: bool,
+    host_key: Option<&[u8; VAULT_KEY_BYTES]>,
+) -> Result<(), CredentialStoreError> {
     let account = validate_account(account)?;
     let device_fingerprint = validate_device(device_fingerprint)?;
     validate_password(password)?;
     let vault = ensure_vault_directory(root)?;
     with_locked_vault(&vault, |vault| {
-        let key = match read_vault_key(vault)? {
-            Some(key) => key,
-            None => create_vault_key(vault)?,
+        let stored_key;
+        let key = if let Some(host_key) = host_key {
+            verify_or_create_host_key_marker(vault, host_key)?;
+            host_key
+        } else {
+            stored_key = match read_vault_key(vault)? {
+                Some(key) => key,
+                None => create_vault_key(vault)?,
+            };
+            &stored_key
         };
         let envelope = encode_envelope(
             account,
@@ -560,7 +626,7 @@ fn save_at_with_stage_selection(
             password,
             stage,
             stage_selection_explicit,
-            &key,
+            key,
         )?;
         write_atomically(&record_path(vault, account), &envelope)
     })
@@ -570,6 +636,15 @@ fn load_at(
     root: &Path,
     account: &str,
     device_fingerprint: &str,
+) -> Result<Option<StoredCredential>, CredentialStoreError> {
+    load_at_with_key(root, account, device_fingerprint, None)
+}
+
+fn load_at_with_key(
+    root: &Path,
+    account: &str,
+    device_fingerprint: &str,
+    host_key: Option<&[u8; VAULT_KEY_BYTES]>,
 ) -> Result<Option<StoredCredential>, CredentialStoreError> {
     let account = validate_account(account)?;
     let device_fingerprint = validate_device(device_fingerprint)?;
@@ -605,11 +680,21 @@ fn load_at(
         if envelope.device_binding != device_binding(device_fingerprint) {
             return Err(CredentialStoreError::BindingMismatch);
         }
-        let Some(key) = read_vault_key(vault)? else {
-            let _ = remove_record(&path);
-            return Err(CredentialStoreError::InvalidRecord);
+        let stored_key;
+        let key = if let Some(host_key) = host_key {
+            // Preserve the record on a secure-store key mismatch. It may still
+            // be recoverable if the platform key is restored.
+            verify_or_create_host_key_marker(vault, host_key)?;
+            host_key
+        } else {
+            let Some(key) = read_vault_key(vault)? else {
+                let _ = remove_record(&path);
+                return Err(CredentialStoreError::InvalidRecord);
+            };
+            stored_key = key;
+            &stored_key
         };
-        match decode_envelope(&bytes, account, device_fingerprint, &key) {
+        match decode_envelope(&bytes, account, device_fingerprint, key) {
             Ok(credential) => Ok(Some(credential)),
             Err(CredentialStoreError::BindingMismatch) => {
                 Err(CredentialStoreError::BindingMismatch)
@@ -667,13 +752,36 @@ pub(crate) fn save_at_root_with_stage_selection(
     stage_selection_explicit: bool,
 ) -> Result<(), CredentialStoreError> {
     crate::telemetry::timing::measure_sync(crate::telemetry::timing::Phase::CredentialStore, || {
-        save_at_with_stage_selection(
+        save_at_with_stage_selection_and_key(
             root,
             account,
             password,
             stage,
             device_fingerprint,
             stage_selection_explicit,
+            None,
+        )
+    })
+}
+
+pub(crate) fn save_at_root_with_host_key(
+    root: &Path,
+    account: &str,
+    password: &str,
+    stage: Option<AcademicStage>,
+    device_fingerprint: &str,
+    stage_selection_explicit: bool,
+    key: &[u8; VAULT_KEY_BYTES],
+) -> Result<(), CredentialStoreError> {
+    crate::telemetry::timing::measure_sync(crate::telemetry::timing::Phase::CredentialStore, || {
+        save_at_with_stage_selection_and_key(
+            root,
+            account,
+            password,
+            stage,
+            device_fingerprint,
+            stage_selection_explicit,
+            Some(key),
         )
     })
 }
@@ -697,6 +805,17 @@ pub(crate) fn load_at_root(
     })
 }
 
+pub(crate) fn load_at_root_with_host_key(
+    root: &Path,
+    account: &str,
+    device_fingerprint: &str,
+    key: &[u8; VAULT_KEY_BYTES],
+) -> Result<Option<StoredCredential>, CredentialStoreError> {
+    crate::telemetry::timing::measure_sync(crate::telemetry::timing::Phase::CredentialStore, || {
+        load_at_with_key(root, account, device_fingerprint, Some(key))
+    })
+}
+
 pub(crate) fn clear(account: &str) -> Result<(), CredentialStoreError> {
     let root = crate::session_persistence::application_data_dir()
         .map_err(|_| CredentialStoreError::Backend)?;
@@ -717,13 +836,35 @@ pub(crate) fn save_self_service_at_root(
 ) -> Result<(), CredentialStoreError> {
     let domain_root = root.join("self-service");
     crate::telemetry::timing::measure_sync(crate::telemetry::timing::Phase::CredentialStore, || {
-        save_at_with_stage_selection(
+        save_at_with_stage_selection_and_key(
             &domain_root,
             account,
             password,
             None,
             device_fingerprint,
             false,
+            None,
+        )
+    })
+}
+
+pub(crate) fn save_self_service_at_root_with_host_key(
+    root: &Path,
+    account: &str,
+    password: &str,
+    device_fingerprint: &str,
+    key: &[u8; VAULT_KEY_BYTES],
+) -> Result<(), CredentialStoreError> {
+    let domain_root = root.join("self-service");
+    crate::telemetry::timing::measure_sync(crate::telemetry::timing::Phase::CredentialStore, || {
+        save_at_with_stage_selection_and_key(
+            &domain_root,
+            account,
+            password,
+            None,
+            device_fingerprint,
+            false,
+            Some(key),
         )
     })
 }
@@ -736,6 +877,18 @@ pub(crate) fn load_self_service_at_root(
     let domain_root = root.join("self-service");
     crate::telemetry::timing::measure_sync(crate::telemetry::timing::Phase::CredentialStore, || {
         load_at(&domain_root, account, device_fingerprint)
+    })
+}
+
+pub(crate) fn load_self_service_at_root_with_host_key(
+    root: &Path,
+    account: &str,
+    device_fingerprint: &str,
+    key: &[u8; VAULT_KEY_BYTES],
+) -> Result<Option<StoredCredential>, CredentialStoreError> {
+    let domain_root = root.join("self-service");
+    crate::telemetry::timing::measure_sync(crate::telemetry::timing::Phase::CredentialStore, || {
+        load_at_with_key(&domain_root, account, device_fingerprint, Some(key))
     })
 }
 
@@ -776,6 +929,102 @@ mod tests {
 
     fn cleanup(root: &Path) {
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn host_secure_key_round_trip_rejects_key_rotation_without_deleting_record() {
+        let root = fixture_root();
+        let correct_key = [0x19; VAULT_KEY_BYTES];
+        let wrong_key = [0x29; VAULT_KEY_BYTES];
+        save_at_root_with_host_key(
+            &root,
+            "fixture-account",
+            "fixture-password",
+            Some(AcademicStage::Undergraduate),
+            fixture_device(),
+            true,
+            &correct_key,
+        )
+        .expect("host-key credential writes");
+
+        let vault = vault_directory(&root);
+        let record = record_path(&vault, "fixture-account");
+        assert!(record.is_file());
+        assert!(!vault_key_path(&vault).exists());
+        assert!(host_key_check_path(&vault).is_file());
+
+        assert_eq!(
+            load_at_root_with_host_key(&root, "fixture-account", fixture_device(), &wrong_key,),
+            Err(CredentialStoreError::KeyMismatch),
+        );
+        assert!(record.is_file(), "key mismatch must preserve ciphertext");
+        let restored =
+            load_at_root_with_host_key(&root, "fixture-account", fixture_device(), &correct_key)
+                .expect("correct platform key remains usable")
+                .expect("saved credential remains available");
+        assert_eq!(restored.password, "fixture-password");
+        assert_eq!(restored.stage, Some(AcademicStage::Undergraduate));
+        assert!(restored.stage_selection_explicit);
+        cleanup(&root);
+    }
+
+    #[test]
+    fn host_secure_auth_domains_use_distinct_keys_for_same_username() {
+        let root = fixture_root();
+        let identity_key = [0x31; VAULT_KEY_BYTES];
+        let self_service_key = [0x41; VAULT_KEY_BYTES];
+        save_at_root_with_host_key(
+            &root,
+            "same-name",
+            "identity-fixture-password",
+            None,
+            fixture_device(),
+            false,
+            &identity_key,
+        )
+        .expect("Identity credential saves");
+        save_self_service_at_root_with_host_key(
+            &root,
+            "same-name",
+            "self-service-fixture-password",
+            fixture_device(),
+            &self_service_key,
+        )
+        .expect("SelfService credential saves");
+
+        assert_eq!(
+            load_at_root_with_host_key(&root, "same-name", fixture_device(), &self_service_key,),
+            Err(CredentialStoreError::KeyMismatch),
+        );
+        assert_eq!(
+            load_self_service_at_root_with_host_key(
+                &root,
+                "same-name",
+                fixture_device(),
+                &identity_key,
+            ),
+            Err(CredentialStoreError::KeyMismatch),
+        );
+        assert_eq!(
+            load_at_root_with_host_key(&root, "same-name", fixture_device(), &identity_key)
+                .expect("Identity uses its own key")
+                .expect("Identity record exists")
+                .password,
+            "identity-fixture-password",
+        );
+        assert_eq!(
+            load_self_service_at_root_with_host_key(
+                &root,
+                "same-name",
+                fixture_device(),
+                &self_service_key,
+            )
+            .expect("SelfService uses its own key")
+            .expect("SelfService record exists")
+            .password,
+            "self-service-fixture-password",
+        );
+        cleanup(&root);
     }
 
     #[test]

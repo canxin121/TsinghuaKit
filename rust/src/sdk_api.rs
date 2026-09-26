@@ -7,12 +7,11 @@
 use std::{collections::HashMap, fmt, path::PathBuf};
 
 use tsinghua_kit_sdk::{
-    Client as SdkClient, ClientBuilder, ClientCachePolicy, CredentialStoragePolicy,
-    Error as SdkError,
+    Client as SdkClient, ClientBuilder, Error as SdkError,
     auth::{
         AccountAuthState, AccountAuthStatus, AuthStatus, IdentityLoginOutcome,
-        IdentityLoginRequest, IdentitySessionStoragePolicy, LoginStage, SecondFactorMethod,
-        SelfServiceLoginOutcome, SelfServiceLoginPhase, SelfServiceLoginRequest,
+        IdentityLoginRequest, LoginStage, SecondFactorMethod, SelfServiceLoginOutcome,
+        SelfServiceLoginPhase, SelfServiceLoginRequest,
     },
     calendar::{
         AcademicTerm, LearnTermCalendar, SchoolCalendarImage, SchoolCalendarLanguage,
@@ -25,6 +24,10 @@ use tsinghua_kit_sdk::{
     classrooms::{
         BuildingRef, ClassroomAvailability, ClassroomBuildings, ClassroomSlotStatus, ClassroomWeek,
         ClassroomWeekSelection,
+    },
+    config::{
+        ClientCachePolicy, CredentialStorageKey, CredentialStoragePolicy,
+        IdentitySessionStorageKey, IdentitySessionStoragePolicy, NetworkProfileStoragePolicy,
     },
     electricity::{ElectricityPaymentHistory, ElectricityRemainder},
     learn::{
@@ -39,8 +42,8 @@ use tsinghua_kit_sdk::{
     },
     network::{
         NetworkAccessMethod, NetworkProfileId, NetworkProfileInput, NetworkProfilePassword,
-        NetworkProfileStoragePolicy, NetworkProfileSummary, PortalAddressRegistration,
-        PortalConnectionResult, PortalConnectionState, PreparedNetworkInput,
+        NetworkProfileSummary, PortalAddressRegistration, PortalConnectionResult,
+        PortalConnectionState, PreparedNetworkInput,
     },
     news::{
         ArticleDetail, ArticleRef, NewsArticle, NewsCatalog, NewsCatalogCoverage, NewsChannelRef,
@@ -3454,8 +3457,9 @@ impl ClientHandle {
     /// `cache_root` opts into persistent service caches in that private
     /// directory; the Identity session directory may be elsewhere.
     /// Supplying credential root and namespace opts into a separately
-    /// encrypted Auth credential vault. This vault is not an OS Keychain;
-    /// saving each Auth account still requires explicit login opt-in.
+    /// encrypted Auth credential vault. Supplying a different secure-store
+    /// key for each Auth domain keeps those vaults separate. Saving each Auth
+    /// account still requires explicit login opt-in.
     /// When the optional network profile arguments are absent, profile data is
     /// memory-only. Supplying the root and namespace without a key opts into
     /// the legacy Unix encrypted-directory backend whose key is stored beside
@@ -3470,6 +3474,37 @@ impl ClientHandle {
         cache_root: Option<String>,
         credential_storage_root: Option<String>,
         credential_storage_namespace: Option<String>,
+        profile_storage_root: Option<String>,
+        application_namespace: Option<String>,
+        profile_storage_key: Option<Vec<u8>>,
+        identity_session_root: Option<String>,
+        identity_session_namespace: Option<String>,
+        identity_session_key: Option<Vec<u8>>,
+    ) -> Result<Self, SdkErrorDto> {
+        Self::new_with_credential_keys(
+            cache_root,
+            credential_storage_root,
+            credential_storage_namespace,
+            None,
+            None,
+            profile_storage_root,
+            application_namespace,
+            profile_storage_key,
+            identity_session_root,
+            identity_session_namespace,
+            identity_session_key,
+        )
+    }
+
+    /// Creates a Client while accepting platform-secure Auth vault keys.
+    /// Both keys are independent, and Rust consumes/zeroizes their temporary
+    /// input buffers. This constructor performs no login or network request.
+    pub fn new_with_credential_keys(
+        cache_root: Option<String>,
+        credential_storage_root: Option<String>,
+        credential_storage_namespace: Option<String>,
+        identity_credential_storage_key: Option<Vec<u8>>,
+        self_service_credential_storage_key: Option<Vec<u8>>,
         profile_storage_root: Option<String>,
         application_namespace: Option<String>,
         profile_storage_key: Option<Vec<u8>>,
@@ -3501,12 +3536,27 @@ impl ClientHandle {
                 return Err(error.into());
             }
         };
-        let credential_policy = match (credential_storage_root, credential_storage_namespace) {
-            (None, None) => CredentialStoragePolicy::MemoryOnly,
-            (Some(root), Some(namespace)) => CredentialStoragePolicy::EncryptedDirectory {
-                root: PathBuf::from(root),
-                namespace,
-            },
+        let credential_policy = match (
+            credential_storage_root,
+            credential_storage_namespace,
+            identity_credential_storage_key,
+            self_service_credential_storage_key,
+        ) {
+            (None, None, None, None) => CredentialStoragePolicy::MemoryOnly,
+            (Some(root), Some(namespace), None, None) => {
+                CredentialStoragePolicy::EncryptedDirectory {
+                    root: PathBuf::from(root),
+                    namespace,
+                }
+            }
+            (Some(root), Some(namespace), Some(identity_key), Some(self_service_key)) => {
+                CredentialStoragePolicy::HostSecureStorage {
+                    root: PathBuf::from(root),
+                    namespace,
+                    identity_key: CredentialStorageKey::from_bytes(identity_key)?,
+                    self_service_key: CredentialStorageKey::from_bytes(self_service_key)?,
+                }
+            }
             _ => {
                 let Err(error) = NetworkProfileStoragePolicy::encrypted_directory("/", "") else {
                     unreachable!("empty application namespace must be rejected")
@@ -3550,9 +3600,7 @@ impl ClientHandle {
                     Some(key) => builder.identity_session_storage(
                         IdentitySessionStoragePolicy::HostSecureStorage {
                             directory: root,
-                            key: tsinghua_kit_sdk::auth::IdentitySessionStorageKey::from_bytes(
-                                key.to_vec(),
-                            )?,
+                            key: IdentitySessionStorageKey::from_bytes(key.to_vec())?,
                         },
                     ),
                     None => builder.identity_session_storage(
@@ -4817,6 +4865,64 @@ mod tests {
         let _ = std::fs::remove_dir_all(root);
     }
 
+    #[test]
+    fn bridge_auth_host_keys_are_required_to_be_valid_and_use_a_separate_root() {
+        let root = std::env::temp_dir().join(format!(
+            "tsinghua-kit-auth-host-credentials-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let namespace = "org.example.host-credentials-test";
+        let directory = root
+            .join("TsinghuaKit")
+            .join("auth-credentials-host-key-v2")
+            .join(namespace);
+        let mut client = ClientHandle::new_with_credential_keys(
+            None,
+            Some(root.to_string_lossy().into_owned()),
+            Some(namespace.to_owned()),
+            Some(vec![0x21; 32]),
+            Some(vec![0x31; 32]),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .expect("separate host-secure keys configure Auth persistence");
+
+        assert!(directory.is_dir());
+        assert_eq!(
+            client.auth_status().identity.state,
+            AccountStateDto::SignedOut
+        );
+        assert_eq!(
+            client.auth_status().self_service.state,
+            AccountStateDto::SignedOut
+        );
+        drop(client);
+
+        let error = match ClientHandle::new_with_credential_keys(
+            None,
+            Some(root.to_string_lossy().into_owned()),
+            Some(namespace.to_owned()),
+            Some(vec![0x21; 31]),
+            Some(vec![0x31; 32]),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ) {
+            Ok(_) => panic!("each platform key must be exactly 32 bytes"),
+            Err(error) => error,
+        };
+        assert_eq!(error.code, "invalid_input");
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
     #[tokio::test]
     async fn bridge_identity_session_storage_is_opt_in_and_revalidation_is_explicit() {
         let root = std::env::temp_dir().join(format!(
@@ -4852,8 +4958,7 @@ mod tests {
 
     #[test]
     fn bridge_identity_session_accepts_a_host_key_separate_from_profile_storage() {
-        let key =
-            tsinghua_kit_sdk::auth::IdentitySessionStorageKey::from_bytes(vec![0x71; 32]).unwrap();
+        let key = IdentitySessionStorageKey::from_bytes(vec![0x71; 32]).unwrap();
         assert_eq!(format!("{key:?}"), "IdentitySessionStorageKey([REDACTED])");
         let root = std::env::temp_dir().join(format!(
             "tsinghua-kit-host-identity-key-{}",

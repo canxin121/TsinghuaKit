@@ -105,7 +105,7 @@ opt-in policy:
 
 ```dart
 final client = await TsinghuaKit.createClient(
-  authCredentials: AuthCredentialPersistence.encryptedDirectory(
+  authCredentials: AuthCredentialPersistence.platformSecureStorage(
     root: appPrivateDataDirectory,
     namespace: 'org.example.campus-app',
   ),
@@ -128,9 +128,13 @@ are saved only after a successful login; cross-process recovery also requires
 an Identity session snapshot. SelfService credentials are saved only after a
 successful captcha login. `startSavedLogin(username: ...)` opens a new captcha
 flow and never bypasses captcha entry. Setting either login's option to false
-removes a previously saved password for that account. The credential vault
-uses an app-private file key stored beside its ciphertext; it is not backed by
-Flutter Secure Storage or an OS Keychain.
+removes a previously saved password for that account. The preferred
+`platformSecureStorage` policy keeps separate Identity and SelfService
+encryption keys in Flutter Secure Storage while Rust stores encrypted records
+in the selected private directory. Missing or mismatched keys never trigger
+silent key rotation or deletion of existing credential records. The legacy
+`encryptedDirectory` policy keeps its key beside its ciphertext and is not an
+OS credential vault.
 
 The SDK stores the
 shared Cookie jar once at the first successful Identity checkpoint; later

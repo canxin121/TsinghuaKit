@@ -1,7 +1,7 @@
 use std::{fs, path::PathBuf};
 
 use tsinghua_kit::{
-    Error, ErrorCode, Result, SelfServiceClient, Service,
+    Error, Result,
     auth::{AccountAuthState, AuthDomain},
     calendar::{
         AcademicTerm, LearnTermCalendar, SchoolCalendarImage, SchoolCalendarLanguage,
@@ -15,7 +15,9 @@ use tsinghua_kit::{
         ClassroomAvailability, ClassroomBuildings, ClassroomSlotStatus, ClassroomWeek,
         ClassroomWeekSelection,
     },
+    config::NetworkProfileStoragePolicy,
     electricity::{ElectricityPaymentHistory, ElectricityPaymentRecord, ElectricityRemainder},
+    error::{ErrorCode, Service},
     learn::{CourseCatalog, CourseRef, HomeworkDetail, HomeworkList, HomeworkRef, HomeworkState},
     library::{
         LibraryAvailability, LibraryDay, LibraryDirectory, LibrarySocketAvailability,
@@ -23,8 +25,8 @@ use tsinghua_kit::{
     },
     network::{
         NetworkAccessMethod, NetworkProfileId, NetworkProfileInput, NetworkProfilePassword,
-        NetworkProfileStoragePolicy, NetworkProfileSummary, PortalAddressRegistration,
-        PortalConnectionResult, PortalConnectionState, PortalObservation, PreparedNetworkInput,
+        NetworkProfileSummary, PortalAddressRegistration, PortalConnectionResult,
+        PortalConnectionState, PortalObservation, PreparedNetworkInput,
     },
     news::{
         NewsCatalog, NewsChannelRef, NewsFavorites, NewsPage, NewsQuery, NewsSourceRef,
@@ -32,7 +34,7 @@ use tsinghua_kit::{
     },
     read::ReadPolicy,
     registrar::{AcademicStage, ExamReport, GradeReport, GradeReportKind, SemesterSchedule},
-    self_service::DeviceRef,
+    self_service::{DeviceRef, SelfServiceClient},
     service_hall::{
         PendingTasks, ServiceDirectory, ServiceHallReadPolicy, TaskView, WorkflowTaskList,
         WorkflowTaskRef,

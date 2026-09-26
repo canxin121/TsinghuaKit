@@ -195,8 +195,9 @@ abstract class ClientHandle implements RustOpaqueInterface {
   /// `cache_root` opts into persistent service caches in that private
   /// directory; the Identity session directory may be elsewhere.
   /// Supplying credential root and namespace opts into a separately
-  /// encrypted Auth credential vault. This vault is not an OS Keychain;
-  /// saving each Auth account still requires explicit login opt-in.
+  /// encrypted Auth credential vault. Supplying a different secure-store
+  /// key for each Auth domain keeps those vaults separate. Saving each Auth
+  /// account still requires explicit login opt-in.
   /// When the optional network profile arguments are absent, profile data is
   /// memory-only. Supplying the root and namespace without a key opts into
   /// the legacy Unix encrypted-directory backend whose key is stored beside
@@ -221,6 +222,34 @@ abstract class ClientHandle implements RustOpaqueInterface {
           cacheRoot: cacheRoot,
           credentialStorageRoot: credentialStorageRoot,
           credentialStorageNamespace: credentialStorageNamespace,
+          profileStorageRoot: profileStorageRoot,
+          applicationNamespace: applicationNamespace,
+          profileStorageKey: profileStorageKey,
+          identitySessionRoot: identitySessionRoot,
+          identitySessionNamespace: identitySessionNamespace,
+          identitySessionKey: identitySessionKey);
+
+  /// Creates a Client while accepting platform-secure Auth vault keys.
+  /// Both keys are independent, and Rust consumes/zeroizes their temporary
+  /// input buffers. This constructor performs no login or network request.
+  static Future<ClientHandle> newWithCredentialKeys(
+          {String? cacheRoot,
+          String? credentialStorageRoot,
+          String? credentialStorageNamespace,
+          Uint8List? identityCredentialStorageKey,
+          Uint8List? selfServiceCredentialStorageKey,
+          String? profileStorageRoot,
+          String? applicationNamespace,
+          Uint8List? profileStorageKey,
+          String? identitySessionRoot,
+          String? identitySessionNamespace,
+          Uint8List? identitySessionKey}) =>
+      RustLib.instance.api.crateSdkApiClientHandleNewWithCredentialKeys(
+          cacheRoot: cacheRoot,
+          credentialStorageRoot: credentialStorageRoot,
+          credentialStorageNamespace: credentialStorageNamespace,
+          identityCredentialStorageKey: identityCredentialStorageKey,
+          selfServiceCredentialStorageKey: selfServiceCredentialStorageKey,
           profileStorageRoot: profileStorageRoot,
           applicationNamespace: applicationNamespace,
           profileStorageKey: profileStorageKey,

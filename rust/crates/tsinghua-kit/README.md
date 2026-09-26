@@ -17,11 +17,21 @@ TUNet's registration status for the current IPv4 address. It can explicitly
 connect or disconnect a Portal profile through the shared Rust transport.
 Connections are local network operations, not Auth sessions; EAP profiles are
 rejected by Portal calls and operating-system Wi-Fi/EAP configuration remains
-outside the SDK. THOS write operations and Identity/SelfService credential
-restoration also remain outside the current public API. The Flutter facade can use Flutter Secure
-Storage to hold the encryption key for persistent local network profiles;
-Rust receives that key only while constructing the Client and never writes it
-beside the encrypted profile file.
+outside the SDK. THOS write operations remain outside the current public API.
+More precisely,
+Identity cookie snapshots require explicit revalidation after restart,
+SelfService session restoration is not implemented, and saved passwords only
+start explicit Auth flows. The preferred Flutter `HostSecureStorage` policy
+keeps independent Identity and SelfService credential keys in Flutter Secure
+Storage; Rust receives each key only while constructing the Client and never
+writes it beside encrypted credential files. The legacy
+`EncryptedDirectory` credential policy is kept for migration compatibility.
+
+Rust imports follow the domain modules: `auth`, `network`, `service_hall`,
+`self_service`, `news`, `learn`, `registrar`, `calendar`, `library`,
+`classrooms`, `campus_card`, `electricity`, and `read`. Storage policies live
+under `config`. The crate root is intentionally small and re-exports only
+`Client`, `ClientBuilder`, `Error`, and `Result`.
 
 The SDK does not depend on Flutter or `flutter_rust_bridge`. It does depend on
 the internal `tsinghua_kit_engine` crate, which contains Rust-owned transport,
@@ -81,7 +91,10 @@ directory backend stores its key beside the ciphertext and the snapshot is not
 a strict Identity-only cookie partition or an OS Keychain. Restored data starts
 unverified and must be checked explicitly. SelfService session restoration is
 not implemented. Do not treat the directory backend as high-assurance
-credential storage.
+credential storage. Auth credential persistence is separately opt-in; the
+`CredentialStoragePolicy::HostSecureStorage` option accepts distinct
+Identity and SelfService keys from the host's secure store. The legacy
+`EncryptedDirectory` policy stores its key beside its encrypted records.
 
 Identity and SelfService may use different usernames. SelfService captcha
 login requires a currently proven Identity/WebVPN access path, but its

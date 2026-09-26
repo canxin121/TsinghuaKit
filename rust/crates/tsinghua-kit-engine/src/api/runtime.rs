@@ -2531,6 +2531,10 @@ pub struct CampusRuntime {
     // This is independent from session snapshots and is split by Auth domain
     // again inside credential_store.
     credential_store_root: PathBuf,
+    // The host may provide separate keys for each account domain. They stay
+    // in memory only and are never written beside their ciphertext.
+    identity_credential_store_key: Option<zeroize::Zeroizing<[u8; 32]>>,
+    self_service_credential_store_key: Option<zeroize::Zeroizing<[u8; 32]>>,
     // Captured at construction/explicit login, never refreshed by a late read.
     recovery_lease: Option<crate::session_persistence::SessionLease>,
     portal_bootstrapped: bool,
@@ -3240,6 +3244,8 @@ impl CampusRuntime {
             identity_snapshot_written: false,
             identity_session_key,
             credential_store_root: persistence_root.clone(),
+            identity_credential_store_key: None,
+            self_service_credential_store_key: None,
             persistence_root,
             recovery_lease,
             portal_bootstrapped: false,

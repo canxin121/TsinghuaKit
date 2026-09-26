@@ -100,6 +100,15 @@ pub enum CredentialStoragePolicy {
     MemoryOnly,
     /// Store explicitly remembered credentials in this private directory.
     EncryptedDirectory { root: PathBuf, namespace: String },
+    /// Store credentials in encrypted files while keeping independent domain
+    /// keys in host secure storage. Identity and SelfService must not share a
+    /// key, even when they use the same username.
+    HostSecureStorage {
+        root: PathBuf,
+        namespace: String,
+        identity_key: CredentialStorageKey,
+        self_service_key: CredentialStorageKey,
+    },
 }
 
 impl fmt::Debug for CredentialStoragePolicy {
@@ -111,6 +120,11 @@ impl fmt::Debug for CredentialStoragePolicy {
                 .field(root)
                 .field(namespace)
                 .finish(),
+            Self::HostSecureStorage { .. } => formatter
+                .debug_struct("HostSecureStorage")
+                .field("configured", &true)
+                .field("domain_keys", &"[REDACTED]")
+                .finish(),
         }
     }
 }
@@ -118,6 +132,34 @@ impl fmt::Debug for CredentialStoragePolicy {
 impl Default for CredentialStoragePolicy {
     fn default() -> Self {
         Self::MemoryOnly
+    }
+}
+
+/// A 256-bit credential-vault key supplied by the host's secure store.
+///
+/// The bytes are consumed and zeroized when this value is dropped. Its debug
+/// representation never includes key material.
+pub struct CredentialStorageKey(zeroize::Zeroizing<[u8; 32]>);
+
+impl CredentialStorageKey {
+    /// Creates a key from exactly 32 bytes.
+    pub fn from_bytes(bytes: Vec<u8>) -> Result<Self, Error> {
+        let bytes = zeroize::Zeroizing::new(bytes);
+        let key: [u8; 32] = bytes
+            .as_slice()
+            .try_into()
+            .map_err(|_| Error::new(Service::Local, ErrorCode::InvalidInput))?;
+        Ok(Self(zeroize::Zeroizing::new(key)))
+    }
+
+    pub(crate) fn into_bytes(self) -> zeroize::Zeroizing<[u8; 32]> {
+        self.0
+    }
+}
+
+impl fmt::Debug for CredentialStorageKey {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("CredentialStorageKey([REDACTED])")
     }
 }
 
@@ -433,8 +475,13 @@ impl ClientBuilder {
                 (root, false)
             }
         };
-        let (credential_store_root, credential_storage_enabled) = match self.credential_storage {
-            CredentialStoragePolicy::MemoryOnly => (cache_root.clone(), false),
+        let (
+            credential_store_root,
+            credential_storage_enabled,
+            identity_credential_key,
+            self_service_credential_key,
+        ) = match self.credential_storage {
+            CredentialStoragePolicy::MemoryOnly => (cache_root.clone(), false, None, None),
             CredentialStoragePolicy::EncryptedDirectory { root, namespace } => {
                 if !root.is_absolute()
                     || root.components().count() < 2
@@ -465,7 +512,48 @@ impl ClientBuilder {
                 set_private_directory_permissions(&root)?;
                 let root = fs::canonicalize(&root)
                     .map_err(|_| Error::new(Service::Local, ErrorCode::StorageUnavailable))?;
-                (root, true)
+                (root, true, None, None)
+            }
+            CredentialStoragePolicy::HostSecureStorage {
+                root,
+                namespace,
+                identity_key,
+                self_service_key,
+            } => {
+                if !root.is_absolute()
+                    || root.components().count() < 2
+                    || root
+                        .components()
+                        .any(|part| matches!(part, std::path::Component::ParentDir))
+                    || namespace.is_empty()
+                    || namespace.len() > 128
+                    || namespace == "."
+                    || namespace == ".."
+                    || !namespace
+                        .bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || b".-_".contains(&byte))
+                {
+                    return Err(Error::new(Service::Local, ErrorCode::InvalidInput));
+                }
+                fs::create_dir_all(&root)
+                    .map_err(|_| Error::new(Service::Local, ErrorCode::StorageUnavailable))?;
+                set_private_directory_permissions(&root)?;
+                let root = fs::canonicalize(&root)
+                    .map_err(|_| Error::new(Service::Local, ErrorCode::StorageUnavailable))?
+                    .join("TsinghuaKit")
+                    .join("auth-credentials-host-key-v2")
+                    .join(namespace);
+                fs::create_dir_all(&root)
+                    .map_err(|_| Error::new(Service::Local, ErrorCode::StorageUnavailable))?;
+                set_private_directory_permissions(&root)?;
+                let root = fs::canonicalize(&root)
+                    .map_err(|_| Error::new(Service::Local, ErrorCode::StorageUnavailable))?;
+                (
+                    root,
+                    true,
+                    Some(identity_key.into_bytes()),
+                    Some(self_service_key.into_bytes()),
+                )
             }
         };
         let mut runtime = match self.identity_session_storage {
@@ -514,6 +602,7 @@ impl ClientBuilder {
             }
         };
         runtime.set_credential_store_root(credential_store_root);
+        runtime.set_credential_store_keys(identity_credential_key, self_service_credential_key);
         let network_profiles = NetworkProfileStore::open(self.network_profile_storage)?;
         Ok(Client {
             runtime,

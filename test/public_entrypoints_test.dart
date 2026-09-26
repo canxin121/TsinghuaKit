@@ -28,6 +28,24 @@ void main() {
       isNull,
     );
     expect(
+      core.IdentitySessionPersistence.memoryOnly(),
+      isA<core.MemoryOnlyIdentitySessionPersistence>(),
+    );
+    expect(
+      core.IdentitySessionPersistence.platformSecureStorage(
+        root: '/app/private',
+        namespace: 'org.example.app',
+      ),
+      isA<core.PlatformSecureStorageIdentitySessionPersistence>(),
+    );
+    expect(
+      core.NetworkProfilePersistence.platformSecureStorage(
+        root: '/app/private',
+        namespace: 'org.example.app',
+      ),
+      isA<core.PlatformSecureStorageNetworkProfilePersistence>(),
+    );
+    expect(
       auth.AuthCredentialPersistence.memoryOnly(),
       isA<auth.MemoryOnlyAuthCredentialPersistence>(),
     );
@@ -37,6 +55,13 @@ void main() {
         namespace: 'org.example.app',
       ),
       isA<auth.EncryptedDirectoryAuthCredentialPersistence>(),
+    );
+    expect(
+      auth.AuthCredentialPersistence.platformSecureStorage(
+        root: '/app/private',
+        namespace: 'org.example.app',
+      ),
+      isA<auth.PlatformSecureStorageAuthCredentialPersistence>(),
     );
     expect(auth.SecondFactorMethod.sms.name, 'sms');
     expect(network.NetworkAccessMethod.systemWifiEap.name, 'systemWifiEap');
