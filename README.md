@@ -78,37 +78,45 @@ if (phases.data.tasks.isNotEmpty) {
 ```
 
 Service read caches are memory-only by default. The host may explicitly
-choose a private cache directory; this is independent from Identity's
-encrypted session snapshot and local network profiles. The cache directory
-contains business read data only and never creates an authenticated session.
+choose a cache directory; it is independent from Identity's optional session
+snapshot and local network profiles. The cache directory contains business
+read data only and never creates an authenticated session.
 
-Flutter can separately opt in to save an Identity cookie snapshot as an
-encrypted file. The SDK manages the key and snapshot together under the
-application-private directory supplied by the host:
+All Auth and local network persistence is memory-only by default. The host
+chooses a directory and namespace for each optional store. TsinghuaKit writes
+ordinary, readable JSON files and does not call Keychain, Keystore, Flutter
+Secure Storage, or another operating-system credential service. On Unix,
+TsinghuaKit creates directories with mode `0700` and files with mode `0600`;
+this does not encrypt the data or protect it from another process running as
+the same user. Other platforms use their normal filesystem permission model.
+
+Flutter can separately opt in to save an Identity cookie snapshot as JSON:
 
 ```dart
 final client = await TsinghuaKit.createClient(
   cache: ClientCachePersistence.directory(
     root: appPrivateCacheDirectory,
   ),
-  identitySession: IdentitySessionPersistence.encryptedDirectory(
+  identitySession: IdentitySessionPersistence.jsonDirectory(
     root: appPrivateDataDirectory,
     namespace: 'org.example.campus-app',
   ),
 );
 ```
 
-That snapshot is device-bound and encrypted. Its key is stored beside the
-snapshot in the same private directory. The snapshot never includes a
-password. Auth passwords use a separate opt-in policy:
+The snapshot is device-bound but not encrypted. It contains the serialized
+shared Cookie jar, so the file is authentication material and can be read or
+copied by anyone with filesystem access. It never includes an account
+password. Restored Identity remains unverified until the app explicitly asks
+the SDK to revalidate it. Auth passwords use a separate opt-in policy:
 
 ```dart
 final client = await TsinghuaKit.createClient(
-  authCredentials: AuthCredentialPersistence.encryptedDirectory(
+  authCredentials: AuthCredentialPersistence.jsonDirectory(
     root: appPrivateDataDirectory,
     namespace: 'org.example.campus-app',
   ),
-  identitySession: IdentitySessionPersistence.encryptedDirectory(
+  identitySession: IdentitySessionPersistence.jsonDirectory(
     root: appPrivateDataDirectory,
     namespace: 'org.example.campus-app',
   ),
@@ -121,32 +129,48 @@ await client.auth.identity.login(
 );
 ```
 
-Identity and SelfService credentials are encrypted in distinct internal
-namespaces, even if both accounts use the same username. Identity credentials
-are saved only after a successful login; cross-process recovery also requires
-an Identity session snapshot. SelfService credentials are saved only after a
+Identity and SelfService credentials are stored in separate account domains,
+even if both accounts use the same username. Identity credentials are saved
+only after a successful login; cross-process recovery also requires an
+Identity session snapshot. SelfService credentials are saved only after a
 successful captcha login. `startSavedLogin(username: ...)` opens a new captcha
 flow and never bypasses captcha entry. Setting either login's option to false
-removes a previously saved password for that account. The SDK stores these
-records in encrypted files, with separate Identity and SelfService account
-domains. Their local encryption key is kept beside the encrypted records in
-the selected app-private directory. This is app-managed file storage; it does
-not use Keychain, Keystore, or another system credential service, and it does
-not protect files from another process running as the same user.
+removes a previously saved password for that account. Credential JSON contains
+the username, plaintext password, device binding, and login-stage preference.
+The host-selected root and namespace make these files available for the app
+owner to inspect, back up, or delete.
+
+The main files are named `campus-session-v3.json` for the Identity cookie
+snapshot, `credential-v2-<account-hash>.json` for each remembered credential,
+and `profiles-v2.json` for local network profiles. Identity and SelfService
+credentials use separate folders. A JSON format or permission error is
+reported and the existing file is kept. Older encrypted formats are not
+silently migrated or removed; explicitly clear or handle them before using the
+new file format.
+
+With one host-selected root and namespace, the bridge stores them in separate
+locations:
+
+```text
+<root>/TsinghuaKit/auth-credentials/<namespace>/credentials/credential-v2-<account-hash>.json
+<root>/TsinghuaKit/auth-credentials/<namespace>/self-service/credentials/credential-v2-<account-hash>.json
+<root>/TsinghuaKit/identity-session/<namespace>/campus-session-v3.json
+<root>/tsinghua-kit-network-profiles/<namespace-hash>/profiles-v2.json
+```
 
 The SDK stores the
 shared Cookie jar once at the first successful Identity checkpoint; later
 business and SelfService responses do not refresh it. Cookies already present
 at that checkpoint may be included, so this is not per-account Cookie
-partitioning. Schema 1 snapshots are rejected without migration. Restored
+partitioning. Older encrypted or incompatible snapshot files are preserved
+and produce a storage error; TsinghuaKit does not migrate or delete them
+automatically. Restored
 Identity appears as `restoredUnverified`; call
 `client.auth.identity.revalidateRestoredSession()` only when the app explicitly
 wants Rust to perform the read-only check. SelfService status and network
-online proof are not restored. The legacy
-`IdentitySessionPersistence.encryptedDirectory` keeps its key beside the
-ciphertext. Identity snapshots do not restore
-passwords or the second Auth slot. A saved SelfService password only starts a
-new explicit captcha flow.
+online proof are not restored. Identity snapshots do not restore passwords or
+the second Auth slot. A saved SelfService password only starts a new explicit
+captcha flow.
 
 It also supports explicit captcha/code steps, profile editing, version-bound
 form preparation, and user-requested password filling. Identity and
@@ -154,12 +178,11 @@ SelfService remain the only Auth accounts. Portal and system Wi-Fi/EAP data
 are local profiles; creating or filling one does not connect the device or
 restore either Auth session. Profile persistence is memory-only by default.
 To keep profiles across app restarts, use
-`NetworkProfilePersistence.encryptedDirectory(root: ..., namespace: ...)`.
-Rust stores the encrypted profile file and its key under the selected private
-app directory. These files contain only local Portal/EAP form data and any
-password the user explicitly chose to save; they are not an Auth session or
-online proof. The SDK does not call Keychain, Keystore, or another system
-credential service.
+`NetworkProfilePersistence.jsonDirectory(root: ..., namespace: ...)`.
+Rust stores profile labels, usernames, access method, and any password the
+user explicitly chose to save in readable JSON under the selected directory.
+These files are local Portal/EAP form data, not an Auth session or online
+proof. The SDK does not call a system credential service.
 
 Logout scope is explicit: `client.auth.identity.logout()` closes Identity and
 its derived service proofs; a selected SelfService account remains visible as

@@ -108,7 +108,7 @@ abstract final class TsinghuaKit {
     final (authCredentialRoot, authCredentialNamespace) =
         switch (authCredentials) {
       MemoryOnlyAuthCredentialPersistence() => (null, null),
-      EncryptedDirectoryAuthCredentialPersistence(
+      JsonDirectoryAuthCredentialPersistence(
         :final root,
         :final namespace,
       ) =>
@@ -116,7 +116,7 @@ abstract final class TsinghuaKit {
     };
     final (storageRoot, applicationNamespace) = switch (networkProfiles) {
       MemoryOnlyNetworkProfilePersistence() => (null, null),
-      EncryptedDirectoryNetworkProfilePersistence(
+      JsonDirectoryNetworkProfilePersistence(
         :final root,
         :final namespace
       ) =>
@@ -125,7 +125,7 @@ abstract final class TsinghuaKit {
     final (identitySessionRoot, identitySessionNamespace) =
         switch (identitySession) {
       MemoryOnlyIdentitySessionPersistence() => (null, null),
-      EncryptedDirectoryIdentitySessionPersistence(
+      JsonDirectoryIdentitySessionPersistence(
         :final root,
         :final namespace,
       ) =>
@@ -149,7 +149,7 @@ abstract final class TsinghuaKit {
 /// Persistence choices for non-secret service read caches.
 ///
 /// Service caches remain memory-only by default. They are independent from
-/// Identity's optional encrypted session snapshot and local network profiles.
+/// Identity's optional JSON session snapshot and local network profiles.
 sealed class ClientCachePersistence {
   const ClientCachePersistence();
 
@@ -186,13 +186,14 @@ sealed class AuthCredentialPersistence {
   const factory AuthCredentialPersistence.memoryOnly() =
       MemoryOnlyAuthCredentialPersistence;
 
-  /// Stores explicitly remembered credentials in an encrypted private
-  /// directory. The encryption key is stored beside the ciphertext; this is
-  /// not equivalent to an operating-system Keychain.
-  const factory AuthCredentialPersistence.encryptedDirectory({
+  /// Stores explicitly remembered credentials in readable JSON files below
+  /// the selected directory. On Unix, files use owner-only permissions, but
+  /// they are not encrypted and remain readable to processes running as the
+  /// same user. TsinghuaKit does not call an operating-system credential store.
+  const factory AuthCredentialPersistence.jsonDirectory({
     required String root,
     required String namespace,
-  }) = EncryptedDirectoryAuthCredentialPersistence;
+  }) = JsonDirectoryAuthCredentialPersistence;
 }
 
 final class MemoryOnlyAuthCredentialPersistence
@@ -200,9 +201,9 @@ final class MemoryOnlyAuthCredentialPersistence
   const MemoryOnlyAuthCredentialPersistence();
 }
 
-final class EncryptedDirectoryAuthCredentialPersistence
+final class JsonDirectoryAuthCredentialPersistence
     extends AuthCredentialPersistence {
-  const EncryptedDirectoryAuthCredentialPersistence({
+  const JsonDirectoryAuthCredentialPersistence({
     required this.root,
     required this.namespace,
   });
@@ -227,15 +228,15 @@ sealed class IdentitySessionPersistence {
   const factory IdentitySessionPersistence.memoryOnly() =
       MemoryOnlyIdentitySessionPersistence;
 
-  /// Explicitly stores an encrypted, device-bound Identity snapshot under a
-  /// host-selected app-private directory. Service caches use their own
-  /// ClientCachePersistence policy. This backend is not an OS Keychain; its
-  /// encryption key is stored beside the encrypted data. Auth passwords are
-  /// stored by the separate AuthCredentialPersistence policy.
-  const factory IdentitySessionPersistence.encryptedDirectory({
+  /// Explicitly stores a readable, device-bound Identity snapshot as JSON
+  /// under a host-selected directory. Service caches use their own
+  /// ClientCachePersistence policy. On Unix, the file uses owner-only
+  /// permissions, but it is not encrypted. Auth passwords use the separate
+  /// AuthCredentialPersistence policy.
+  const factory IdentitySessionPersistence.jsonDirectory({
     required String root,
     required String namespace,
-  }) = EncryptedDirectoryIdentitySessionPersistence;
+  }) = JsonDirectoryIdentitySessionPersistence;
 }
 
 /// Default memory-only Identity session storage.
@@ -244,10 +245,10 @@ final class MemoryOnlyIdentitySessionPersistence
   const MemoryOnlyIdentitySessionPersistence();
 }
 
-/// Explicit opt-in to the Rust encrypted Identity snapshot backend.
-final class EncryptedDirectoryIdentitySessionPersistence
+/// Explicit opt-in to the Rust JSON Identity snapshot backend.
+final class JsonDirectoryIdentitySessionPersistence
     extends IdentitySessionPersistence {
-  const EncryptedDirectoryIdentitySessionPersistence({
+  const JsonDirectoryIdentitySessionPersistence({
     required this.root,
     required this.namespace,
   });
@@ -270,15 +271,13 @@ sealed class NetworkProfilePersistence {
   const factory NetworkProfilePersistence.memoryOnly() =
       MemoryOnlyNetworkProfilePersistence;
 
-  /// Uses the opt-in Unix encrypted-directory backend for profile fill data.
-  ///
-  /// The backend is not an OS Keychain. It is unavailable on non-Unix
-  /// platforms, and its encryption key is stored alongside the encrypted
-  /// profile file in the private directory.
-  const factory NetworkProfilePersistence.encryptedDirectory({
+  /// Stores profile fill data in readable JSON files below the selected
+  /// directory. On Unix, files use owner-only permissions. The values are
+  /// not encrypted and no system credential store is used.
+  const factory NetworkProfilePersistence.jsonDirectory({
     required String root,
     required String namespace,
-  }) = EncryptedDirectoryNetworkProfilePersistence;
+  }) = JsonDirectoryNetworkProfilePersistence;
 }
 
 /// Default memory-only local profile storage.
@@ -287,10 +286,10 @@ final class MemoryOnlyNetworkProfilePersistence
   const MemoryOnlyNetworkProfilePersistence();
 }
 
-/// Explicit opt-in to the local Unix encrypted-directory profile store.
-final class EncryptedDirectoryNetworkProfilePersistence
+/// Explicit opt-in to the local JSON profile store.
+final class JsonDirectoryNetworkProfilePersistence
     extends NetworkProfilePersistence {
-  const EncryptedDirectoryNetworkProfilePersistence({
+  const JsonDirectoryNetworkProfilePersistence({
     required this.root,
     required this.namespace,
   });

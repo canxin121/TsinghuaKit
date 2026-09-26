@@ -6,14 +6,8 @@ pub(crate) use authority::{
     SessionLease, begin_explicit_authority_with_opt_in, load_authorized_state, revoke_authority,
 };
 
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use chrono::{DateTime, Duration, Utc};
 use fs2::FileExt;
-use ring::{
-    aead::{Aad, CHACHA20_POLY1305, LessSafeKey, NONCE_LEN, Nonce, UnboundKey},
-    digest::{SHA256, digest},
-    rand::{SecureRandom, SystemRandom},
-};
 use serde::{Deserialize, Serialize};
 use std::{
     fmt,
@@ -27,7 +21,6 @@ const SCHEMA: u32 = 2;
 // Version 2 marks the SDK's Identity-only checkpoint semantics. Older
 // snapshots may have been refreshed from the shared jar after SelfService or
 // service handoffs, so they are deliberately rejected rather than migrated.
-const SESSION_ENVELOPE_SCHEMA: u32 = 2;
 const MAX_AGE: Duration = Duration::days(30);
 // Account metadata contains no authentication material, but it can locate a
 // matching explicitly saved private-vault record and account-scoped cache. Keep
@@ -35,11 +28,13 @@ const MAX_AGE: Duration = Duration::days(30);
 // every successful login/service proof refreshes the timestamp.
 const ACCOUNT_METADATA_MAX_AGE: Duration = Duration::days(365);
 const MAX_PAYLOAD_BYTES: usize = 512 * 1024;
-const SESSION_FILE: &str = "campus-session-v2.bin";
-const LEGACY_SESSION_FILE: &str = "campus-session-v1.json";
-const SESSION_KEY_FILE: &str = "campus-session-key-v1.bin";
+const SESSION_FILE: &str = "campus-session-v3.json";
+const LEGACY_SESSION_FILES: [&str; 3] = [
+    "campus-session-v2.bin",
+    "campus-session-v1.json",
+    "campus-session-key-v1.bin",
+];
 const SESSION_LOCK_FILE: &str = "campus-session-store-v1.lock";
-const SESSION_KEY_BYTES: usize = 32;
 const ACCOUNT_METADATA_SCHEMA: u32 = 1;
 const ACCOUNT_METADATA_FILE: &str = "campus-account-v1.json";
 const RESUME_DIAGNOSTIC_FILE: &str = "backend-session-resume.json";
@@ -54,6 +49,7 @@ const STORAGE_DIR_OVERRIDE: &str = "THYOU_SESSION_DIR";
 /// on every platform; it does not call an operating-system credential or
 /// secret-service API.
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct ResumeSnapshot {
     schema: u32,
     pub(crate) username: String,
@@ -65,21 +61,7 @@ pub(crate) struct ResumeSnapshot {
     /// Stable trusted-device binding, not a password, ticket or CSRF.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     device_fingerprint: Option<String>,
-    cookie_store_b64: String,
-}
-
-/// The on-disk session representation deliberately contains no plaintext
-/// snapshot fields.  Account and device bindings are one-way digests used to
-/// construct AEAD associated data; the username, Cookie store, timestamps and
-/// checkpoint remain inside `ciphertext`.
-#[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct EncryptedSessionEnvelope {
-    schema: u32,
-    account_binding: String,
-    device_binding: String,
-    nonce: String,
-    ciphertext: String,
+    cookie_store_json: String,
 }
 
 /// Non-sensitive account context used to locate an explicitly saved private
@@ -173,24 +155,27 @@ impl ResumeAccountMetadata {
         self.device_fingerprint.as_deref()
     }
 
-    fn is_current(&self, now: DateTime<Utc>) -> bool {
+    fn is_well_formed(&self, now: DateTime<Utc>) -> bool {
         self.schema == ACCOUNT_METADATA_SCHEMA
             && !self.username.trim().is_empty()
             && self.username.len() <= 128
             && !self.username.chars().any(char::is_control)
             && self.last_successful_login <= now + Duration::minutes(5)
-            // A user who explicitly opted into the private credential vault
-            // has chosen a durable recovery boundary.  Keep that non-secret
-            // locator until logout/revocation; otherwise an arbitrary
-            // metadata TTL would make the encrypted credential unusable after
-            // a long period of inactivity.  Unsaved account-only cache shells
-            // remain bounded to avoid retaining an abandoned account forever.
-            && (self.credentials_saved
-                || now - self.last_successful_login <= ACCOUNT_METADATA_MAX_AGE)
             && self
                 .device_fingerprint
                 .as_deref()
                 .is_none_or(is_valid_device_fingerprint)
+            && (!self.stage_selection_explicit || self.academic_stage.is_some())
+    }
+
+    fn is_current(&self, now: DateTime<Utc>) -> bool {
+        self.is_well_formed(now)
+            // A user who explicitly opted into the private credential files
+            // has chosen a durable recovery boundary. Keep that non-secret
+            // locator until logout/revocation; unsaved account-only cache
+            // shells remain bounded to avoid retaining abandoned accounts.
+            && (self.credentials_saved
+                || now - self.last_successful_login <= ACCOUNT_METADATA_MAX_AGE)
     }
 }
 
@@ -201,7 +186,7 @@ impl fmt::Debug for ResumeSnapshot {
             .field("schema", &self.schema)
             .field("username", &"[redacted]")
             .field("saved_at", &self.saved_at)
-            .field("cookie_payload_len", &self.cookie_store_b64.len())
+            .field("cookie_payload_len", &self.cookie_store_json.len())
             .finish()
     }
 }
@@ -222,7 +207,15 @@ impl ResumeSnapshot {
             username: username.to_owned(),
             saved_at: Utc::now(),
             portal_bootstrap_completed: false,
-            cookie_store_b64: BASE64.encode(cookie_store),
+            cookie_store_json: {
+                let value = std::str::from_utf8(cookie_store).map_err(|_| {
+                    String::from("resume session cookie payload must be UTF-8 JSON")
+                })?;
+                serde_json::from_str::<serde_json::Value>(value).map_err(|_| {
+                    String::from("resume session cookie payload must be valid JSON")
+                })?;
+                value.to_owned()
+            },
             device_fingerprint: None,
         })
     }
@@ -242,10 +235,11 @@ impl ResumeSnapshot {
     }
 
     pub(crate) fn cookie_store(&self) -> Result<Vec<u8>, String> {
-        let bytes = BASE64
-            .decode(self.cookie_store_b64.as_bytes())
-            .map_err(|_| String::from("resume session cookie payload is invalid"))?;
-        if bytes.is_empty() || bytes.len() > MAX_PAYLOAD_BYTES {
+        let bytes = self.cookie_store_json.as_bytes().to_vec();
+        if bytes.is_empty()
+            || bytes.len() > MAX_PAYLOAD_BYTES
+            || serde_json::from_slice::<serde_json::Value>(&bytes).is_err()
+        {
             return Err(String::from("resume session cookie payload is invalid"));
         }
         Ok(bytes)
@@ -255,50 +249,26 @@ impl ResumeSnapshot {
         self.saved_at + MAX_AGE
     }
 
-    fn is_current(&self, now: DateTime<Utc>) -> bool {
+    fn is_well_formed(&self, now: DateTime<Utc>) -> bool {
         self.schema == SCHEMA
             && !self.username.trim().is_empty()
             && self.username.len() <= 128
             && !self.username.chars().any(char::is_control)
             && self.saved_at <= now + Duration::minutes(5)
-            && now < self.expires_at()
             && self
                 .device_fingerprint
                 .as_deref()
                 .is_none_or(is_valid_device_fingerprint)
             && self.cookie_store().is_ok()
     }
+
+    fn is_current(&self, now: DateTime<Utc>) -> bool {
+        self.is_well_formed(now) && now < self.expires_at()
+    }
 }
 
 fn is_valid_device_fingerprint(value: &str) -> bool {
     value.len() == 32 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
-}
-
-fn account_binding(username: &str) -> String {
-    BASE64.encode(digest(&SHA256, username.as_bytes()).as_ref())
-}
-
-fn device_binding(device_fingerprint: Option<&str>) -> String {
-    device_fingerprint
-        .map(|value| BASE64.encode(digest(&SHA256, value.as_bytes()).as_ref()))
-        .unwrap_or_default()
-}
-
-fn session_associated_data(account: &str, device: &str) -> Vec<u8> {
-    let mut data = b"THYou campus session snapshot v2\0".to_vec();
-    data.extend_from_slice(account.as_bytes());
-    data.push(0);
-    data.extend_from_slice(device.as_bytes());
-    data
-}
-
-fn session_key_from_bytes(bytes: &[u8]) -> Result<LessSafeKey, String> {
-    if bytes.len() != SESSION_KEY_BYTES {
-        return Err(String::from("resume session key is invalid"));
-    }
-    let key = UnboundKey::new(&CHACHA20_POLY1305, bytes)
-        .map_err(|_| String::from("resume session key is invalid"))?;
-    Ok(LessSafeKey::new(key))
 }
 
 #[cfg(unix)]
@@ -319,148 +289,20 @@ fn private_file_permissions(_path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn session_key_path(parent: &Path) -> PathBuf {
-    parent.join(SESSION_KEY_FILE)
-}
-
-fn read_existing_session_key(path: &Path) -> Result<[u8; SESSION_KEY_BYTES], String> {
-    let metadata = fs::symlink_metadata(path)
-        .map_err(|_| String::from("resume session key metadata is unavailable"))?;
-    if metadata.file_type().is_symlink() || !metadata.is_file() {
-        return Err(String::from(
-            "resume session key is not regular private storage",
-        ));
-    }
-    private_file_permissions(path)?;
-    if metadata.len() != SESSION_KEY_BYTES as u64 {
-        return Err(String::from("resume session key is invalid"));
-    }
-    let bytes = fs::read(path).map_err(|_| String::from("resume session key could not be read"))?;
-    bytes
-        .try_into()
-        .map_err(|_| String::from("resume session key is invalid"))
-}
-
-fn load_or_create_session_key(parent: &Path) -> Result<[u8; SESSION_KEY_BYTES], String> {
-    let path = session_key_path(parent);
-    match fs::symlink_metadata(&path) {
-        Ok(_) => return read_existing_session_key(&path),
-        Err(error) if error.kind() == ErrorKind::NotFound => {}
-        Err(_) => return Err(String::from("resume session key metadata is unavailable")),
-    }
-
-    let mut key = [0_u8; SESSION_KEY_BYTES];
-    SystemRandom::new()
-        .fill(&mut key)
-        .map_err(|_| String::from("resume session key could not be generated"))?;
-    let mut options = OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    match options.open(&path) {
-        Ok(mut file) => {
-            if file.write_all(&key).and_then(|_| file.sync_all()).is_err() {
-                drop(file);
-                let _ = fs::remove_file(&path);
-                return Err(String::from("resume session key could not be written"));
-            }
-            drop(file);
-            if let Err(error) = private_file_permissions(&path) {
-                let _ = fs::remove_file(&path);
-                return Err(error);
-            }
-            Ok(key)
-        }
-        Err(error) if error.kind() == ErrorKind::AlreadyExists => read_existing_session_key(&path),
-        Err(_) => Err(String::from("resume session key could not be created")),
-    }
-}
-
-fn encrypt_snapshot(
-    snapshot: &ResumeSnapshot,
-    key_bytes: &[u8; SESSION_KEY_BYTES],
-) -> Result<Vec<u8>, String> {
-    let plaintext = serde_json::to_vec(snapshot)
+fn encode_snapshot(snapshot: &ResumeSnapshot) -> Result<Vec<u8>, String> {
+    let bytes = serde_json::to_vec_pretty(snapshot)
         .map_err(|_| String::from("resume session could not be encoded"))?;
-    if plaintext.is_empty() || plaintext.len() > MAX_PAYLOAD_BYTES {
+    if bytes.is_empty() || bytes.len() > MAX_PAYLOAD_BYTES {
         return Err(String::from("resume session payload is too large"));
     }
-    let account_binding = account_binding(&snapshot.username);
-    let device_binding = device_binding(snapshot.device_fingerprint());
-    let mut nonce_bytes = [0_u8; NONCE_LEN];
-    SystemRandom::new()
-        .fill(&mut nonce_bytes)
-        .map_err(|_| String::from("resume session nonce could not be generated"))?;
-    let cipher = session_key_from_bytes(key_bytes)?;
-    let mut ciphertext = plaintext;
-    cipher
-        .seal_in_place_append_tag(
-            Nonce::assume_unique_for_key(nonce_bytes),
-            Aad::from(session_associated_data(&account_binding, &device_binding)),
-            &mut ciphertext,
-        )
-        .map_err(|_| String::from("resume session could not be encrypted"))?;
-
-    serde_json::to_vec(&EncryptedSessionEnvelope {
-        schema: SESSION_ENVELOPE_SCHEMA,
-        account_binding,
-        device_binding,
-        nonce: BASE64.encode(nonce_bytes),
-        ciphertext: BASE64.encode(ciphertext),
-    })
-    .map_err(|_| String::from("resume session envelope could not be encoded"))
+    Ok(bytes)
 }
 
-fn decrypt_snapshot(
-    bytes: &[u8],
-    key_bytes: &[u8; SESSION_KEY_BYTES],
-) -> Result<ResumeSnapshot, String> {
-    if bytes.is_empty() || bytes.len() > MAX_PAYLOAD_BYTES * 2 {
-        return Err(String::from("resume session envelope is invalid"));
+fn decode_snapshot(bytes: &[u8]) -> Result<ResumeSnapshot, String> {
+    if bytes.is_empty() || bytes.len() > MAX_PAYLOAD_BYTES {
+        return Err(String::from("resume session JSON is invalid"));
     }
-    let envelope: EncryptedSessionEnvelope = serde_json::from_slice(bytes)
-        .map_err(|_| String::from("resume session envelope is invalid"))?;
-    if envelope.schema != SESSION_ENVELOPE_SCHEMA
-        || envelope.account_binding.len() > 128
-        || envelope.device_binding.len() > 128
-    {
-        return Err(String::from("resume session envelope is invalid"));
-    }
-    let nonce_bytes = BASE64
-        .decode(envelope.nonce.as_bytes())
-        .map_err(|_| String::from("resume session nonce is invalid"))?;
-    let nonce_bytes: [u8; NONCE_LEN] = nonce_bytes
-        .try_into()
-        .map_err(|_| String::from("resume session nonce is invalid"))?;
-    let mut ciphertext = BASE64
-        .decode(envelope.ciphertext.as_bytes())
-        .map_err(|_| String::from("resume session ciphertext is invalid"))?;
-    if ciphertext.len() < 16 || ciphertext.len() > MAX_PAYLOAD_BYTES + 16 {
-        return Err(String::from("resume session ciphertext is invalid"));
-    }
-
-    let cipher = session_key_from_bytes(key_bytes)?;
-    let plaintext = cipher
-        .open_in_place(
-            Nonce::assume_unique_for_key(nonce_bytes),
-            Aad::from(session_associated_data(
-                &envelope.account_binding,
-                &envelope.device_binding,
-            )),
-            &mut ciphertext,
-        )
-        .map_err(|_| String::from("resume session authentication failed"))?;
-    let snapshot: ResumeSnapshot = serde_json::from_slice(plaintext)
-        .map_err(|_| String::from("resume session payload is invalid"))?;
-    if account_binding(&snapshot.username) != envelope.account_binding
-        || device_binding(snapshot.device_fingerprint()) != envelope.device_binding
-    {
-        return Err(String::from("resume session binding is invalid"));
-    }
-    Ok(snapshot)
+    serde_json::from_slice(bytes).map_err(|_| String::from("resume session JSON is invalid"))
 }
 
 fn storage_dir() -> Result<PathBuf, String> {
@@ -548,10 +390,6 @@ pub(crate) fn application_data_dir() -> Result<PathBuf, String> {
 
 fn session_path() -> Result<PathBuf, String> {
     Ok(storage_dir()?.join(SESSION_FILE))
-}
-
-fn legacy_session_path() -> Result<PathBuf, String> {
-    Ok(storage_dir()?.join(LEGACY_SESSION_FILE))
 }
 
 fn account_metadata_path() -> Result<PathBuf, String> {
@@ -682,12 +520,9 @@ fn save_at_unlocked(path: &Path, snapshot: &ResumeSnapshot) -> Result<(), String
         .parent()
         .ok_or_else(|| String::from("resume session path is invalid"))?;
     ensure_private_directory(parent)?;
+    ensure_no_legacy_session_files(parent)?;
     reject_symlink(path)?;
-    let key = load_or_create_session_key(parent)?;
-    let payload = encrypt_snapshot(snapshot, &key)?;
-    if payload.is_empty() || payload.len() > MAX_PAYLOAD_BYTES * 2 {
-        return Err(String::from("resume session payload is too large"));
-    }
+    let payload = encode_snapshot(snapshot)?;
     let suffix = Utc::now().timestamp_nanos_opt().unwrap_or_default();
     let temporary = parent.join(format!(
         ".{SESSION_FILE}.tmp-{}-{suffix}",
@@ -744,6 +579,28 @@ fn clear_at_unlocked(path: &Path) -> Result<(), String> {
     }
 }
 
+fn clear_legacy_session_files_unlocked(parent: &Path) -> Result<(), String> {
+    for name in LEGACY_SESSION_FILES {
+        clear_at_unlocked(&parent.join(name))?;
+    }
+    Ok(())
+}
+
+pub(crate) fn ensure_no_legacy_session_files(parent: &Path) -> Result<(), String> {
+    for name in LEGACY_SESSION_FILES {
+        match fs::symlink_metadata(parent.join(name)) {
+            Ok(_) => {
+                return Err(String::from(
+                    "legacy session storage exists; preserve it and remove it explicitly before using JSON persistence",
+                ));
+            }
+            Err(error) if error.kind() == ErrorKind::NotFound => {}
+            Err(_) => return Err(String::from("legacy session storage is unavailable")),
+        }
+    }
+    Ok(())
+}
+
 fn clear_at(path: &Path) -> Result<(), String> {
     let parent = path
         .parent()
@@ -758,30 +615,32 @@ fn load_at_unlocked(path: &Path) -> Result<Option<ResumeSnapshot>, String> {
         Err(_) => return Err(String::from("resume session file metadata is unavailable")),
     };
     if metadata.file_type().is_symlink() || !metadata.is_file() {
-        let _ = clear_at_unlocked(path);
-        return Ok(None);
+        return Err(String::from(
+            "resume session file is not a regular file; the file was preserved",
+        ));
     }
     if private_file_permissions(path).is_err() {
-        let _ = clear_at_unlocked(path);
-        return Ok(None);
+        return Err(String::from(
+            "resume session file permissions are invalid; the file was preserved",
+        ));
     }
-    if metadata.len() == 0 || metadata.len() > (MAX_PAYLOAD_BYTES * 2) as u64 {
-        let _ = clear_at_unlocked(path);
-        return Ok(None);
+    if metadata.len() == 0 || metadata.len() > MAX_PAYLOAD_BYTES as u64 {
+        return Err(String::from(
+            "resume session file size is invalid; the file was preserved",
+        ));
     }
     let payload =
         fs::read(path).map_err(|_| String::from("resume session file could not be read"))?;
-    let parent = path
-        .parent()
-        .ok_or_else(|| String::from("resume session path is invalid"))?;
-    let key = read_existing_session_key(&session_key_path(parent))
-        .map_err(|_| String::from("resume session key is unavailable"))?;
-    let snapshot = match decrypt_snapshot(&payload, &key) {
-        Ok(snapshot) => snapshot,
-        Err(_) => return Err(String::from("resume session could not be decrypted")),
-    };
-    if !snapshot.is_current(Utc::now()) {
-        let _ = clear_at_unlocked(path);
+    let snapshot = decode_snapshot(&payload)
+        .map_err(|_| String::from("resume session JSON is invalid; the file was preserved"))?;
+    let now = Utc::now();
+    if !snapshot.is_well_formed(now) {
+        return Err(String::from(
+            "resume session data is invalid; the file was preserved",
+        ));
+    }
+    if !snapshot.is_current(now) {
+        clear_at_unlocked(path)?;
         return Ok(None);
     }
     Ok(Some(snapshot))
@@ -795,10 +654,8 @@ fn load_at(path: &Path) -> Result<Option<ResumeSnapshot>, String> {
 }
 
 fn load_from_root(root: &Path) -> Result<Option<ResumeSnapshot>, String> {
-    // The old v1 file is intentionally one-way invalidated.  Do this before
-    // reading v2 so a stale plaintext artifact cannot coexist unnoticed.
     with_session_store_lock(root, || {
-        clear_at_unlocked(&root.join(LEGACY_SESSION_FILE))?;
+        ensure_no_legacy_session_files(root)?;
         load_at_unlocked(&root.join(SESSION_FILE))
     })
 }
@@ -808,11 +665,7 @@ pub(crate) fn save_at_root(root: &Path, snapshot: &ResumeSnapshot) -> Result<(),
         return Err(String::from("resume session device binding is required"));
     }
     with_session_store_lock(root, || {
-        save_at_unlocked(&root.join(SESSION_FILE), snapshot)?;
-        // A v1 JSON snapshot is intentionally not migrated. Once a new
-        // snapshot is successfully written, remove the obsolete plaintext
-        // representation under the same lock boundary.
-        clear_at_unlocked(&root.join(LEGACY_SESSION_FILE))
+        save_at_unlocked(&root.join(SESSION_FILE), snapshot)
     })
 }
 
@@ -827,24 +680,30 @@ fn load_account_metadata_at_unlocked(path: &Path) -> Result<Option<ResumeAccount
         Err(_) => return Err(String::from("resume account metadata is unavailable")),
     };
     if metadata.file_type().is_symlink() || !metadata.is_file() {
-        let _ = clear_at_unlocked(path);
-        return Ok(None);
+        return Err(String::from(
+            "resume account metadata is not a regular file; the file was preserved",
+        ));
     }
     if metadata.len() == 0 || metadata.len() > 16 * 1024 {
-        let _ = clear_at_unlocked(path);
-        return Ok(None);
+        return Err(String::from(
+            "resume account metadata size is invalid; the file was preserved",
+        ));
     }
+    private_file_permissions(path).map_err(|_| {
+        String::from("resume account metadata permissions are invalid; the file was preserved")
+    })?;
     let payload =
         fs::read(path).map_err(|_| String::from("resume account metadata could not be read"))?;
-    let metadata: ResumeAccountMetadata = match serde_json::from_slice(&payload) {
-        Ok(metadata) => metadata,
-        Err(_) => {
-            let _ = clear_at_unlocked(path);
-            return Ok(None);
-        }
-    };
+    let metadata: ResumeAccountMetadata = serde_json::from_slice(&payload).map_err(|_| {
+        String::from("resume account metadata JSON is invalid; the file was preserved")
+    })?;
+    if !metadata.is_well_formed(Utc::now()) {
+        return Err(String::from(
+            "resume account metadata is invalid; the file was preserved",
+        ));
+    }
     if !metadata.is_current(Utc::now()) {
-        let _ = clear_at_unlocked(path);
+        clear_at_unlocked(path)?;
         return Ok(None);
     }
     Ok(Some(metadata))
@@ -924,7 +783,7 @@ pub(crate) fn save_account_metadata_at_root(
     })
 }
 
-/// Commits the encrypted Cookie snapshot and its non-secret account locator
+/// Commits the readable Cookie snapshot and its non-secret account locator
 /// as one recovery boundary. Each file is still written through its own
 /// atomic temporary-file replacement, but the shared store lock prevents a
 /// constructor or another Runtime from observing the pair between commits.
@@ -942,6 +801,7 @@ pub(crate) fn save_resume_state_at_root(
         return Err(String::from("resume state account binding is invalid"));
     }
     with_session_store_lock(root, || {
+        ensure_no_legacy_session_files(root)?;
         let session_path = root.join(SESSION_FILE);
         if let Err(error) = save_at_unlocked(&session_path, snapshot) {
             let _ = clear_at_unlocked(&session_path);
@@ -954,10 +814,6 @@ pub(crate) fn save_resume_state_at_root(
             // both cases removing the snapshot is the safe outcome: the
             // remaining metadata can at most scope a cache shell or a later
             // explicit private-vault recovery, never authorize Cookie use.
-            let _ = clear_at_unlocked(&session_path);
-            return Err(error);
-        }
-        if let Err(error) = clear_at_unlocked(&root.join(LEGACY_SESSION_FILE)) {
             let _ = clear_at_unlocked(&session_path);
             return Err(error);
         }
@@ -984,7 +840,7 @@ pub(crate) fn load_account_metadata() -> Result<Option<ResumeAccountMetadata>, S
 pub(crate) fn clear_session_at_root(root: &Path) -> Result<(), String> {
     with_session_store_lock(root, || {
         clear_at_unlocked(&root.join(SESSION_FILE))?;
-        clear_at_unlocked(&root.join(LEGACY_SESSION_FILE))
+        clear_legacy_session_files_unlocked(root)
     })
 }
 
@@ -1003,9 +859,6 @@ pub(crate) fn clear_account_metadata() -> Result<(), String> {
 }
 
 pub(crate) fn load() -> Result<Option<ResumeSnapshot>, String> {
-    // v1 stored the complete Cookie jar as Base64 in JSON.  It is not
-    // decryptable by the v2 store and is deliberately removed rather than
-    // migrated or treated as a usable session.
     load_from_root(&storage_dir()?)
 }
 
@@ -1016,7 +869,7 @@ pub(crate) fn load_at_root(root: &Path) -> Result<Option<ResumeSnapshot>, String
 pub(crate) fn clear_at_root(root: &Path) -> Result<(), String> {
     with_session_store_lock(root, || {
         clear_at_unlocked(&root.join(SESSION_FILE))?;
-        clear_at_unlocked(&root.join(LEGACY_SESSION_FILE))?;
+        clear_legacy_session_files_unlocked(root)?;
         clear_at_unlocked(&root.join(ACCOUNT_METADATA_FILE))
     })
 }
@@ -1084,7 +937,7 @@ mod tests {
     #[test]
     fn backend_repair_resume_retains_trusted_device_binding_without_credentials_in_debug() {
         let device = "0123456789abcdef0123456789abcdef";
-        let old = ResumeSnapshot::new("fixture-user", b"fixture-store").unwrap();
+        let old = ResumeSnapshot::new("fixture-user", b"[]").unwrap();
         assert!(old.device_fingerprint().is_none());
         let snapshot = old.clone().with_device_fingerprint(device).unwrap();
         let bytes = serde_json::to_vec(&snapshot).unwrap();
@@ -1102,8 +955,7 @@ mod tests {
 
     #[test]
     fn backend_repair_resume_checkpoint_is_metadata_not_service_proof() {
-        let mut snapshot =
-            ResumeSnapshot::new("fixture-private-user", b"fixture-cookie-store").unwrap();
+        let mut snapshot = ResumeSnapshot::new("fixture-private-user", b"[]").unwrap();
         assert!(!snapshot.portal_bootstrap_completed);
         assert!(!format!("{snapshot:?}").contains("fixture-private-user"));
         snapshot.portal_bootstrap_completed = true;
@@ -1134,7 +986,7 @@ mod tests {
 
     #[test]
     fn backend_repair_resume_snapshot_round_trip_has_no_password_ticket_or_csrf_fields() {
-        let source = br#"{\"cookie\":\"fixture\"}"#;
+        let source = br#"{"cookie":"fixture"}"#;
         let snapshot = ResumeSnapshot::new("fixture-user", source).unwrap();
         assert_eq!(snapshot.cookie_store().unwrap(), source);
         assert!(snapshot.is_current(Utc::now()));
@@ -1168,7 +1020,7 @@ mod tests {
 
     #[test]
     fn backend_repair_resume_snapshot_rejects_expired_or_far_future_state() {
-        let mut snapshot = ResumeSnapshot::new("fixture-user", b"cookie-state").unwrap();
+        let mut snapshot = ResumeSnapshot::new("fixture-user", b"[]").unwrap();
         snapshot.saved_at = Utc::now() - Duration::days(31);
         assert!(!snapshot.is_current(Utc::now()));
         snapshot.saved_at = Utc::now() + Duration::hours(1);
@@ -1211,10 +1063,28 @@ mod tests {
     }
 
     #[test]
+    fn backend_repair_corrupt_account_metadata_is_preserved_and_reported() {
+        let root = test_dir("account-metadata-invalid");
+        ensure_private_directory(&root).unwrap();
+        let path = root.join(ACCOUNT_METADATA_FILE);
+        let bytes = b"not metadata JSON";
+        fs::write(&path, bytes).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+        }
+
+        assert!(load_account_metadata_at(&path).is_err());
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn backend_repair_file_session_store_round_trips_without_os_secret_service() {
         let root = test_dir("session-file-round-trip");
         let path = root.join(SESSION_FILE);
-        let snapshot = ResumeSnapshot::new("fixture-user", b"cookie-state").unwrap();
+        let snapshot = ResumeSnapshot::new("fixture-user", b"[]").unwrap();
         save_at(&path, &snapshot).unwrap();
         assert_eq!(load_at(&path).unwrap(), Some(snapshot));
         #[cfg(unix)]
@@ -1235,8 +1105,8 @@ mod tests {
     }
 
     #[test]
-    fn backend_repair_session_snapshot_is_encrypted_and_bound_to_private_key() {
-        let root = test_dir("session-encrypted");
+    fn backend_repair_session_snapshot_is_readable_json_without_a_key_file() {
+        let root = test_dir("session-json");
         let path = root.join(SESSION_FILE);
         let snapshot = ResumeSnapshot::new(
             "fixture-user",
@@ -1248,24 +1118,20 @@ mod tests {
 
         save_at(&path, &snapshot).unwrap();
         let raw = fs::read(&path).unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&raw).unwrap();
+        assert_eq!(json["username"], "fixture-user");
         assert!(
-            !raw.windows(b"cookie-secret-marker".len())
-                .any(|window| window == b"cookie-secret-marker")
+            json["cookie_store_json"]
+                .as_str()
+                .unwrap()
+                .contains("cookie-secret-marker")
         );
-        assert!(!String::from_utf8_lossy(&raw).contains("fixture-user"));
+        assert!(!root.join("campus-session-key-v1.bin").exists());
         assert_eq!(load_at(&path).unwrap(), Some(snapshot));
 
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            assert_eq!(
-                fs::metadata(root.join(SESSION_KEY_FILE))
-                    .unwrap()
-                    .permissions()
-                    .mode()
-                    & 0o777,
-                0o600
-            );
             assert_eq!(
                 fs::metadata(&path).unwrap().permissions().mode() & 0o777,
                 0o600
@@ -1275,31 +1141,27 @@ mod tests {
     }
 
     #[test]
-    fn backend_refactor_session_envelope_v1_is_rejected_without_migration() {
-        let snapshot = ResumeSnapshot::new("fixture-user", b"identity-cookie-checkpoint")
-            .unwrap()
-            .with_device_fingerprint("0123456789abcdef0123456789abcdef")
-            .unwrap();
-        let key = [7_u8; SESSION_KEY_BYTES];
-        let current = encrypt_snapshot(&snapshot, &key).unwrap();
-        let mut legacy: serde_json::Value = serde_json::from_slice(&current).unwrap();
-        legacy["schema"] = serde_json::Value::from(1_u32);
-        let legacy = serde_json::to_vec(&legacy).unwrap();
-
-        assert!(decrypt_snapshot(&legacy, &key).is_err());
-    }
-
-    #[test]
-    fn backend_repair_legacy_plaintext_session_is_removed_without_migration() {
-        let root = test_dir("session-legacy-plaintext");
-        let legacy = root.join(LEGACY_SESSION_FILE);
-        let snapshot = ResumeSnapshot::new("fixture-user", b"legacy-cookie-store").unwrap();
+    fn backend_repair_legacy_session_files_are_preserved_and_reported() {
+        let root = test_dir("session-legacy-files");
+        let encrypted_legacy = root.join(LEGACY_SESSION_FILES[0]);
+        let legacy_bytes = b"legacy encrypted snapshot fixture";
         ensure_private_directory(&root).unwrap();
-        fs::write(&legacy, serde_json::to_vec(&snapshot).unwrap()).unwrap();
+        fs::write(&encrypted_legacy, legacy_bytes).unwrap();
 
-        assert_eq!(load_from_root(&root).unwrap(), None);
-        assert!(!legacy.exists());
+        let error = load_from_root(&root).expect_err("legacy encrypted file is unsupported");
+        assert!(error.contains("legacy session storage exists"));
+        assert_eq!(fs::read(&encrypted_legacy).unwrap(), legacy_bytes);
         assert!(!root.join(SESSION_FILE).exists());
+
+        let plaintext_legacy = root.join(LEGACY_SESSION_FILES[1]);
+        let legacy_json = br#"{"schema":1,"cookie_store":"old-format"}"#;
+        fs::write(&plaintext_legacy, legacy_json).unwrap();
+        assert!(load_from_root(&root).is_err());
+        assert_eq!(fs::read(&plaintext_legacy).unwrap(), legacy_json);
+
+        clear_session_at_root(&root).unwrap();
+        assert!(!encrypted_legacy.exists());
+        assert!(!plaintext_legacy.exists());
         let _ = fs::remove_dir_all(root);
     }
 
@@ -1307,13 +1169,22 @@ mod tests {
     fn backend_repair_file_session_store_preserves_unreadable_and_discards_expired_files() {
         let root = test_dir("session-file-invalid");
         let path = root.join(SESSION_FILE);
-        let snapshot = ResumeSnapshot::new("fixture-user", b"cookie-state").unwrap();
-        save_at(&path, &snapshot).unwrap();
-        fs::remove_file(session_key_path(&root)).unwrap();
+        ensure_private_directory(&root).unwrap();
+        let invalid_json = b"not a session snapshot";
+        fs::write(&path, invalid_json).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+        }
         assert!(load_at(&path).is_err());
-        assert!(path.exists(), "an unreadable snapshot must be preserved");
+        assert_eq!(
+            fs::read(&path).unwrap(),
+            invalid_json,
+            "invalid JSON is preserved"
+        );
 
-        let mut expired = ResumeSnapshot::new("fixture-user", b"cookie-state").unwrap();
+        let mut expired = ResumeSnapshot::new("fixture-user", b"[]").unwrap();
         expired.saved_at = Utc::now() - Duration::days(31);
         save_at(&path, &expired).unwrap();
         assert_eq!(load_at(&path).unwrap(), None);
@@ -1326,7 +1197,7 @@ mod tests {
         let root = test_dir("account-metadata-expiry");
         let session_path = root.join(SESSION_FILE);
         let metadata_path = root.join(ACCOUNT_METADATA_FILE);
-        let snapshot = ResumeSnapshot::new("fixture-user", b"cookie-state").unwrap();
+        let snapshot = ResumeSnapshot::new("fixture-user", b"[]").unwrap();
         save_at(&session_path, &snapshot).unwrap();
         let metadata = ResumeAccountMetadata::new(
             "fixture-user",
@@ -1335,13 +1206,7 @@ mod tests {
             true,
         )
         .unwrap();
-        // The metadata uses the same private-file guarantees as the session;
-        // this local write mirrors the public helper without touching the
-        // process-wide storage override used by another test.
-        let parent = metadata_path.parent().unwrap();
-        ensure_private_directory(parent).unwrap();
-        let bytes = serde_json::to_vec(&metadata).unwrap();
-        fs::write(&metadata_path, bytes).unwrap();
+        save_account_metadata_at_root(&root, &metadata).unwrap();
         let mut expired = snapshot;
         expired.saved_at = Utc::now() - Duration::days(31);
         save_at(&session_path, &expired).unwrap();
@@ -1362,7 +1227,7 @@ mod tests {
     fn backend_repair_resume_state_clears_snapshot_when_metadata_commit_fails() {
         let root = test_dir("resume-state-transaction");
         let device = "0123456789abcdef0123456789abcdef";
-        let snapshot = ResumeSnapshot::new("fixture-user", b"cookie-state")
+        let snapshot = ResumeSnapshot::new("fixture-user", b"[]")
             .unwrap()
             .with_device_fingerprint(device)
             .unwrap();
@@ -1386,7 +1251,7 @@ mod tests {
     fn backend_repair_resume_state_commits_snapshot_and_metadata_together() {
         let root = test_dir("resume-state-success");
         let device = "0123456789abcdef0123456789abcdef";
-        let snapshot = ResumeSnapshot::new("fixture-user", b"cookie-state")
+        let snapshot = ResumeSnapshot::new("fixture-user", b"[]")
             .unwrap()
             .with_device_fingerprint(device)
             .unwrap();

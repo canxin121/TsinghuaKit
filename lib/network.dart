@@ -7,7 +7,7 @@ library;
 
 export 'tsinghua_kit.dart'
     show
-        EncryptedDirectoryNetworkProfilePersistence,
+        JsonDirectoryNetworkProfilePersistence,
         MemoryOnlyNetworkProfilePersistence,
         NetworkAccessMethod,
         NetworkClient,

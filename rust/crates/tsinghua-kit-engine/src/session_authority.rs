@@ -171,7 +171,7 @@ pub(crate) fn load_authorized_state(
             generation: state.generation,
         };
         with_session_store_lock(root, || {
-            clear_at_unlocked(&root.join(LEGACY_SESSION_FILE))?;
+            ensure_no_legacy_session_files(root)?;
             let metadata = load_account_metadata_at_unlocked(&root.join(ACCOUNT_METADATA_FILE))?;
             let snapshot = load_at_unlocked(&root.join(SESSION_FILE))?;
             Ok((Some(lease), snapshot, metadata))
@@ -196,6 +196,7 @@ pub(crate) fn begin_explicit_authority_with_opt_in(
     remember_credentials: bool,
 ) -> Result<SessionLease, String> {
     with_lock(root, || {
+        with_session_store_lock(root, || ensure_no_legacy_session_files(root))?;
         let previous = read_unlocked(root)?;
         let mut state = Authority {
             schema: 1,
@@ -205,7 +206,6 @@ pub(crate) fn begin_explicit_authority_with_opt_in(
         write_unlocked(root, &state)?;
         with_session_store_lock(root, || {
             clear_at_unlocked(&root.join(SESSION_FILE))?;
-            clear_at_unlocked(&root.join(LEGACY_SESSION_FILE))?;
             let metadata = load_account_metadata_at_unlocked(&root.join(ACCOUNT_METADATA_FILE))?;
             if previous.revoked || metadata.as_ref().is_some_and(|m| m.username != username) {
                 clear_at_unlocked(&root.join(ACCOUNT_METADATA_FILE))?;

@@ -27,21 +27,21 @@ separate account domains and may use different usernames. TUNet portal access
 and Tsinghua Secure/EAP are local network operations; they are not a third
 authenticated account. The Rust SDK supports Portal/EAP profile records,
 version-bound form preparation, and explicit password filling. Profiles are
-memory-only by default. A host may opt in to app-managed encrypted files by
-providing a private storage root and an application namespace; the SDK stores
-each key beside its encrypted data and does not call Keychain, Keystore, or
-another operating-system credential service. These files store profile data
-only and never restore Auth sessions. Auth sessions remain memory-only unless
-a host explicitly selects an Identity snapshot policy; its directory is
-independent from the service cache. `IdentitySessionStoragePolicy::EncryptedDirectory`
-stores an encrypted, device-bound snapshot and its key in the same private
-directory. `CredentialStoragePolicy` selects a separate app-private
+memory-only by default. A host may opt in to ordinary JSON files by providing
+a selected storage root and application namespace. The SDK does not call
+Keychain, Keystore, Flutter Secure Storage, or another operating-system
+credential service. These files store profile data only and never restore Auth
+sessions. Auth sessions remain memory-only unless a host explicitly selects
+an Identity snapshot policy; its directory is independent from the service
+cache. `IdentitySessionStoragePolicy::JsonDirectory` stores a readable,
+device-bound snapshot. `CredentialStoragePolicy` selects a separate
 credential directory. A successful Identity login or completed SelfService
 captcha flow saves its account-domain record only after explicit
-`remember_credentials(true)` opt-in; the two namespaces remain separate even
-for identical account names. The credential vault uses encrypted files and a
-local key beside the records. This is app-managed file storage, not protection
-against another process running as the same user. Either snapshot opt-in
+`remember_credentials(true)` opt-in; the two account domains remain separate
+even for identical account names. Credential JSON contains the plaintext
+password. On Unix, TsinghuaKit uses `0700` directories and `0600` files, but
+this does not encrypt data or protect it from another process running as the
+same user. Either snapshot opt-in
 restores the shared Identity-bound Cookie snapshot as
 `RestoredUnverified`; the host must call
 `identity.revalidate_restored_session()` to perform a read-only validation.
@@ -242,11 +242,11 @@ registered the current local IPv4 address. It does not prove general Internet
 reachability or the status of system-managed EAP Wi-Fi such as Tsinghua Secure.
 
 Network profiles are memory-only by default. A host may explicitly opt into
-`NetworkProfileStoragePolicy::EncryptedDirectory` with a private application
-directory and a stable host namespace. The SDK encrypts profile records and
-stores the key in that app-managed directory beside the data. Profile
-persistence restores form data only and never restores an Auth session or
-network-online proof. The selected store is locked to one Client at a time.
+`NetworkProfileStoragePolicy::JsonDirectory` with a selected directory and a
+stable host namespace. The SDK stores profile records as readable JSON.
+Profile persistence restores form data only and never restores an Auth
+session or network-online proof. The selected store is locked to one Client
+at a time.
 
 Building Rustdoc or compiling these packages does not log in or contact
 campus services.

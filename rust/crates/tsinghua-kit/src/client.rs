@@ -58,7 +58,8 @@ use zeroize::Zeroize;
 #[non_exhaustive]
 pub enum ClientCachePolicy {
     /// Create a private temporary directory and remove it when the client is
-    /// dropped. Authentication sessions remain memory-only.
+    /// dropped. Auth persistence remains controlled by the separate Auth
+    /// storage policies, which default to memory-only.
     Ephemeral,
     /// Store non-credential read caches in this host-selected directory.
     Directory(PathBuf),
@@ -76,24 +77,23 @@ impl From<ClientCachePolicy> for EngineCachePolicy {
 /// Storage for credentials the user explicitly chooses to remember.
 ///
 /// This is independent from Identity session snapshots and local network
-/// profiles. `EncryptedDirectory` is the app-managed file mode: Rust encrypts
-/// the saved records and keeps their random key beside those records in the
-/// private application directory. This is a local file boundary, not an OS
-/// Keychain or a defense against another process running as the same user.
+/// profiles. `JsonDirectory` is the app-managed file mode: Rust writes readable
+/// JSON under a host-selected app data directory. This does not call an
+/// operating-system credential service.
 #[non_exhaustive]
 pub enum CredentialStoragePolicy {
     /// Do not persist Auth passwords.
     MemoryOnly,
     /// Store explicitly remembered credentials in this private directory.
-    EncryptedDirectory { root: PathBuf, namespace: String },
+    JsonDirectory { root: PathBuf, namespace: String },
 }
 
 impl std::fmt::Debug for CredentialStoragePolicy {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::MemoryOnly => formatter.write_str("CredentialStoragePolicy::MemoryOnly"),
-            Self::EncryptedDirectory { .. } => formatter
-                .debug_struct("CredentialStoragePolicy::EncryptedDirectory")
+            Self::JsonDirectory { .. } => formatter
+                .debug_struct("CredentialStoragePolicy::JsonDirectory")
                 .field("configured", &true)
                 .finish(),
         }
@@ -104,8 +104,8 @@ impl From<CredentialStoragePolicy> for EngineCredentialStoragePolicy {
     fn from(value: CredentialStoragePolicy) -> Self {
         match value {
             CredentialStoragePolicy::MemoryOnly => Self::MemoryOnly,
-            CredentialStoragePolicy::EncryptedDirectory { root, namespace } => {
-                Self::EncryptedDirectory { root, namespace }
+            CredentialStoragePolicy::JsonDirectory { root, namespace } => {
+                Self::JsonDirectory { root, namespace }
             }
         }
     }
@@ -113,26 +113,23 @@ impl From<CredentialStoragePolicy> for EngineCredentialStoragePolicy {
 
 /// Persistence for Identity cookies used by explicit session recovery.
 ///
-/// The default keeps cookies in memory. The file option stores an encrypted,
-/// device-bound snapshot under the application-selected private directory;
-/// Rust manages its key and ciphertext in that directory. Restored sessions
-/// remain unverified until explicitly checked.
+/// The default keeps cookies in memory. The file option stores a readable,
+/// device-bound JSON snapshot under the application-selected app data
+/// directory. Restored sessions remain unverified until explicitly checked.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum IdentitySessionStoragePolicy {
     /// Keep Identity cookies only for the owning Client lifetime.
     MemoryOnly,
-    /// Store an encrypted, device-bound snapshot in this private directory.
-    EncryptedDirectory(PathBuf),
+    /// Store a readable, device-bound snapshot in this directory.
+    JsonDirectory(PathBuf),
 }
 
 impl From<IdentitySessionStoragePolicy> for EngineIdentitySessionStoragePolicy {
     fn from(value: IdentitySessionStoragePolicy) -> Self {
         match value {
             IdentitySessionStoragePolicy::MemoryOnly => Self::MemoryOnly,
-            IdentitySessionStoragePolicy::EncryptedDirectory(path) => {
-                Self::EncryptedDirectory(path)
-            }
+            IdentitySessionStoragePolicy::JsonDirectory(path) => Self::JsonDirectory(path),
         }
     }
 }

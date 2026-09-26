@@ -80,30 +80,27 @@ impl NetworkAccessMethod {
 
 /// Controls whether local connection profiles survive the owning Client.
 ///
-/// The default is memory-only. `EncryptedDirectory` is an explicit opt-in to
-/// a Rust-managed encrypted file under a host-selected private directory. Its
-/// key is protected by local filesystem permissions; this is not equivalent
-/// to an operating-system keychain and does not protect against the same OS
-/// user, an administrator, or a process with access to the application data.
-/// Persistent file mode is currently supported on Unix targets; other targets
-/// return `Unsupported` rather than silently weakening permissions.
+/// The default is memory-only. `JsonDirectory` is an explicit opt-in to
+/// readable JSON under a host-selected app data directory. Rust manages file
+/// creation, validation, and replacement; the host chooses where those files
+/// live.
 #[derive(Clone)]
 pub enum NetworkProfileStoragePolicy {
     /// Keep profile metadata and optional passwords only in Rust memory.
     MemoryOnly,
-    /// Persist profiles in an encrypted file scoped to a host application
+    /// Persist profiles in a JSON file scoped to a host application
     /// namespace. The selected root must be an application-private directory.
-    EncryptedDirectory { root: PathBuf, namespace: String },
+    JsonDirectory { root: PathBuf, namespace: String },
 }
 
 impl NetworkProfileStoragePolicy {
-    /// Constructs an explicit encrypted-file policy for one host application.
+    /// Constructs an explicit JSON-file policy for one host application.
     ///
     /// The namespace should be a stable reverse-DNS application identifier,
     /// such as `org.example.campus-app`; it must not contain an account name.
     /// Constructing this value performs no I/O. Storage is opened when the
     /// Client is built.
-    pub fn encrypted_directory(
+    pub fn json_directory(
         root: impl Into<PathBuf>,
         namespace: impl Into<String>,
     ) -> Result<Self, Error> {
@@ -121,7 +118,7 @@ impl NetworkProfileStoragePolicy {
         {
             return Err(Error::new(Service::Network, ErrorCode::InvalidInput));
         }
-        Ok(Self::EncryptedDirectory { root, namespace })
+        Ok(Self::JsonDirectory { root, namespace })
     }
 }
 
@@ -135,8 +132,8 @@ impl fmt::Debug for NetworkProfileStoragePolicy {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::MemoryOnly => f.write_str("NetworkProfileStoragePolicy::MemoryOnly"),
-            Self::EncryptedDirectory { .. } => f
-                .debug_struct("NetworkProfileStoragePolicy::EncryptedDirectory")
+            Self::JsonDirectory { .. } => f
+                .debug_struct("NetworkProfileStoragePolicy::JsonDirectory")
                 .field("configured", &true)
                 .finish(),
         }
@@ -663,22 +660,22 @@ mod tests {
     fn backend_refactor_network_profile_storage_rejects_unscoped_namespaces() {
         for namespace in ["", ".", "..", "../other", "account@example.edu"] {
             assert!(
-                NetworkProfileStoragePolicy::encrypted_directory("/tmp/tsinghua-kit", namespace)
+                NetworkProfileStoragePolicy::json_directory("/tmp/tsinghua-kit", namespace)
                     .is_err(),
                 "namespace should be rejected"
             );
         }
 
         assert!(
-            NetworkProfileStoragePolicy::encrypted_directory("relative/path", "org.example.app")
+            NetworkProfileStoragePolicy::json_directory("relative/path", "org.example.app")
                 .is_err()
         );
-        assert!(NetworkProfileStoragePolicy::encrypted_directory("/", "org.example.app").is_err());
+        assert!(NetworkProfileStoragePolicy::json_directory("/", "org.example.app").is_err());
     }
 
     #[test]
     fn backend_refactor_network_profile_storage_debug_redacts_location() {
-        let policy = NetworkProfileStoragePolicy::encrypted_directory(
+        let policy = NetworkProfileStoragePolicy::json_directory(
             "/private/application/data",
             "org.example.campus-app",
         )

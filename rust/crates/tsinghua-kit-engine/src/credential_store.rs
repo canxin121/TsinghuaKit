@@ -1,25 +1,12 @@
 //! Rust-owned opt-in credential storage for cross-process session recovery.
 //!
-//! Credentials are kept in a THYou-private file vault. This module never
-//! calls an operating-system credential API and never exposes the password to
-//! Flutter, JSON caches, logs, command-line arguments, or session snapshots.
-//! The vault is an application-managed encrypted file store: it protects
-//! against ordinary accidental file reads, while its security boundary is the
-//! owner-only THYou application directory. It is intentionally not presented
-//! as equivalent to an OS-managed credential service against a local
-//! administrator or a process that can inspect this application's files or
-//! memory.
+//! Credentials are kept in readable JSON files under the host-selected app
+//! data directory. This module never calls an operating-system credential API
+//! and never exposes the password to Flutter, logs, command-line arguments, or
+//! session snapshots. On Unix, Rust creates directories with owner-only
+//! permissions; the files are not encrypted.
 
-use base64::{
-    Engine as _,
-    engine::general_purpose::{STANDARD as BASE64, URL_SAFE_NO_PAD as BASE64_URL},
-};
 use fs2::FileExt;
-use ring::{
-    aead::{Aad, CHACHA20_POLY1305, LessSafeKey, NONCE_LEN, Nonce, UnboundKey},
-    digest::{SHA256, digest},
-    rand::{SecureRandom, SystemRandom},
-};
 use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, File, OpenOptions},
@@ -31,12 +18,12 @@ use thiserror::Error;
 use crate::protocol::AcademicStage;
 
 const VAULT_DIRECTORY: &str = "credentials";
-const VAULT_KEY_FILE: &str = "vault-key-v1.bin";
 const VAULT_LOCK_FILE: &str = "vault.lock";
-const RECORD_FILE_PREFIX: &str = "credential-v1-";
-const RECORD_FILE_SUFFIX: &str = ".bin";
-const RECORD_SCHEMA: u32 = 1;
-const VAULT_KEY_BYTES: usize = 32;
+const RECORD_FILE_PREFIX: &str = "credential-v2-";
+const RECORD_FILE_SUFFIX: &str = ".json";
+const LEGACY_RECORD_FILE_PREFIX: &str = "credential-v1-";
+const LEGACY_RECORD_FILE_SUFFIX: &str = ".bin";
+const RECORD_SCHEMA: u32 = 2;
 const MAX_USERNAME_BYTES: usize = 128;
 const MAX_PASSWORD_BYTES: usize = 4096;
 const MAX_DEVICE_FINGERPRINT_BYTES: usize = 32;
@@ -54,6 +41,8 @@ pub(crate) enum CredentialStoreError {
     InvalidRecord,
     #[error("credential storage record belongs to another device")]
     BindingMismatch,
+    #[error("credential record uses an unsupported encrypted file format")]
+    LegacyEncryptedRecord,
 }
 
 /// A credential loaded into Rust memory for one bounded recovery attempt.
@@ -64,7 +53,7 @@ pub(crate) struct StoredCredential {
     pub(crate) password: String,
     pub(crate) stage: Option<AcademicStage>,
     /// Whether `stage` came from the user's explicit LoginPage override.
-    /// Older encrypted records omit this field and deserialize as `false`.
+    /// Older records omit this field and deserialize as `false`.
     pub(crate) stage_selection_explicit: bool,
 }
 
@@ -89,16 +78,6 @@ struct CredentialPayload {
     stage: Option<AcademicStage>,
     #[serde(default)]
     stage_selection_explicit: bool,
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct CredentialEnvelope {
-    schema: u32,
-    account_binding: String,
-    device_binding: String,
-    nonce: String,
-    ciphertext: String,
 }
 
 fn validate_account(account: &str) -> Result<&str, CredentialStoreError> {
@@ -137,59 +116,42 @@ fn vault_directory(root: &Path) -> PathBuf {
     root.join(VAULT_DIRECTORY)
 }
 
-fn vault_key_path(vault: &Path) -> PathBuf {
-    vault.join(VAULT_KEY_FILE)
-}
-
 fn vault_lock_path(vault: &Path) -> PathBuf {
     vault.join(VAULT_LOCK_FILE)
-}
-
-fn account_binding(account: &str) -> String {
-    BASE64.encode(digest(&SHA256, account.as_bytes()).as_ref())
 }
 
 fn record_path(vault: &Path, account: &str) -> PathBuf {
     vault.join(format!(
         "{RECORD_FILE_PREFIX}{}{RECORD_FILE_SUFFIX}",
-        BASE64_URL.encode(digest(&SHA256, account.as_bytes()).as_ref())
+        account_file_id(account)
     ))
 }
 
-fn device_binding(device_fingerprint: &str) -> String {
-    BASE64.encode(digest(&SHA256, device_fingerprint.as_bytes()).as_ref())
+fn legacy_record_path(vault: &Path, account: &str) -> PathBuf {
+    vault.join(format!(
+        "{LEGACY_RECORD_FILE_PREFIX}{}{LEGACY_RECORD_FILE_SUFFIX}",
+        account_file_id(account)
+    ))
 }
 
-fn associated_data(account: &str, device_fingerprint: &str) -> Vec<u8> {
-    let mut data = b"THYou credential vault v1\0".to_vec();
-    data.extend_from_slice(account.as_bytes());
-    data.push(0);
-    data.extend_from_slice(device_fingerprint.as_bytes());
-    data
+fn account_file_id(account: &str) -> String {
+    use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+    use ring::digest::{SHA256, digest};
+    URL_SAFE_NO_PAD.encode(digest(&SHA256, account.as_bytes()).as_ref())
 }
 
-fn key_from_bytes(bytes: &[u8]) -> Result<LessSafeKey, CredentialStoreError> {
-    if bytes.len() != VAULT_KEY_BYTES {
-        return Err(CredentialStoreError::InvalidRecord);
-    }
-    let key = UnboundKey::new(&CHACHA20_POLY1305, bytes)
-        .map_err(|_| CredentialStoreError::InvalidRecord)?;
-    Ok(LessSafeKey::new(key))
-}
-
-fn encode_envelope(
+fn encode_record(
     account: &str,
     device_fingerprint: &str,
     password: &str,
     stage: Option<AcademicStage>,
     stage_selection_explicit: bool,
-    key_bytes: &[u8],
 ) -> Result<Vec<u8>, CredentialStoreError> {
     validate_password(password)?;
     if stage_selection_explicit && stage.is_none() {
         return Err(CredentialStoreError::InvalidRecord);
     }
-    let payload = serde_json::to_vec(&CredentialPayload {
+    let payload = serde_json::to_vec_pretty(&CredentialPayload {
         schema: RECORD_SCHEMA,
         account: account.to_owned(),
         device_fingerprint: device_fingerprint.to_owned(),
@@ -202,79 +164,24 @@ fn encode_envelope(
         return Err(CredentialStoreError::InvalidRecord);
     }
 
-    let mut nonce_bytes = [0_u8; NONCE_LEN];
-    SystemRandom::new()
-        .fill(&mut nonce_bytes)
-        .map_err(|_| CredentialStoreError::Backend)?;
-    let nonce = Nonce::assume_unique_for_key(nonce_bytes);
-    let cipher = key_from_bytes(key_bytes)?;
-    let mut ciphertext = payload;
-    cipher
-        .seal_in_place_append_tag(
-            nonce,
-            Aad::from(associated_data(account, device_fingerprint)),
-            &mut ciphertext,
-        )
-        .map_err(|_| CredentialStoreError::Backend)?;
-
-    serde_json::to_vec(&CredentialEnvelope {
-        schema: RECORD_SCHEMA,
-        account_binding: account_binding(account),
-        device_binding: device_binding(device_fingerprint),
-        nonce: BASE64.encode(nonce_bytes),
-        ciphertext: BASE64.encode(ciphertext),
-    })
-    .map_err(|_| CredentialStoreError::InvalidRecord)
+    Ok(payload)
 }
 
-fn decode_envelope(
+fn decode_record(
     bytes: &[u8],
     account: &str,
     device_fingerprint: &str,
-    key_bytes: &[u8],
 ) -> Result<StoredCredential, CredentialStoreError> {
     if bytes.is_empty() || bytes.len() > MAX_RECORD_BYTES {
         return Err(CredentialStoreError::InvalidRecord);
     }
-    let envelope: CredentialEnvelope =
-        serde_json::from_slice(bytes).map_err(|_| CredentialStoreError::InvalidRecord)?;
-    if envelope.schema != RECORD_SCHEMA {
-        return Err(CredentialStoreError::InvalidRecord);
-    }
-    if envelope.account_binding != account_binding(account) {
-        return Err(CredentialStoreError::InvalidRecord);
-    }
-    if envelope.device_binding != device_binding(device_fingerprint) {
-        return Err(CredentialStoreError::BindingMismatch);
-    }
-    let nonce_bytes = BASE64
-        .decode(envelope.nonce.as_bytes())
-        .map_err(|_| CredentialStoreError::InvalidRecord)?;
-    let nonce_bytes: [u8; NONCE_LEN] = nonce_bytes
-        .try_into()
-        .map_err(|_| CredentialStoreError::InvalidRecord)?;
-    let mut ciphertext = BASE64
-        .decode(envelope.ciphertext.as_bytes())
-        .map_err(|_| CredentialStoreError::InvalidRecord)?;
-    if ciphertext.len() < 16 || ciphertext.len() > MAX_RECORD_BYTES {
-        return Err(CredentialStoreError::InvalidRecord);
-    }
-
-    let cipher = key_from_bytes(key_bytes)?;
-    let plaintext = cipher
-        .open_in_place(
-            Nonce::assume_unique_for_key(nonce_bytes),
-            Aad::from(associated_data(account, device_fingerprint)),
-            &mut ciphertext,
-        )
-        .map_err(|_| CredentialStoreError::InvalidRecord)?;
     let payload: CredentialPayload =
-        serde_json::from_slice(plaintext).map_err(|_| CredentialStoreError::InvalidRecord)?;
-    if payload.schema != RECORD_SCHEMA
-        || payload.account != account
-        || payload.device_fingerprint != device_fingerprint
-    {
+        serde_json::from_slice(bytes).map_err(|_| CredentialStoreError::InvalidRecord)?;
+    if payload.schema != RECORD_SCHEMA || payload.account != account {
         return Err(CredentialStoreError::InvalidRecord);
+    }
+    if payload.device_fingerprint != device_fingerprint {
+        return Err(CredentialStoreError::BindingMismatch);
     }
     validate_password(&payload.password)?;
     Ok(StoredCredential {
@@ -502,31 +409,6 @@ fn with_locked_vault<T>(
     result
 }
 
-fn read_vault_key(vault: &Path) -> Result<Option<[u8; VAULT_KEY_BYTES]>, CredentialStoreError> {
-    let path = vault_key_path(vault);
-    if !reject_non_regular_file(&path)? {
-        return Ok(None);
-    }
-    let metadata = fs::metadata(&path).map_err(|_| CredentialStoreError::Backend)?;
-    if metadata.len() != VAULT_KEY_BYTES as u64 {
-        return Err(CredentialStoreError::InvalidRecord);
-    }
-    let bytes = fs::read(&path).map_err(|_| CredentialStoreError::Backend)?;
-    let key = bytes
-        .try_into()
-        .map_err(|_| CredentialStoreError::InvalidRecord)?;
-    Ok(Some(key))
-}
-
-fn create_vault_key(vault: &Path) -> Result<[u8; VAULT_KEY_BYTES], CredentialStoreError> {
-    let mut key = [0_u8; VAULT_KEY_BYTES];
-    SystemRandom::new()
-        .fill(&mut key)
-        .map_err(|_| CredentialStoreError::Backend)?;
-    write_atomically(&vault_key_path(vault), &key)?;
-    Ok(key)
-}
-
 fn save_at(
     root: &Path,
     account: &str,
@@ -550,19 +432,17 @@ fn save_at_with_stage_selection(
     validate_password(password)?;
     let vault = ensure_vault_directory(root)?;
     with_locked_vault(&vault, |vault| {
-        let key = match read_vault_key(vault)? {
-            Some(key) => key,
-            None => create_vault_key(vault)?,
-        };
-        let envelope = encode_envelope(
+        if reject_non_regular_file(&legacy_record_path(vault, account))? {
+            return Err(CredentialStoreError::LegacyEncryptedRecord);
+        }
+        let record = encode_record(
             account,
             device_fingerprint,
             password,
             stage,
             stage_selection_explicit,
-            &key,
         )?;
-        write_atomically(&record_path(vault, account), &envelope)
+        write_atomically(&record_path(vault, account), &record)
     })
 }
 
@@ -577,6 +457,9 @@ fn load_at(
         return Ok(None);
     };
     with_locked_vault(&vault, |vault| {
+        if reject_non_regular_file(&legacy_record_path(vault, account))? {
+            return Err(CredentialStoreError::LegacyEncryptedRecord);
+        }
         let path = record_path(vault, account);
         if !reject_non_regular_file(&path)? {
             return Ok(None);
@@ -586,24 +469,7 @@ fn load_at(
             return Err(CredentialStoreError::InvalidRecord);
         }
         let bytes = fs::read(&path).map_err(|_| CredentialStoreError::Backend)?;
-        let envelope: CredentialEnvelope = match serde_json::from_slice(&bytes) {
-            Ok(envelope) => envelope,
-            Err(_) => return Err(CredentialStoreError::InvalidRecord),
-        };
-        if envelope.schema != RECORD_SCHEMA || envelope.account_binding != account_binding(account)
-        {
-            return Err(CredentialStoreError::InvalidRecord);
-        }
-        // A record from the same account but another device is not corruption;
-        // keep it intact so a copied application directory cannot destroy the
-        // original device's opt-in record merely by probing it.
-        if envelope.device_binding != device_binding(device_fingerprint) {
-            return Err(CredentialStoreError::BindingMismatch);
-        }
-        let Some(key) = read_vault_key(vault)? else {
-            return Err(CredentialStoreError::InvalidRecord);
-        };
-        decode_envelope(&bytes, account, device_fingerprint, &key).map(Some)
+        decode_record(&bytes, account, device_fingerprint).map(Some)
     })
 }
 
@@ -612,7 +478,10 @@ fn clear_at(root: &Path, account: &str) -> Result<(), CredentialStoreError> {
     let Some(vault) = existing_vault_directory(root)? else {
         return Ok(());
     };
-    with_locked_vault(&vault, |vault| remove_record(&record_path(vault, account)))
+    with_locked_vault(&vault, |vault| {
+        remove_record(&record_path(vault, account))?;
+        remove_record(&legacy_record_path(vault, account))
+    })
 }
 
 pub(crate) fn save(
@@ -764,7 +633,7 @@ mod tests {
     }
 
     #[test]
-    fn backend_repair_private_credential_file_round_trip_redacts_password() {
+    fn credential_file_is_readable_json_and_debug_still_redacts_password() {
         let root = fixture_root();
         let password = "fixture-password";
         save_at(
@@ -775,9 +644,11 @@ mod tests {
             fixture_device(),
         )
         .expect("private credential saves");
-        let bytes = fs::read(record_path(&vault_directory(&root), "2026000000"))
-            .expect("encrypted record reads");
-        assert!(!String::from_utf8_lossy(&bytes).contains(password));
+        let vault = vault_directory(&root);
+        let bytes = fs::read(record_path(&vault, "2026000000")).expect("JSON record reads");
+        let json: serde_json::Value = serde_json::from_slice(&bytes).expect("record is JSON");
+        assert_eq!(json["password"], password);
+        assert!(!vault.join("vault-key-v1.bin").exists());
         let decoded = load_at(&root, "2026000000", fixture_device())
             .expect("private credential loads")
             .expect("record exists");
@@ -826,19 +697,27 @@ mod tests {
     }
 
     #[test]
-    fn backend_repair_private_credential_file_preserves_record_when_local_key_changes() {
+    fn credential_store_reports_legacy_encrypted_record_without_removing_it() {
         let root = fixture_root();
-        save_at(&root, "student", "fixture-password", None, fixture_device())
-            .expect("private credential saves");
         let vault = vault_directory(&root);
-        let record = record_path(&vault, "student");
-        let saved_record = fs::read(&record).expect("saved credential reads");
-        fs::write(vault_key_path(&vault), [0x4b; VAULT_KEY_BYTES])
-            .expect("replacement app-managed key writes");
+        create_private_directory(&vault).expect("credential directory creates");
+        let record = legacy_record_path(&vault, "student");
+        write_atomically(&record, b"legacy encrypted envelope").expect("legacy fixture writes");
+        let saved_record = fs::read(&record).expect("legacy record reads");
 
         assert_eq!(
             load_at(&root, "student", fixture_device()),
-            Err(CredentialStoreError::InvalidRecord)
+            Err(CredentialStoreError::LegacyEncryptedRecord)
+        );
+        assert_eq!(
+            save_at(
+                &root,
+                "student",
+                "replacement-password",
+                None,
+                fixture_device()
+            ),
+            Err(CredentialStoreError::LegacyEncryptedRecord)
         );
         assert_eq!(fs::read(&record).unwrap(), saved_record);
         cleanup(&root);

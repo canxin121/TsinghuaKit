@@ -3449,10 +3449,11 @@ pub struct ClientHandle {
 }
 
 impl ClientHandle {
-    /// Creates a Client without login or network activity. Persistent Auth
-    /// credentials, Identity snapshots and network profiles are managed as
-    /// separate encrypted files under app-private directories. No operating-
-    /// system credential store is used.
+    /// Creates a Client without login or network activity. Explicitly saved
+    /// Auth credentials, Identity snapshots and network profiles are written
+    /// as separate readable JSON files under caller-selected directories.
+    /// They are not encrypted, and no operating-system credential store is
+    /// used.
     pub fn new(
         cache_root: Option<String>,
         credential_storage_root: Option<String>,
@@ -3465,10 +3466,10 @@ impl ClientHandle {
         let profile_policy = match (profile_storage_root, application_namespace) {
             (None, None) => NetworkProfileStoragePolicy::MemoryOnly,
             (Some(root), Some(namespace)) => {
-                NetworkProfileStoragePolicy::encrypted_directory(PathBuf::from(root), namespace)?
+                NetworkProfileStoragePolicy::json_directory(PathBuf::from(root), namespace)?
             }
             _ => {
-                let Err(error) = NetworkProfileStoragePolicy::encrypted_directory("/", "") else {
+                let Err(error) = NetworkProfileStoragePolicy::json_directory("/", "") else {
                     unreachable!("empty application namespace must be rejected")
                 };
                 return Err(error.into());
@@ -3476,12 +3477,12 @@ impl ClientHandle {
         };
         let credential_policy = match (credential_storage_root, credential_storage_namespace) {
             (None, None) => CredentialStoragePolicy::MemoryOnly,
-            (Some(root), Some(namespace)) => CredentialStoragePolicy::EncryptedDirectory {
+            (Some(root), Some(namespace)) => CredentialStoragePolicy::JsonDirectory {
                 root: PathBuf::from(root),
                 namespace,
             },
             _ => {
-                let Err(error) = NetworkProfileStoragePolicy::encrypted_directory("/", "") else {
+                let Err(error) = NetworkProfileStoragePolicy::json_directory("/", "") else {
                     unreachable!("empty application namespace must be rejected")
                 };
                 return Err(error.into());
@@ -3496,13 +3497,10 @@ impl ClientHandle {
         let identity_session_root = match (identity_session_root, identity_session_namespace) {
             (None, None) => None,
             (Some(root), Some(namespace)) => {
-                let scoped = NetworkProfileStoragePolicy::encrypted_directory(
-                    PathBuf::from(root),
-                    namespace,
-                )?;
-                let NetworkProfileStoragePolicy::EncryptedDirectory { root, namespace } = scoped
-                else {
-                    unreachable!("the encrypted-directory constructor returns its policy")
+                let scoped =
+                    NetworkProfileStoragePolicy::json_directory(PathBuf::from(root), namespace)?;
+                let NetworkProfileStoragePolicy::JsonDirectory { root, namespace } = scoped else {
+                    unreachable!("the JSON-directory constructor returns its policy")
                 };
                 Some(
                     root.join("TsinghuaKit")
@@ -3511,15 +3509,15 @@ impl ClientHandle {
                 )
             }
             _ => {
-                let Err(error) = NetworkProfileStoragePolicy::encrypted_directory("/", "") else {
+                let Err(error) = NetworkProfileStoragePolicy::json_directory("/", "") else {
                     unreachable!("empty application namespace must be rejected")
                 };
                 return Err(error.into());
             }
         };
         if let Some(root) = identity_session_root {
-            builder = builder
-                .identity_session_storage(IdentitySessionStoragePolicy::EncryptedDirectory(root));
+            builder =
+                builder.identity_session_storage(IdentitySessionStoragePolicy::JsonDirectory(root));
         }
         let inner = builder.build()?;
         Ok(Self {

@@ -629,10 +629,10 @@ impl CampusHttpTransport {
         if !lease.belongs_to(root) || !lease.is_current() {
             return Err("session authority revoked".to_owned());
         }
-        // Validate the same account/device boundary used by the encrypted
-        // session file before installing the writer.  The sample payload is
+        // Validate the same account/device boundary used by the JSON
+        // session file before installing the writer. The sample payload is
         // never written; it only reuses the persistence type's validation.
-        let snapshot = crate::session_persistence::ResumeSnapshot::new(username, b"cookie")?
+        let snapshot = crate::session_persistence::ResumeSnapshot::new(username, b"[]")?
             .with_device_fingerprint(device_fingerprint)?;
         let _ = snapshot;
         if !root.is_absolute() {

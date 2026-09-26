@@ -32,29 +32,29 @@ void main() {
       isA<core.MemoryOnlyIdentitySessionPersistence>(),
     );
     expect(
-      core.IdentitySessionPersistence.encryptedDirectory(
+      core.IdentitySessionPersistence.jsonDirectory(
         root: '/app/private',
         namespace: 'org.example.app',
       ),
-      isA<core.EncryptedDirectoryIdentitySessionPersistence>(),
+      isA<core.JsonDirectoryIdentitySessionPersistence>(),
     );
     expect(
-      core.NetworkProfilePersistence.encryptedDirectory(
+      core.NetworkProfilePersistence.jsonDirectory(
         root: '/app/private',
         namespace: 'org.example.app',
       ),
-      isA<core.EncryptedDirectoryNetworkProfilePersistence>(),
+      isA<core.JsonDirectoryNetworkProfilePersistence>(),
     );
     expect(
       auth.AuthCredentialPersistence.memoryOnly(),
       isA<auth.MemoryOnlyAuthCredentialPersistence>(),
     );
     expect(
-      auth.AuthCredentialPersistence.encryptedDirectory(
+      auth.AuthCredentialPersistence.jsonDirectory(
         root: '/app/private',
         namespace: 'org.example.app',
       ),
-      isA<auth.EncryptedDirectoryAuthCredentialPersistence>(),
+      isA<auth.JsonDirectoryAuthCredentialPersistence>(),
     );
     expect(auth.SecondFactorMethod.sms.name, 'sms');
     expect(network.NetworkAccessMethod.systemWifiEap.name, 'systemWifiEap');

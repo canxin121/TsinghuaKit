@@ -82,7 +82,7 @@ use crate::{
 #[non_exhaustive]
 pub enum ClientCachePolicy {
     /// Create a private temporary directory and remove it when the client is
-    /// dropped. Authenticated sessions are always memory-only.
+    /// dropped. Auth persistence is controlled separately and defaults to memory-only.
     Ephemeral,
     /// Store service read caches in this host-selected private directory.
     Directory(PathBuf),
@@ -91,23 +91,22 @@ pub enum ClientCachePolicy {
 /// Controls persistence of user-entered Auth credentials.
 ///
 /// This policy is independent from Identity session snapshots, SelfService
-/// session state, business caches, and local network profiles. The encrypted
-/// directory backend stores its key inside the same private application
-/// directory; it is not an operating-system Keychain.
+/// session state, business caches, and local network profiles. JSON-directory
+/// mode writes readable files to a host-selected app data directory.
 #[non_exhaustive]
 pub enum CredentialStoragePolicy {
     /// Keep credentials in memory only. Remembering credentials is disabled.
     MemoryOnly,
     /// Store explicitly remembered credentials in this private directory.
-    EncryptedDirectory { root: PathBuf, namespace: String },
+    JsonDirectory { root: PathBuf, namespace: String },
 }
 
 impl fmt::Debug for CredentialStoragePolicy {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::MemoryOnly => formatter.write_str("MemoryOnly"),
-            Self::EncryptedDirectory { root, namespace } => formatter
-                .debug_tuple("EncryptedDirectory")
+            Self::JsonDirectory { root, namespace } => formatter
+                .debug_tuple("JsonDirectory")
                 .field(root)
                 .field(namespace)
                 .finish(),
@@ -287,26 +286,26 @@ pub struct Client {
 /// Controls whether the Identity-bound shared cookie snapshot can be restored
 /// by a later Client created from the same private directory.
 ///
-/// The default is memory-only. `EncryptedDirectory` is an explicit,
-/// device-bound snapshot stored separately from ordinary service read caches.
-/// Its encryption key is managed in the same private application directory.
-/// The snapshot never contains a password.
+/// The default is memory-only. `JsonDirectory` is an explicit, device-bound
+/// readable JSON snapshot stored separately from ordinary service read
+/// caches. The snapshot never contains a password, but does contain session
+/// cookies and is therefore authentication material.
 /// Remembered credentials use the separately configured
 /// CredentialStoragePolicy and are never stored in the session snapshot.
 #[non_exhaustive]
 pub enum IdentitySessionStoragePolicy {
     /// Keep Identity and service cookies only in memory.
     MemoryOnly,
-    /// Keep an encrypted, device-bound Identity snapshot in this directory.
-    EncryptedDirectory(PathBuf),
+    /// Keep a readable, device-bound Identity snapshot in this directory.
+    JsonDirectory(PathBuf),
 }
 
 impl fmt::Debug for IdentitySessionStoragePolicy {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::MemoryOnly => formatter.write_str("MemoryOnly"),
-            Self::EncryptedDirectory(directory) => formatter
-                .debug_tuple("EncryptedDirectory")
+            Self::JsonDirectory(directory) => formatter
+                .debug_tuple("JsonDirectory")
                 .field(directory)
                 .finish(),
         }
@@ -342,7 +341,7 @@ impl ClientBuilder {
         self
     }
 
-    /// Selects explicit persistence for the Identity-bound shared cookie
+    /// Selects explicit JSON persistence for the Identity-bound shared cookie
     /// snapshot. This storage location is independent from the service-cache
     /// directory selected by [`ClientCachePolicy`].
     /// Cookie snapshots never contain account passwords and restored sessions
@@ -393,7 +392,7 @@ impl ClientBuilder {
         };
         let (credential_store_root, credential_storage_enabled) = match self.credential_storage {
             CredentialStoragePolicy::MemoryOnly => (cache_root.clone(), false),
-            CredentialStoragePolicy::EncryptedDirectory { root, namespace } => {
+            CredentialStoragePolicy::JsonDirectory { root, namespace } => {
                 if !root.is_absolute()
                     || root.components().count() < 2
                     || root
@@ -430,7 +429,7 @@ impl ClientBuilder {
             IdentitySessionStoragePolicy::MemoryOnly => {
                 create_sdk_runtime(&cache_root.join("cache.json"), cache_root.clone(), None)?
             }
-            IdentitySessionStoragePolicy::EncryptedDirectory(session_root) => {
+            IdentitySessionStoragePolicy::JsonDirectory(session_root) => {
                 if !session_root.is_absolute()
                     || session_root
                         .components()
@@ -5533,9 +5532,7 @@ mod tests {
 
         let client = ClientBuilder::default()
             .cache_policy(ClientCachePolicy::Directory(root.clone()))
-            .identity_session_storage(IdentitySessionStoragePolicy::EncryptedDirectory(
-                root.clone(),
-            ))
+            .identity_session_storage(IdentitySessionStoragePolicy::JsonDirectory(root.clone()))
             .build()
             .unwrap();
         let status = client.auth_status();

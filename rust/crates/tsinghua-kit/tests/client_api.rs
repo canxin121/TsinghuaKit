@@ -60,11 +60,11 @@ fn app_managed_files_store_credentials_and_identity_snapshots_separately() {
         .join("org.example.tsinghua-kit-auth");
     let session_directory = root.join("identity-session");
     let mut client = Client::builder()
-        .credential_storage(CredentialStoragePolicy::EncryptedDirectory {
+        .credential_storage(CredentialStoragePolicy::JsonDirectory {
             root: root.join("credentials"),
             namespace: "org.example.tsinghua-kit-auth".to_owned(),
         })
-        .identity_session_storage(IdentitySessionStoragePolicy::EncryptedDirectory(
+        .identity_session_storage(IdentitySessionStoragePolicy::JsonDirectory(
             session_directory.clone(),
         ))
         .build()
@@ -142,9 +142,7 @@ async fn identity_session_persistence_is_explicit_and_fresh_revalidation_is_loca
     ));
     let mut client = Client::builder()
         .cache_policy(ClientCachePolicy::Directory(root.clone()))
-        .identity_session_storage(IdentitySessionStoragePolicy::EncryptedDirectory(
-            root.clone(),
-        ))
+        .identity_session_storage(IdentitySessionStoragePolicy::JsonDirectory(root.clone()))
         .build()
         .unwrap();
 

@@ -592,11 +592,9 @@ fn network_profile_opt_in_storage_survives_client_rebuild_without_auth_state() {
     }
 
     let scratch = ScratchDirectory::new();
-    let policy = NetworkProfileStoragePolicy::encrypted_directory(
-        &scratch.0,
-        "org.example.tsinghua-kit-test",
-    )
-    .unwrap();
+    let policy =
+        NetworkProfileStoragePolicy::json_directory(&scratch.0, "org.example.tsinghua-kit-test")
+            .unwrap();
 
     let profile_id = {
         let mut client = tsinghua_kit::Client::builder()

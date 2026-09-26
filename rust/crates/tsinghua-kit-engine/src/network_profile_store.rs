@@ -1,10 +1,9 @@
 //! Client-owned local connection-profile storage.
 //!
-//! Persistent mode is explicit and separate from Auth/session persistence. It
-//! encrypts profile metadata and optional passwords into one atomically
-//! replaced file under a private host-selected directory. The encryption key
-//! is in the same owner-only directory, so this backend is not equivalent to
-//! an OS keychain and does not claim protection from the same OS user.
+//! Persistence is explicit and independent from Auth/session persistence.
+//! Rust writes readable JSON files under the host-selected app data directory.
+//! Unix directories and files use owner-only permissions; the data is not
+//! encrypted and no operating-system credential service is used.
 
 use std::{
     collections::HashMap,
@@ -15,11 +14,7 @@ use std::{
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use fs2::FileExt;
-use ring::{
-    aead::{Aad, CHACHA20_POLY1305, LessSafeKey, NONCE_LEN, Nonce, UnboundKey},
-    digest::{SHA256, digest},
-    rand::{SecureRandom, SystemRandom},
-};
+use ring::digest::{SHA256, digest};
 use serde::{Deserialize, Serialize};
 use zeroize::{Zeroize, Zeroizing};
 
@@ -30,20 +25,19 @@ use crate::{
     },
 };
 
-const SCHEMA: u32 = 1;
-const KEY_BYTES: usize = 32;
+const SCHEMA: u32 = 2;
 const MAX_PROFILES: usize = 256;
 const MAX_STORE_BYTES: usize = 2 * 1024 * 1024;
-const KEY_FILE: &str = "profiles-key-v1.bin";
-const DATA_FILE: &str = "profiles-v1.bin";
+const DATA_FILE: &str = "profiles-v2.json";
+const LEGACY_DATA_FILE: &str = "profiles-v1.bin";
+const LEGACY_KEY_FILE: &str = "profiles-key-v1.bin";
 const LOCK_FILE: &str = "profiles.lock";
 const PRIVATE_DIR: &str = "tsinghua-kit-network-profiles";
-const EXTERNAL_KEY_SOURCE: &str = "platform_secure_storage";
 
 pub(crate) struct NetworkProfileStore {
     pub(crate) profiles: HashMap<NetworkProfileId, StoredNetworkProfile>,
     generation: u64,
-    backend: Option<EncryptedDirectoryStore>,
+    backend: Option<JsonDirectoryStore>,
 }
 
 impl NetworkProfileStore {
@@ -54,8 +48,8 @@ impl NetworkProfileStore {
                 generation: 0,
                 backend: None,
             }),
-            NetworkProfileStoragePolicy::EncryptedDirectory { root, namespace } => {
-                let backend = EncryptedDirectoryStore::open(root, namespace)?;
+            NetworkProfileStoragePolicy::JsonDirectory { root, namespace } => {
+                let backend = JsonDirectoryStore::open(root, namespace)?;
                 let (generation, profiles) = backend.load()?;
                 Ok(Self {
                     profiles,
@@ -83,57 +77,48 @@ impl NetworkProfileStore {
     }
 }
 
-struct EncryptedDirectoryStore {
+struct JsonDirectoryStore {
     directory: PathBuf,
     namespace: String,
-    key: Zeroizing<[u8; KEY_BYTES]>,
     _lock: File,
 }
 
-impl EncryptedDirectoryStore {
+impl JsonDirectoryStore {
     fn open(root: PathBuf, namespace: String) -> Result<Self, Error> {
-        #[cfg(not(unix))]
-        {
-            let _ = (root, namespace);
-            return Err(Error::new(Service::Network, ErrorCode::Unsupported));
+        if !root.is_absolute() || !valid_namespace(&namespace) {
+            return Err(Error::new(Service::Network, ErrorCode::InvalidInput));
         }
+        ensure_private_directory(&root)?;
+        let app_root = root.join(PRIVATE_DIR);
+        ensure_private_directory(&app_root)?;
+        let namespace_hash = BASE64.encode(digest(&SHA256, namespace.as_bytes()).as_ref());
+        let directory = app_root.join(namespace_hash);
+        ensure_private_directory(&directory)?;
+
+        let lock_path = directory.join(LOCK_FILE);
+        reject_symlink(&lock_path)?;
+        let mut lock_options = OpenOptions::new();
+        lock_options.create(true).read(true).write(true);
         #[cfg(unix)]
         {
-            if !root.is_absolute() || !valid_namespace(&namespace) {
-                return Err(Error::new(Service::Network, ErrorCode::InvalidInput));
-            }
-            ensure_private_directory(&root)?;
-            let root = root.join(PRIVATE_DIR);
-            ensure_private_directory(&root)?;
-            let namespace_hash = BASE64.encode(digest(&SHA256, namespace.as_bytes()).as_ref());
-            let directory = root.join(namespace_hash);
-            ensure_private_directory(&directory)?;
-
-            let lock_path = directory.join(LOCK_FILE);
-            reject_symlink(&lock_path)?;
-            let mut lock_options = OpenOptions::new();
-            lock_options.create(true).read(true).write(true);
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::OpenOptionsExt;
-                lock_options.mode(0o600);
-            }
-            let lock = lock_options.open(&lock_path).map_err(|_| storage_error())?;
-            set_private_file_permissions(&lock_path)?;
-            lock.try_lock_exclusive().map_err(|_| storage_error())?;
-
-            let key_path = directory.join(KEY_FILE);
-            let key = load_or_create_key(&key_path)?;
-            Ok(Self {
-                directory,
-                namespace,
-                key,
-                _lock: lock,
-            })
+            use std::os::unix::fs::OpenOptionsExt;
+            lock_options.mode(0o600);
         }
+        let lock = lock_options.open(&lock_path).map_err(|_| storage_error())?;
+        set_private_file_permissions(&lock_path)?;
+        lock.try_lock_exclusive().map_err(|_| storage_error())?;
+
+        Ok(Self {
+            directory,
+            namespace,
+            _lock: lock,
+        })
     }
 
     fn load(&self) -> Result<(u64, HashMap<NetworkProfileId, StoredNetworkProfile>), Error> {
+        if self.legacy_format_present()? {
+            return Err(storage_error());
+        }
         let path = self.directory.join(DATA_FILE);
         match fs::symlink_metadata(&path) {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -156,39 +141,7 @@ impl EncryptedDirectoryStore {
         if bytes.is_empty() || bytes.len() > MAX_STORE_BYTES {
             return Err(storage_error());
         }
-        let envelope: StoreEnvelope =
-            serde_json::from_slice(&bytes).map_err(|_| storage_error())?;
-        if envelope.schema != SCHEMA
-            || match envelope.key_source.as_deref() {
-                None => false,
-                Some(EXTERNAL_KEY_SOURCE) => true,
-                Some(_) => true,
-            }
-        {
-            return Err(storage_error());
-        }
-        let nonce_bytes = BASE64
-            .decode(envelope.nonce.as_bytes())
-            .map_err(|_| storage_error())?;
-        let nonce_bytes: [u8; NONCE_LEN] = nonce_bytes.try_into().map_err(|_| storage_error())?;
-        let mut ciphertext = Zeroizing::new(
-            BASE64
-                .decode(envelope.ciphertext.as_bytes())
-                .map_err(|_| storage_error())?,
-        );
-        if ciphertext.len() < 16 || ciphertext.len() > MAX_STORE_BYTES {
-            return Err(storage_error());
-        }
-        let key = cipher(&self.key)?;
-        let plaintext = key
-            .open_in_place(
-                Nonce::assume_unique_for_key(nonce_bytes),
-                Aad::from(associated_data(&self.namespace)),
-                &mut ciphertext,
-            )
-            .map_err(|_| storage_error())?;
-        let payload: StorePayload =
-            serde_json::from_slice(plaintext).map_err(|_| storage_error())?;
+        let payload: StorePayload = serde_json::from_slice(&bytes).map_err(|_| storage_error())?;
         if payload.schema != SCHEMA
             || payload.namespace != self.namespace
             || payload.profiles.len() > MAX_PROFILES
@@ -229,6 +182,21 @@ impl EncryptedDirectoryStore {
         Ok((payload.generation, profiles))
     }
 
+    fn legacy_format_present(&self) -> Result<bool, Error> {
+        for name in [LEGACY_DATA_FILE, LEGACY_KEY_FILE] {
+            let path = self.directory.join(name);
+            match fs::symlink_metadata(&path) {
+                Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_file() => {
+                    return Err(storage_error());
+                }
+                Ok(_) => return Ok(true),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(_) => return Err(storage_error()),
+            }
+        }
+        Ok(false)
+    }
+
     fn persist(
         &self,
         generation: u64,
@@ -255,52 +223,15 @@ impl EncryptedDirectoryStore {
                 })
                 .collect(),
         };
-        let mut plaintext =
-            Zeroizing::new(serde_json::to_vec(&payload).map_err(|_| storage_error())?);
-        if plaintext.is_empty() || plaintext.len() > MAX_STORE_BYTES {
+        let mut bytes =
+            Zeroizing::new(serde_json::to_vec_pretty(&payload).map_err(|_| storage_error())?);
+        if bytes.is_empty() || bytes.len() > MAX_STORE_BYTES {
             return Err(storage_error());
         }
-        let mut nonce_bytes = [0_u8; NONCE_LEN];
-        SystemRandom::new()
-            .fill(&mut nonce_bytes)
-            .map_err(|_| storage_error())?;
-        let key = cipher(&self.key)?;
-        let mut ciphertext = plaintext.as_slice().to_vec();
-        plaintext.zeroize();
-        if key
-            .seal_in_place_append_tag(
-                Nonce::assume_unique_for_key(nonce_bytes),
-                Aad::from(associated_data(&self.namespace)),
-                &mut ciphertext,
-            )
-            .is_err()
-        {
-            ciphertext.zeroize();
-            return Err(storage_error());
-        }
-        let envelope = StoreEnvelope {
-            schema: SCHEMA,
-            key_source: None,
-            nonce: BASE64.encode(nonce_bytes),
-            ciphertext: BASE64.encode(ciphertext.as_slice()),
-        };
-        ciphertext.zeroize();
-        let bytes = serde_json::to_vec(&envelope).map_err(|_| storage_error())?;
-        if bytes.len() > MAX_STORE_BYTES {
-            return Err(storage_error());
-        }
-        atomic_write(&self.directory, &self.directory.join(DATA_FILE), &bytes)
+        atomic_write(&self.directory, &self.directory.join(DATA_FILE), &bytes)?;
+        bytes.zeroize();
+        Ok(())
     }
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct StoreEnvelope {
-    schema: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    key_source: Option<String>,
-    nonce: String,
-    ciphertext: String,
 }
 
 #[derive(Deserialize)]
@@ -356,17 +287,6 @@ struct PersistedProfile<'a> {
     revision: u64,
 }
 
-fn cipher(key: &[u8; KEY_BYTES]) -> Result<LessSafeKey, Error> {
-    let key = UnboundKey::new(&CHACHA20_POLY1305, key).map_err(|_| storage_error())?;
-    Ok(LessSafeKey::new(key))
-}
-
-fn associated_data(namespace: &str) -> Vec<u8> {
-    let mut value = b"TsinghuaKit network profiles v1\0".to_vec();
-    value.extend_from_slice(namespace.as_bytes());
-    value
-}
-
 fn valid_namespace(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 128
@@ -383,97 +303,104 @@ fn storage_error() -> Error {
     Error::new(Service::Network, ErrorCode::StorageUnavailable)
 }
 
-#[cfg(unix)]
 fn ensure_private_directory(path: &Path) -> Result<(), Error> {
-    use std::os::unix::fs::PermissionsExt;
     fs::create_dir_all(path).map_err(|_| storage_error())?;
     let metadata = fs::symlink_metadata(path).map_err(|_| storage_error())?;
     if metadata.file_type().is_symlink() || !metadata.is_dir() {
         return Err(storage_error());
     }
-    fs::set_permissions(path, fs::Permissions::from_mode(0o700)).map_err(|_| storage_error())
-}
-
-#[cfg(unix)]
-fn set_private_file_permissions(path: &Path) -> Result<(), Error> {
-    use std::os::unix::fs::PermissionsExt;
-    fs::set_permissions(path, fs::Permissions::from_mode(0o600)).map_err(|_| storage_error())
-}
-
-#[cfg(unix)]
-fn verify_private_file(path: &Path) -> Result<(), Error> {
-    use std::os::unix::fs::PermissionsExt;
-    let metadata = fs::symlink_metadata(path).map_err(|_| storage_error())?;
-    if metadata.file_type().is_symlink()
-        || !metadata.is_file()
-        || metadata.permissions().mode() & 0o777 != 0o600
+    #[cfg(unix)]
     {
-        return Err(storage_error());
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o700))
+            .map_err(|_| storage_error())?;
     }
     Ok(())
 }
 
-#[cfg(unix)]
+fn set_private_file_permissions(path: &Path) -> Result<(), Error> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o600))
+            .map_err(|_| storage_error())?;
+    }
+    #[cfg(not(unix))]
+    let _ = path;
+    Ok(())
+}
+
+fn verify_private_file(path: &Path) -> Result<(), Error> {
+    let metadata = fs::symlink_metadata(path).map_err(|_| storage_error())?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err(storage_error());
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if metadata.permissions().mode() & 0o777 != 0o600 {
+            return Err(storage_error());
+        }
+    }
+    Ok(())
+}
+
 fn reject_symlink(path: &Path) -> Result<(), Error> {
     match fs::symlink_metadata(path) {
-        Ok(metadata) if metadata.file_type().is_symlink() => Err(storage_error()),
+        Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_file() => {
+            Err(storage_error())
+        }
         Ok(_) => Ok(()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(_) => Err(storage_error()),
     }
 }
 
-#[cfg(unix)]
-fn load_or_create_key(path: &Path) -> Result<Zeroizing<[u8; KEY_BYTES]>, Error> {
-    reject_symlink(path)?;
-    match fs::symlink_metadata(path) {
-        Ok(_) => {
-            verify_private_file(path)?;
-            let mut bytes = Zeroizing::new(Vec::new());
-            File::open(path)
-                .and_then(|file| file.take((KEY_BYTES + 1) as u64).read_to_end(&mut bytes))
-                .map_err(|_| storage_error())?;
-            if bytes.len() != KEY_BYTES {
-                return Err(storage_error());
-            }
-            let key: [u8; KEY_BYTES] = bytes.as_slice().try_into().map_err(|_| storage_error())?;
-            Ok(Zeroizing::new(key))
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            let mut key = Zeroizing::new([0_u8; KEY_BYTES]);
-            SystemRandom::new()
-                .fill(key.as_mut())
-                .map_err(|_| storage_error())?;
-            let mut options = OpenOptions::new();
-            options.write(true).create_new(true);
-            use std::os::unix::fs::OpenOptionsExt;
-            options.mode(0o600);
-            let mut file = options.open(path).map_err(|_| storage_error())?;
-            file.write_all(key.as_ref())
-                .and_then(|()| file.sync_all())
-                .map_err(|_| storage_error())?;
-            set_private_file_permissions(path)?;
-            Ok(key)
-        }
-        Err(_) => Err(storage_error()),
-    }
-}
-
-#[cfg(unix)]
 fn atomic_write(directory: &Path, target: &Path, bytes: &[u8]) -> Result<(), Error> {
     reject_symlink(target)?;
     let temporary = directory.join(format!("profiles-{}.tmp", uuid::Uuid::new_v4()));
     let mut options = OpenOptions::new();
     options.write(true).create_new(true);
-    use std::os::unix::fs::OpenOptionsExt;
-    options.mode(0o600);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
     let result = (|| {
         let mut file = options.open(&temporary).map_err(|_| storage_error())?;
         file.write_all(bytes)
             .and_then(|()| file.sync_all())
             .map_err(|_| storage_error())?;
         set_private_file_permissions(&temporary)?;
+
+        #[cfg(windows)]
+        {
+            let backup = target.with_extension("json.bak");
+            reject_symlink(&backup)?;
+            if backup.exists() {
+                if target.exists() {
+                    fs::remove_file(&backup).map_err(|_| storage_error())?;
+                } else {
+                    fs::rename(&backup, target).map_err(|_| storage_error())?;
+                }
+            }
+            if target.exists() {
+                fs::rename(target, &backup).map_err(|_| storage_error())?;
+            }
+            if let Err(error) = fs::rename(&temporary, target) {
+                if backup.exists() {
+                    let _ = fs::rename(&backup, target);
+                }
+                return Err(error);
+            }
+            if backup.exists() {
+                fs::remove_file(&backup).map_err(|_| storage_error())?;
+            }
+        }
+        #[cfg(not(windows))]
         fs::rename(&temporary, target).map_err(|_| storage_error())?;
+
+        set_private_file_permissions(target)?;
         if let Ok(directory) = File::open(directory) {
             let _ = directory.sync_all();
         }
@@ -514,9 +441,9 @@ mod tests {
     }
 
     #[test]
-    fn backend_refactor_network_profile_vault_round_trips_encrypted_records() {
+    fn backend_refactor_network_profile_store_round_trips_readable_json_records() {
         let temporary = TestDirectory::new();
-        let policy = NetworkProfileStoragePolicy::encrypted_directory(
+        let policy = NetworkProfileStoragePolicy::json_directory(
             temporary.path(),
             "org.example.profile-test",
         )
@@ -549,7 +476,17 @@ mod tests {
         };
         let data_path = store.backend.as_ref().unwrap().directory.join(DATA_FILE);
         let raw = fs::read(&data_path).unwrap();
-        assert!(!String::from_utf8_lossy(&raw).contains(&password));
+        let json: serde_json::Value = serde_json::from_slice(&raw).unwrap();
+        assert_eq!(json["profiles"][0]["password"], password);
+        assert!(!data_path.with_file_name(LEGACY_KEY_FILE).exists());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                fs::metadata(&data_path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
         drop(store);
 
         let restored = NetworkProfileStore::open(policy.clone()).unwrap();
@@ -564,18 +501,19 @@ mod tests {
         let mut tampered = fs::read(&data_path).unwrap();
         let last = tampered.len() - 1;
         tampered[last] ^= 1;
-        fs::write(&data_path, tampered).unwrap();
+        fs::write(&data_path, &tampered).unwrap();
         let corrupted = match NetworkProfileStore::open(policy) {
             Ok(_) => panic!("tampered profile store must not be treated as empty"),
             Err(error) => error,
         };
         assert_eq!(corrupted.code(), ErrorCode::StorageUnavailable);
+        assert_eq!(fs::read(&data_path).unwrap(), tampered);
     }
 
     #[test]
-    fn backend_refactor_network_profile_vault_preserves_external_key_envelope() {
+    fn backend_refactor_network_profile_store_preserves_legacy_files_and_reports_error() {
         let temporary = TestDirectory::new();
-        let policy = NetworkProfileStoragePolicy::encrypted_directory(
+        let policy = NetworkProfileStoragePolicy::json_directory(
             temporary.path(),
             "org.example.external-key-migration",
         )
@@ -584,30 +522,29 @@ mod tests {
         let directory = store.backend.as_ref().unwrap().directory.clone();
         drop(store);
 
-        let legacy = serde_json::to_vec(&StoreEnvelope {
-            schema: SCHEMA,
-            key_source: Some(EXTERNAL_KEY_SOURCE.to_owned()),
-            nonce: String::new(),
-            ciphertext: String::new(),
-        })
-        .unwrap();
-        let path = directory.join(DATA_FILE);
-        fs::write(&path, &legacy).unwrap();
-        set_private_file_permissions(&path).unwrap();
+        let old_data = directory.join(LEGACY_DATA_FILE);
+        let old_key = directory.join(LEGACY_KEY_FILE);
+        let legacy_data = b"legacy encrypted profiles";
+        let legacy_key = b"legacy key fixture";
+        fs::write(&old_data, legacy_data).unwrap();
+        fs::write(&old_key, legacy_key).unwrap();
+        set_private_file_permissions(&old_data).unwrap();
+        set_private_file_permissions(&old_key).unwrap();
 
         let error = match NetworkProfileStore::open(policy) {
             Ok(_) => panic!("an external-key envelope must not be read as empty data"),
             Err(error) => error,
         };
         assert_eq!(error.code(), ErrorCode::StorageUnavailable);
-        assert_eq!(fs::read(&path).unwrap(), legacy);
+        assert_eq!(fs::read(&old_data).unwrap(), legacy_data);
+        assert_eq!(fs::read(&old_key).unwrap(), legacy_key);
     }
 
     #[test]
     fn backend_refactor_network_profile_vault_is_namespace_scoped_and_exclusive() {
         let temporary = TestDirectory::new();
         let policy =
-            NetworkProfileStoragePolicy::encrypted_directory(temporary.path(), "org.example.one")
+            NetworkProfileStoragePolicy::json_directory(temporary.path(), "org.example.one")
                 .unwrap();
         let store = NetworkProfileStore::open(policy.clone()).unwrap();
         let second = match NetworkProfileStore::open(policy) {
@@ -619,7 +556,7 @@ mod tests {
         drop(store);
 
         let other_namespace =
-            NetworkProfileStoragePolicy::encrypted_directory(temporary.path(), "org.example.two")
+            NetworkProfileStoragePolicy::json_directory(temporary.path(), "org.example.two")
                 .unwrap();
         let other = NetworkProfileStore::open(other_namespace).unwrap();
         assert!(other.profiles.is_empty());
@@ -636,8 +573,7 @@ mod tests {
         let alias = temporary.path().join("alias");
         symlink(&actual, &alias).unwrap();
         let policy =
-            NetworkProfileStoragePolicy::encrypted_directory(alias, "org.example.symlink-test")
-                .unwrap();
+            NetworkProfileStoragePolicy::json_directory(alias, "org.example.symlink-test").unwrap();
         let error = match NetworkProfileStore::open(policy) {
             Ok(_) => panic!("profile storage must not follow a symlink root"),
             Err(error) => error,

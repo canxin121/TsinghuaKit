@@ -188,10 +188,11 @@ abstract class ClientHandle implements RustOpaqueInterface {
   Future<List<NetworkProfileDto>> networkProfiles();
 
   // HINT: Make it `#[frb(sync)]` to let it become the default constructor of Dart class.
-  /// Creates a Client without login or network activity. Persistent Auth
-  /// credentials, Identity snapshots and network profiles are managed as
-  /// separate encrypted files under app-private directories. No operating-
-  /// system credential store is used.
+  /// Creates a Client without login or network activity. Explicitly saved
+  /// Auth credentials, Identity snapshots and network profiles are written
+  /// as separate readable JSON files under caller-selected directories.
+  /// They are not encrypted, and no operating-system credential store is
+  /// used.
   static Future<ClientHandle> newInstance(
           {String? cacheRoot,
           String? credentialStorageRoot,

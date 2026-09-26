@@ -20,13 +20,13 @@ rejected by Portal calls and operating-system Wi-Fi/EAP configuration remains
 outside the SDK. THOS write operations remain outside the current public API.
 More precisely, Identity cookie snapshots require explicit revalidation after
 restart, SelfService session restoration is not implemented, and saved
-passwords only start explicit Auth flows. The SDK's opt-in persistence uses
-encrypted files in host-selected app-private directories. Rust manages the
-key alongside each file store; the Flutter package does not use Keychain,
-Keystore, or another system credential service. Identity, SelfService, and
-network profile data remain in separate directories and namespaces. This
-file-based approach is intended for ordinary app-managed persistence and does
-not protect against another process running as the same OS user.
+passwords only start explicit Auth flows. Persistence is memory-only unless
+the host opts in with a selected root and namespace. TsinghuaKit writes
+ordinary readable JSON files; it does not call Keychain, Keystore, Flutter
+Secure Storage, or another operating-system credential service. On Unix,
+directories use mode `0700` and files use mode `0600`. The data is not
+encrypted and remains readable to processes running as the same user.
+Identity, SelfService, and network-profile data use separate files.
 
 Rust imports follow the domain modules: `auth`, `network`, `service_hall`,
 `self_service`, `news`, `learn`, `registrar`, `calendar`, `library`,
@@ -87,14 +87,15 @@ caches. Flutter and Rust expose that as `ClientCachePersistence.directory` and
 Identity snapshot directory, and NetworkProfile directory are configured
 independently. A cache never creates an authenticated session.
 
-Identity may opt into an encrypted shared-cookie snapshot. The SDK stores its
-key beside the ciphertext in the selected private directory; the snapshot is
-not a strict Identity-only cookie partition. Restored data starts unverified
-and must be checked explicitly. SelfService session restoration is not
-implemented. Auth credential persistence is separately opt-in through
-`CredentialStoragePolicy::EncryptedDirectory`; Rust stores encrypted records
-and a local key in the selected app-private directory. No OS credential
-service is involved.
+Identity may opt into a readable JSON shared-cookie snapshot through
+`IdentitySessionStoragePolicy::JsonDirectory`. Its cookie contents are
+authentication material, but never include the account password. The snapshot
+is not a strict Identity-only cookie partition. Restored data starts
+unverified and must be checked explicitly. SelfService session restoration
+is not implemented. Auth credential persistence is separately opt-in through
+`CredentialStoragePolicy::JsonDirectory`; the resulting JSON contains the
+plaintext password only after the user explicitly opts in following a
+successful login. No OS credential service is involved.
 
 Identity and SelfService may use different usernames. SelfService captcha
 login requires a currently proven Identity/WebVPN access path, but its
@@ -104,8 +105,8 @@ device table, and usage/balance table only after a proven SelfService session.
 Disconnecting an online device requires the opaque `DeviceRef` returned by
 that client's latest complete list. A TUNet or Tsinghua Secure profile is a
 local network input, not a third Auth account. Profiles default to memory-only;
-the opt-in encrypted-directory backend is distinct from Auth persistence and
-is not an OS credential vault. Tsinghua Secure's live connection and 802.1X
+the opt-in JSON-directory backend is distinct from Auth persistence.
+Tsinghua Secure's live connection and 802.1X
 configuration remain owned by the operating system.
 
 `client.auth().status()` reports the selected username independently for each
