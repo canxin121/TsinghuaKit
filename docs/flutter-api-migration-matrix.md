@@ -1,6 +1,6 @@
 # Flutter 旧 API 到 TsinghuaKit 的迁移矩阵
 
-状态：迁移进行中，尚未完成生产切换。App 当前提交 `55cbb8f` 已将 Git 依赖固定到 public SDK 提交 `f0a9471`，macOS Debug 可构建；但 App 的生产 provider 仍创建旧 `CampusRuntime`，页面仍经 `FrbCampusRuntimeGateway`，`lib/` 下尚无 `package:tsinghua_kit` 生产导入。静态消费者工具不作为迁移完成证据。公共 SDK 工作树当前为 `0.2.0-alpha.1`。清单来自 App 的 `CampusRuntimeGateway` 及其 companion gateway 接口，合计 72 个旧异步入口，不包含页面状态、缓存展示器和纯模型校验器。此文档不表示线上服务已验证。
+状态：迁移进行中，尚未完成生产切换。App 工作树的 Git 依赖现固定到 public SDK commit `5ba172a`，依赖解析和 macOS Debug 构建通过；生产 provider 仍创建旧 `CampusRuntime`，页面仍经 `FrbCampusRuntimeGateway`，`lib/` 下仍无 `package:tsinghua_kit` 生产导入。静态消费者工具不作为迁移完成证据。公共 SDK 工作树当前为 `0.2.0-alpha.1`。清单来自 App 的 `CampusRuntimeGateway` 及其 companion gateway 接口，合计 72 个旧异步入口，不包含页面状态、缓存展示器和纯模型校验器。此文档不表示线上服务已验证。
 
 迁移的主约束是，一个 Flutter `TsinghuaKitClient` 只持有一个 Rust `Client`。身份、网络自助和业务服务共享该 Client 的 Runtime/transport；门户本机连接资料留在 `client.network.profiles`，不增加 Auth slot。引用型选择必须由前一次 SDK 读取产生，并由 Rust 绑定 Client 与目录代次；Flutter 不传 URL、学校 selector、数组下标或自由拼装的业务 ID。
 
@@ -37,7 +37,7 @@ SDK 现将业务缓存目录、Identity 会话快照与 NetworkProfile 存储分
 2. Identity 会话快照现支持宿主安全存储密钥，并且 key mismatch 保留原快照；两个 Auth 域的逐次凭据 opt-in 与分命名空间存储已实现；仍需将 vault key 接入宿主安全存储，并设计 SelfService 跨进程会话恢复。恢复失败必须给出类型化状态，不触发隐式重复登录。不得把 Portal/EAP profile、Auth 会话与业务缓存合并存储。
 3. 对 NetworkProfile/Identity 快照与 Auth vault 的 secure-storage key 路径做真实平台验证；设计 SelfService 跨进程会话策略并实现操作系统 Wi-Fi/EAP 能力。Portal 显式连接与断开已进入 SDK/Dart facade，尚需在用户明确操作后做线上验证。所有入口仍增加到同一个 `ClientHandle`，不建立平行 runtime；Profile 内容不能和两个 Auth 会话合并持久化。
 4. 对照 App 实际引用点迁移 repositories/controllers：使用 package 的领域类型和稳定错误；App 可以做 UI 排版及调用编排，不复制 Rust selector、HTTP、解析、缓存策略、账号绑定或错误分类。
-5. 删除 App 的 `lib/src/rust` 生成目录和旧 `FrbCampusRuntimeGateway`，再更新 `pubspec.yaml` 至 public TsinghuaKit tag。进入该步骤前必须有全量调用映射、相同 Client 生命周期、session recovery 方案、平台构建与必要业务验收证据。
+5. 在全量调用映射、相同 Client 生命周期、session recovery 方案、平台构建和必要业务验收证据齐全后，切换生产 provider 到同一个 `TsinghuaKitClient`，删除旧 `FrbCampusRuntimeGateway` 与 App 自有 `lib/src/rust` 生成目录。`pubspec.yaml` 已固定到 public TsinghuaKit commit `5ba172a`；后续只在 SDK API 变更时更新精确 commit。
 
 ## 暂未纳入迁移的 App 职责
 
