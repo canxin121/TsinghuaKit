@@ -18,14 +18,15 @@ connect or disconnect a Portal profile through the shared Rust transport.
 Connections are local network operations, not Auth sessions; EAP profiles are
 rejected by Portal calls and operating-system Wi-Fi/EAP configuration remains
 outside the SDK. THOS write operations remain outside the current public API.
-More precisely,
-Identity cookie snapshots require explicit revalidation after restart,
-SelfService session restoration is not implemented, and saved passwords only
-start explicit Auth flows. The preferred Flutter `HostSecureStorage` policy
-keeps independent Identity and SelfService credential keys in Flutter Secure
-Storage; Rust receives each key only while constructing the Client and never
-writes it beside encrypted credential files. The legacy
-`EncryptedDirectory` credential policy is kept for migration compatibility.
+More precisely, Identity cookie snapshots require explicit revalidation after
+restart, SelfService session restoration is not implemented, and saved
+passwords only start explicit Auth flows. The SDK's opt-in persistence uses
+encrypted files in host-selected app-private directories. Rust manages the
+key alongside each file store; the Flutter package does not use Keychain,
+Keystore, or another system credential service. Identity, SelfService, and
+network profile data remain in separate directories and namespaces. This
+file-based approach is intended for ordinary app-managed persistence and does
+not protect against another process running as the same OS user.
 
 Rust imports follow the domain modules: `auth`, `network`, `service_hall`,
 `self_service`, `news`, `learn`, `registrar`, `calendar`, `library`,
@@ -86,15 +87,14 @@ caches. Flutter and Rust expose that as `ClientCachePersistence.directory` and
 Identity snapshot directory, and NetworkProfile directory are configured
 independently. A cache never creates an authenticated session.
 
-Identity may opt into an encrypted shared-cookie snapshot, but the current
-directory backend stores its key beside the ciphertext and the snapshot is not
-a strict Identity-only cookie partition or an OS Keychain. Restored data starts
-unverified and must be checked explicitly. SelfService session restoration is
-not implemented. Do not treat the directory backend as high-assurance
-credential storage. Auth credential persistence is separately opt-in; the
-`CredentialStoragePolicy::HostSecureStorage` option accepts distinct
-Identity and SelfService keys from the host's secure store. The legacy
-`EncryptedDirectory` policy stores its key beside its encrypted records.
+Identity may opt into an encrypted shared-cookie snapshot. The SDK stores its
+key beside the ciphertext in the selected private directory; the snapshot is
+not a strict Identity-only cookie partition. Restored data starts unverified
+and must be checked explicitly. SelfService session restoration is not
+implemented. Auth credential persistence is separately opt-in through
+`CredentialStoragePolicy::EncryptedDirectory`; Rust stores encrypted records
+and a local key in the selected app-private directory. No OS credential
+service is involved.
 
 Identity and SelfService may use different usernames. SelfService captcha
 login requires a currently proven Identity/WebVPN access path, but its

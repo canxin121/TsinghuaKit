@@ -16,7 +16,6 @@ export 'tsinghua_kit.dart'
         NetworkProfilePassword,
         NetworkProfilePersistence,
         NetworkProfilesClient,
-        PlatformSecureStorageNetworkProfilePersistence,
         PortalAddressRegistration,
         PortalConnectionResult,
         PortalConnectionState,

@@ -82,34 +82,33 @@ choose a private cache directory; this is independent from Identity's
 encrypted session snapshot and local network profiles. The cache directory
 contains business read data only and never creates an authenticated session.
 
-Flutter can separately opt in to the current Identity cookie snapshot backend,
-with its key held by the platform secure store:
+Flutter can separately opt in to save an Identity cookie snapshot as an
+encrypted file. The SDK manages the key and snapshot together under the
+application-private directory supplied by the host:
 
 ```dart
 final client = await TsinghuaKit.createClient(
   cache: ClientCachePersistence.directory(
     root: appPrivateCacheDirectory,
   ),
-  identitySession: IdentitySessionPersistence.platformSecureStorage(
-    // Replace this host-provided value with an absolute app-private directory.
+  identitySession: IdentitySessionPersistence.encryptedDirectory(
     root: appPrivateDataDirectory,
     namespace: 'org.example.campus-app',
   ),
 );
 ```
 
-That snapshot is device-bound and encrypted. Flutter Secure Storage holds a
-separate 32-byte Identity-session key; it does not reuse the NetworkProfile
-key. The snapshot never includes a password. Auth passwords use a separate
-opt-in policy:
+That snapshot is device-bound and encrypted. Its key is stored beside the
+snapshot in the same private directory. The snapshot never includes a
+password. Auth passwords use a separate opt-in policy:
 
 ```dart
 final client = await TsinghuaKit.createClient(
-  authCredentials: AuthCredentialPersistence.platformSecureStorage(
+  authCredentials: AuthCredentialPersistence.encryptedDirectory(
     root: appPrivateDataDirectory,
     namespace: 'org.example.campus-app',
   ),
-  identitySession: IdentitySessionPersistence.platformSecureStorage(
+  identitySession: IdentitySessionPersistence.encryptedDirectory(
     root: appPrivateDataDirectory,
     namespace: 'org.example.campus-app',
   ),
@@ -128,13 +127,12 @@ are saved only after a successful login; cross-process recovery also requires
 an Identity session snapshot. SelfService credentials are saved only after a
 successful captcha login. `startSavedLogin(username: ...)` opens a new captcha
 flow and never bypasses captcha entry. Setting either login's option to false
-removes a previously saved password for that account. The preferred
-`platformSecureStorage` policy keeps separate Identity and SelfService
-encryption keys in Flutter Secure Storage while Rust stores encrypted records
-in the selected private directory. Missing or mismatched keys never trigger
-silent key rotation or deletion of existing credential records. The legacy
-`encryptedDirectory` policy keeps its key beside its ciphertext and is not an
-OS credential vault.
+removes a previously saved password for that account. The SDK stores these
+records in encrypted files, with separate Identity and SelfService account
+domains. Their local encryption key is kept beside the encrypted records in
+the selected app-private directory. This is app-managed file storage; it does
+not use Keychain, Keystore, or another system credential service, and it does
+not protect files from another process running as the same user.
 
 The SDK stores the
 shared Cookie jar once at the first successful Identity checkpoint; later
@@ -145,8 +143,8 @@ Identity appears as `restoredUnverified`; call
 `client.auth.identity.revalidateRestoredSession()` only when the app explicitly
 wants Rust to perform the read-only check. SelfService status and network
 online proof are not restored. The legacy
-`IdentitySessionPersistence.encryptedDirectory` option keeps its key beside
-the ciphertext and is for migration only. Identity snapshots do not restore
+`IdentitySessionPersistence.encryptedDirectory` keeps its key beside the
+ciphertext. Identity snapshots do not restore
 passwords or the second Auth slot. A saved SelfService password only starts a
 new explicit captcha flow.
 
@@ -154,15 +152,14 @@ It also supports explicit captcha/code steps, profile editing, version-bound
 form preparation, and user-requested password filling. Identity and
 SelfService remain the only Auth accounts. Portal and system Wi-Fi/EAP data
 are local profiles; creating or filling one does not connect the device or
-restore either Auth session. Profile persistence is memory-only by default;
-the legacy Unix encrypted-directory backend stores its key beside the data.
-For persistent profiles, use
-`NetworkProfilePersistence.platformSecureStorage(root: ..., namespace: ...)`:
-Flutter Secure Storage keeps the encryption key in the platform secure store,
-while Rust keeps the encrypted profile file under the selected private app
-directory. This key protects Portal/EAP profile data only; it is never an Auth
-password or session key. Identity-session persistence uses its own secure
-storage entry and does not reuse profile keys or passwords.
+restore either Auth session. Profile persistence is memory-only by default.
+To keep profiles across app restarts, use
+`NetworkProfilePersistence.encryptedDirectory(root: ..., namespace: ...)`.
+Rust stores the encrypted profile file and its key under the selected private
+app directory. These files contain only local Portal/EAP form data and any
+password the user explicitly chose to save; they are not an Auth session or
+online proof. The SDK does not call Keychain, Keystore, or another system
+credential service.
 
 Logout scope is explicit: `client.auth.identity.logout()` closes Identity and
 its derived service proofs; a selected SelfService account remains visible as

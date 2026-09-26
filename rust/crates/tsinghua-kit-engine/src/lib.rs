@@ -125,8 +125,7 @@ pub use classroom_read::{
 };
 pub use client::{
     Client, ClientBuilder, ClientCachePolicy, CredentialStoragePolicy, IdentityLoginOutcome,
-    IdentityLoginRequest, IdentitySessionStorageKey, IdentitySessionStoragePolicy, LoginStage,
-    ServiceHallClient,
+    IdentityLoginRequest, IdentitySessionStoragePolicy, LoginStage, ServiceHallClient,
 };
 pub use domain::*;
 pub use dorm_electricity_read::{

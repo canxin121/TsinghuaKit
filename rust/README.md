@@ -27,23 +27,22 @@ separate account domains and may use different usernames. TUNet portal access
 and Tsinghua Secure/EAP are local network operations; they are not a third
 authenticated account. The Rust SDK supports Portal/EAP profile records,
 version-bound form preparation, and explicit password filling. Profiles are
-memory-only by default. A host may explicitly enable the Unix encrypted-
-directory backend by providing both a private storage root and an application
-namespace; it stores profile data only and never restores Auth sessions. Its
-key and ciphertext share the private directory, so this is not an OS Keychain.
-Auth sessions remain memory-only unless a host explicitly selects an
-Identity snapshot policy; its directory is independent from the service
-cache. `IdentitySessionStoragePolicy::HostSecureStorage`
-accepts a separately stored 32-byte key through
-`IdentitySessionStorageKey::from_bytes`; `EncryptedDirectory` is the legacy
-option that stores its key beside the ciphertext. The snapshot key must
-not be reused for network profiles or Auth passwords. `CredentialStoragePolicy`
-selects a separate app-private credential directory. A successful Identity
-login or completed SelfService captcha flow saves its account-domain record
-only after explicit `remember_credentials(true)` opt-in; the two namespaces
-remain separate even for identical account names. The vault uses its own
-app-private file key and is not an OS Keychain. Either
-snapshot opt-in restores the shared Identity-bound Cookie snapshot as
+memory-only by default. A host may opt in to app-managed encrypted files by
+providing a private storage root and an application namespace; the SDK stores
+each key beside its encrypted data and does not call Keychain, Keystore, or
+another operating-system credential service. These files store profile data
+only and never restore Auth sessions. Auth sessions remain memory-only unless
+a host explicitly selects an Identity snapshot policy; its directory is
+independent from the service cache. `IdentitySessionStoragePolicy::EncryptedDirectory`
+stores an encrypted, device-bound snapshot and its key in the same private
+directory. `CredentialStoragePolicy` selects a separate app-private
+credential directory. A successful Identity login or completed SelfService
+captcha flow saves its account-domain record only after explicit
+`remember_credentials(true)` opt-in; the two namespaces remain separate even
+for identical account names. The credential vault uses encrypted files and a
+local key beside the records. This is app-managed file storage, not protection
+against another process running as the same user. Either snapshot opt-in
+restores the shared Identity-bound Cookie snapshot as
 `RestoredUnverified`; the host must call
 `identity.revalidate_restored_session()` to perform a read-only validation.
 The snapshot is device-bound, expires after its bounded lifetime, and never
@@ -51,12 +50,10 @@ stores a password. The SDK writes the whole shared Cookie jar once at the first
 successful Identity checkpoint; later business and SelfService responses do
 not refresh the on-disk snapshot. Cookies already present at that checkpoint
 may still be included, so this is not per-account Cookie partitioning. Schema
-1 envelopes are rejected without migration. The legacy co-located-key file
-backend is not an OS Keychain. Snapshot policies do not put passwords inside
-the cookie snapshot or restore SelfService account state or authorization. The Flutter facade obtains the
-Identity key from a separate Flutter Secure Storage entry when
-`IdentitySessionPersistence.platformSecureStorage` is selected; this path has
-not yet been verified against a real device keychain.
+1 envelopes are rejected without migration. Snapshot policies do not put
+passwords inside the cookie snapshot or restore SelfService account state or
+authorization. The Flutter facade uses the same SDK-managed private file
+policies for Identity snapshots, Auth credentials, and network profiles.
 The Flutter facade exposes Auth, local profile CRUD/fill and explicit Portal
 connect/disconnect operations, service hall, SelfService, Registrar/Calendar,
 INFO, Learn, Library, Classroom, CampusCard and Electricity reads. The
@@ -246,20 +243,10 @@ reachability or the status of system-managed EAP Wi-Fi such as Tsinghua Secure.
 
 Network profiles are memory-only by default. A host may explicitly opt into
 `NetworkProfileStoragePolicy::EncryptedDirectory` with a private application
-directory and a stable host namespace. On Unix targets the SDK encrypts profile
-records, atomically replaces the data file, and enforces owner-only directory
-and file modes. The key is stored beside the ciphertext, so this backend is
-not an OS keychain and does not protect against the same OS user or an
-administrator. A host with its own secure key store can instead use
-`NetworkProfileStoragePolicy::keychain_encrypted_directory(root, namespace, key)`;
-the 32-byte key is zeroized by Rust and never written beside the ciphertext.
-The Flutter facade obtains that key from Flutter Secure Storage. Both
-persistent file modes are currently supported on Unix targets; non-Unix
-targets return `Unsupported`. Profile persistence restores form data only and
-never restores an Auth session or network-online proof. The selected store is
-locked to one Client at a time. Switching an existing colocated-key store to
-the secure-key policy migrates the encrypted records under that lock and
-removes the old on-disk key after the new ciphertext has been committed.
+directory and a stable host namespace. The SDK encrypts profile records and
+stores the key in that app-managed directory beside the data. Profile
+persistence restores form data only and never restores an Auth session or
+network-online proof. The selected store is locked to one Client at a time.
 
 Building Rustdoc or compiling these packages does not log in or contact
 campus services.

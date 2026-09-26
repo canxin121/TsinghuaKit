@@ -5,11 +5,7 @@
 /// to Dart without exposing protocol implementation types.
 library;
 
-import 'dart:convert';
-import 'dart:math';
 import 'dart:typed_data';
-
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'src/rust/frb_generated.dart' show RustLib;
 import 'src/second_factor_method.dart'
@@ -117,91 +113,36 @@ abstract final class TsinghuaKit {
         :final namespace,
       ) =>
         (root, namespace),
-      PlatformSecureStorageAuthCredentialPersistence(
+    };
+    final (storageRoot, applicationNamespace) = switch (networkProfiles) {
+      MemoryOnlyNetworkProfilePersistence() => (null, null),
+      EncryptedDirectoryNetworkProfilePersistence(
+        :final root,
+        :final namespace
+      ) =>
+        (root, namespace),
+    };
+    final (identitySessionRoot, identitySessionNamespace) =
+        switch (identitySession) {
+      MemoryOnlyIdentitySessionPersistence() => (null, null),
+      EncryptedDirectoryIdentitySessionPersistence(
         :final root,
         :final namespace,
       ) =>
         (root, namespace),
     };
-    Uint8List? identityCredentialKey;
-    Uint8List? selfServiceCredentialKey;
-    Uint8List? profileStorageKey;
-    Uint8List? identitySessionKey;
-    try {
-      if (authCredentials
-          case PlatformSecureStorageAuthCredentialPersistence(
-            :final namespace,
-          )) {
-        _validateSecureStorageNamespace(namespace);
-        identityCredentialKey = await _loadOrCreateAuthCredentialKey(
-          namespace,
-          'identity',
-        );
-        selfServiceCredentialKey = await _loadOrCreateAuthCredentialKey(
-          namespace,
-          'self_service',
-        );
-      }
-      final (storageRoot, applicationNamespace, loadedProfileStorageKey) =
-          switch (networkProfiles) {
-        MemoryOnlyNetworkProfilePersistence() => (null, null, null),
-        EncryptedDirectoryNetworkProfilePersistence(
-          :final root,
-          :final namespace
-        ) =>
-          (root, namespace, null),
-        PlatformSecureStorageNetworkProfilePersistence(
-          :final root,
-          :final namespace,
-        ) =>
-          (
-            root,
-            namespace,
-            await _loadOrCreateNetworkProfileKey(namespace),
-          ),
-      };
-      profileStorageKey = loadedProfileStorageKey;
-      final (
-        identitySessionRoot,
-        identitySessionNamespace,
-        loadedIdentitySessionKey,
-      ) = switch (identitySession) {
-        MemoryOnlyIdentitySessionPersistence() => (null, null, null),
-        EncryptedDirectoryIdentitySessionPersistence(
-          :final root,
-          :final namespace,
-        ) =>
-          (root, namespace, null),
-        PlatformSecureStorageIdentitySessionPersistence(
-          :final root,
-          :final namespace,
-        ) =>
-          (root, namespace, await _loadOrCreateIdentitySessionKey(namespace)),
-      };
-      identitySessionKey = loadedIdentitySessionKey;
-      final handle = await _sdkCall(
-        () => native.ClientHandle.newWithCredentialKeys(
-          cacheRoot: cacheRoot,
-          credentialStorageRoot: authCredentialRoot,
-          credentialStorageNamespace: authCredentialNamespace,
-          identityCredentialStorageKey: identityCredentialKey,
-          selfServiceCredentialStorageKey: selfServiceCredentialKey,
-          profileStorageRoot: storageRoot,
-          applicationNamespace: applicationNamespace,
-          profileStorageKey: profileStorageKey,
-          identitySessionRoot: identitySessionRoot,
-          identitySessionNamespace: identitySessionNamespace,
-          identitySessionKey: identitySessionKey,
-        ),
-      );
-      return TsinghuaKitClient._(handle);
-    } finally {
-      identityCredentialKey?.fillRange(0, identityCredentialKey.length, 0);
-      selfServiceCredentialKey?.fillRange(
-          0, selfServiceCredentialKey.length, 0);
-      profileStorageKey?.fillRange(0, profileStorageKey.length, 0);
-      identitySessionKey?.fillRange(0, identitySessionKey.length, 0);
-    }
+    final handle = await _sdkCall(
+      () => native.ClientHandle.newInstance(
+        cacheRoot: cacheRoot,
+        credentialStorageRoot: authCredentialRoot,
+        credentialStorageNamespace: authCredentialNamespace,
+        profileStorageRoot: storageRoot,
+        applicationNamespace: applicationNamespace,
+        identitySessionRoot: identitySessionRoot,
+        identitySessionNamespace: identitySessionNamespace,
+      ),
+    );
+    return TsinghuaKitClient._(handle);
   }
 }
 
@@ -252,16 +193,6 @@ sealed class AuthCredentialPersistence {
     required String root,
     required String namespace,
   }) = EncryptedDirectoryAuthCredentialPersistence;
-
-  /// Encrypts credential files with separate Identity and SelfService keys
-  /// held in platform secure storage. This is the preferred persistence mode
-  /// for applications that explicitly offer a “remember credentials” option.
-  /// The keys, credential files, session snapshot, network profiles, and
-  /// business cache use separate namespaces and policies.
-  const factory AuthCredentialPersistence.platformSecureStorage({
-    required String root,
-    required String namespace,
-  }) = PlatformSecureStorageAuthCredentialPersistence;
 }
 
 final class MemoryOnlyAuthCredentialPersistence
@@ -281,128 +212,6 @@ final class EncryptedDirectoryAuthCredentialPersistence
 
   /// Stable application namespace, not an account name.
   final String namespace;
-}
-
-final class PlatformSecureStorageAuthCredentialPersistence
-    extends AuthCredentialPersistence {
-  const PlatformSecureStorageAuthCredentialPersistence({
-    required this.root,
-    required this.namespace,
-  });
-
-  /// Absolute app-private directory used for encrypted Auth credential files.
-  final String root;
-
-  /// Stable app namespace; never an account name.
-  final String namespace;
-}
-
-void _validateSecureStorageNamespace(String namespace) {
-  if (namespace.isEmpty ||
-      namespace.length > 128 ||
-      namespace == '.' ||
-      namespace == '..' ||
-      !RegExp(r'^[A-Za-z0-9._-]+$').hasMatch(namespace)) {
-    throw ArgumentError.value(namespace, 'namespace', 'Invalid app namespace');
-  }
-}
-
-final Map<String, Future<Uint8List>> _pendingAuthCredentialKeys = {};
-
-Future<Uint8List> _loadOrCreateAuthCredentialKey(
-  String namespace,
-  String domain,
-) {
-  final pendingKey = '$namespace:$domain';
-  final pending = _pendingAuthCredentialKeys.putIfAbsent(pendingKey, () async {
-    const storage = FlutterSecureStorage();
-    final storageKey =
-        'org.tsinghua_kit.auth_credential_key.$domain.$namespace';
-    final stored = await storage.read(key: storageKey);
-    if (stored != null) {
-      try {
-        final key = base64Url.decode(base64Url.normalize(stored));
-        if (key.length == 32) return Uint8List.fromList(key);
-      } on FormatException {
-        // Keep an unusable secure-store value visible as a storage error. A
-        // replacement key could make existing encrypted records unreadable.
-      }
-      throw StateError('The saved Auth credential key is unavailable.');
-    }
-    final key = Uint8List.fromList(
-      List<int>.generate(32, (_) => Random.secure().nextInt(256)),
-    );
-    await storage.write(key: storageKey, value: base64UrlEncode(key));
-    return key;
-  });
-  // Each Client construction owns and wipes its input buffer. Never hand the
-  // same mutable Uint8List to two concurrent constructions with this
-  // namespace: one caller's `finally` block could zero the other's key.
-  return pending.then(Uint8List.fromList).whenComplete(() {
-    if (identical(_pendingAuthCredentialKeys[pendingKey], pending)) {
-      _pendingAuthCredentialKeys.remove(pendingKey);
-    }
-  });
-}
-
-final Map<String, Future<Uint8List>> _pendingProfileKeys = {};
-
-Future<Uint8List> _loadOrCreateNetworkProfileKey(String namespace) {
-  final pending = _pendingProfileKeys.putIfAbsent(namespace, () async {
-    const storage = FlutterSecureStorage();
-    final storageKey = 'org.tsinghua_kit.network_profile_key.$namespace';
-    final stored = await storage.read(key: storageKey);
-    if (stored != null) {
-      try {
-        final key = base64Url.decode(base64Url.normalize(stored));
-        if (key.length == 32) return Uint8List.fromList(key);
-      } on FormatException {
-        // A malformed key is a storage failure, never a cue to silently
-        // replace the key and make existing profile records unreadable.
-      }
-      throw StateError('The saved network profile key is unavailable.');
-    }
-    final key = Uint8List.fromList(
-      List<int>.generate(32, (_) => Random.secure().nextInt(256)),
-    );
-    await storage.write(key: storageKey, value: base64UrlEncode(key));
-    return key;
-  });
-  return pending.then(Uint8List.fromList).whenComplete(() {
-    if (identical(_pendingProfileKeys[namespace], pending)) {
-      _pendingProfileKeys.remove(namespace);
-    }
-  });
-}
-
-final Map<String, Future<Uint8List>> _pendingIdentitySessionKeys = {};
-
-Future<Uint8List> _loadOrCreateIdentitySessionKey(String namespace) {
-  final pending = _pendingIdentitySessionKeys.putIfAbsent(namespace, () async {
-    const storage = FlutterSecureStorage();
-    final storageKey = 'org.tsinghua_kit.identity_session_key.$namespace';
-    final stored = await storage.read(key: storageKey);
-    if (stored != null) {
-      try {
-        final key = base64Url.decode(base64Url.normalize(stored));
-        if (key.length == 32) return Uint8List.fromList(key);
-      } on FormatException {
-        // Never rotate a malformed key implicitly: an existing snapshot may
-        // still depend on the original secure-store value.
-      }
-      throw StateError('The saved Identity session key is unavailable.');
-    }
-    final key = Uint8List.fromList(
-      List<int>.generate(32, (_) => Random.secure().nextInt(256)),
-    );
-    await storage.write(key: storageKey, value: base64UrlEncode(key));
-    return key;
-  });
-  return pending.then(Uint8List.fromList).whenComplete(() {
-    if (identical(_pendingIdentitySessionKeys[namespace], pending)) {
-      _pendingIdentitySessionKeys.remove(namespace);
-    }
-  });
 }
 
 /// Persistence choices for the Identity-bound shared session snapshot.
@@ -427,17 +236,6 @@ sealed class IdentitySessionPersistence {
     required String root,
     required String namespace,
   }) = EncryptedDirectoryIdentitySessionPersistence;
-
-  /// Stores the encrypted Identity snapshot in the host-selected app-private
-  /// directory and keeps its independent encryption key in platform secure
-  /// storage. The snapshot key uses its own secure-storage entry. A separately
-  /// opted-in Auth password remains in AuthCredentialPersistence, not in this
-  /// key entry or the cookie snapshot. Restored cookies still require
-  /// explicit Identity revalidation.
-  const factory IdentitySessionPersistence.platformSecureStorage({
-    required String root,
-    required String namespace,
-  }) = PlatformSecureStorageIdentitySessionPersistence;
 }
 
 /// Default memory-only Identity session storage.
@@ -461,22 +259,6 @@ final class EncryptedDirectoryIdentitySessionPersistence
   final String namespace;
 }
 
-/// Identity-session persistence backed by an encrypted private file and a
-/// separately stored platform key.
-final class PlatformSecureStorageIdentitySessionPersistence
-    extends IdentitySessionPersistence {
-  const PlatformSecureStorageIdentitySessionPersistence({
-    required this.root,
-    required this.namespace,
-  });
-
-  /// Absolute private application-data directory selected by the host.
-  final String root;
-
-  /// Stable application namespace, separate from NetworkProfile key names.
-  final String namespace;
-}
-
 /// Persistence choices for local network fill profiles.
 ///
 /// These profiles are separate from the Identity and SelfService Auth
@@ -497,15 +279,6 @@ sealed class NetworkProfilePersistence {
     required String root,
     required String namespace,
   }) = EncryptedDirectoryNetworkProfilePersistence;
-
-  /// Persists profiles in an encrypted file whose key is kept by platform
-  /// secure storage, such as Apple Keychain or Android Keystore-backed storage.
-  /// The key is passed into Rust only for Client construction and is never
-  /// written beside the profile ciphertext.
-  const factory NetworkProfilePersistence.platformSecureStorage({
-    required String root,
-    required String namespace,
-  }) = PlatformSecureStorageNetworkProfilePersistence;
 }
 
 /// Default memory-only local profile storage.
@@ -526,21 +299,6 @@ final class EncryptedDirectoryNetworkProfilePersistence
   final String root;
 
   /// Stable app namespace that prevents accidental profile-store sharing.
-  final String namespace;
-}
-
-/// Platform-secure-storage-backed encrypted local network profile persistence.
-final class PlatformSecureStorageNetworkProfilePersistence
-    extends NetworkProfilePersistence {
-  const PlatformSecureStorageNetworkProfilePersistence({
-    required this.root,
-    required this.namespace,
-  });
-
-  /// Absolute private directory for encrypted profile data.
-  final String root;
-
-  /// Stable application namespace. It is not an account name.
   final String namespace;
 }
 

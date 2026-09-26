@@ -1,8 +1,9 @@
 #[path = "session_authority.rs"]
 mod authority;
+#[cfg(test)]
+pub(crate) use authority::begin_explicit_authority;
 pub(crate) use authority::{
-    SessionLease, begin_explicit_authority, begin_explicit_authority_with_opt_in,
-    load_authorized_state, load_authorized_state_with_key, revoke_authority,
+    SessionLease, begin_explicit_authority_with_opt_in, load_authorized_state, revoke_authority,
 };
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
@@ -456,9 +457,8 @@ fn decrypt_snapshot(
         .map_err(|_| String::from("resume session payload is invalid"))?;
     if account_binding(&snapshot.username) != envelope.account_binding
         || device_binding(snapshot.device_fingerprint()) != envelope.device_binding
-        || !snapshot.is_current(Utc::now())
     {
-        return Err(String::from("resume session binding or age is invalid"));
+        return Err(String::from("resume session binding is invalid"));
     }
     Ok(snapshot)
 }
@@ -677,28 +677,14 @@ fn commit_file(temporary: &Path, destination: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn save_at_unlocked(
-    path: &Path,
-    snapshot: &ResumeSnapshot,
-    external_key: Option<&[u8]>,
-) -> Result<(), String> {
+fn save_at_unlocked(path: &Path, snapshot: &ResumeSnapshot) -> Result<(), String> {
     let parent = path
         .parent()
         .ok_or_else(|| String::from("resume session path is invalid"))?;
     ensure_private_directory(parent)?;
     reject_symlink(path)?;
-    let owned_key;
-    let key: &[u8; SESSION_KEY_BYTES] = if let Some(key) = external_key {
-        if key.len() != SESSION_KEY_BYTES {
-            return Err(String::from("resume session key is invalid"));
-        }
-        key.try_into()
-            .map_err(|_| String::from("resume session key is invalid"))?
-    } else {
-        owned_key = load_or_create_session_key(parent)?;
-        &owned_key
-    };
-    let payload = encrypt_snapshot(snapshot, key)?;
+    let key = load_or_create_session_key(parent)?;
+    let payload = encrypt_snapshot(snapshot, &key)?;
     if payload.is_empty() || payload.len() > MAX_PAYLOAD_BYTES * 2 {
         return Err(String::from("resume session payload is too large"));
     }
@@ -747,7 +733,7 @@ fn save_at(path: &Path, snapshot: &ResumeSnapshot) -> Result<(), String> {
     let parent = path
         .parent()
         .ok_or_else(|| String::from("resume session path is invalid"))?;
-    with_session_store_lock(parent, || save_at_unlocked(path, snapshot, None))
+    with_session_store_lock(parent, || save_at_unlocked(path, snapshot))
 }
 
 fn clear_at_unlocked(path: &Path) -> Result<(), String> {
@@ -765,10 +751,7 @@ fn clear_at(path: &Path) -> Result<(), String> {
     with_session_store_lock(parent, || clear_at_unlocked(path))
 }
 
-fn load_at_unlocked(
-    path: &Path,
-    external_key: Option<&[u8]>,
-) -> Result<Option<ResumeSnapshot>, String> {
+fn load_at_unlocked(path: &Path) -> Result<Option<ResumeSnapshot>, String> {
     let metadata = match fs::symlink_metadata(path) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -791,38 +774,11 @@ fn load_at_unlocked(
     let parent = path
         .parent()
         .ok_or_else(|| String::from("resume session path is invalid"))?;
-    let owned_key;
-    let key: &[u8; SESSION_KEY_BYTES] = if let Some(key) = external_key {
-        if key.len() != SESSION_KEY_BYTES {
-            return Err(String::from("resume session key is invalid"));
-        }
-        key.try_into()
-            .map_err(|_| String::from("resume session key is invalid"))?
-    } else {
-        match read_existing_session_key(&session_key_path(parent)) {
-            Ok(key) => {
-                owned_key = key;
-                &owned_key
-            }
-            Err(_) => {
-                let _ = clear_at_unlocked(path);
-                return Ok(None);
-            }
-        }
-    };
-    let snapshot = match decrypt_snapshot(&payload, key) {
+    let key = read_existing_session_key(&session_key_path(parent))
+        .map_err(|_| String::from("resume session key is unavailable"))?;
+    let snapshot = match decrypt_snapshot(&payload, &key) {
         Ok(snapshot) => snapshot,
-        Err(_) => {
-            if external_key.is_some() {
-                // A missing or mismatched host secure-store key must never
-                // destroy a still-valid encrypted snapshot.
-                return Err(String::from(
-                    "resume session could not be decrypted with the host key",
-                ));
-            }
-            let _ = clear_at_unlocked(path);
-            return Ok(None);
-        }
+        Err(_) => return Err(String::from("resume session could not be decrypted")),
     };
     if !snapshot.is_current(Utc::now()) {
         let _ = clear_at_unlocked(path);
@@ -835,7 +791,7 @@ fn load_at(path: &Path) -> Result<Option<ResumeSnapshot>, String> {
     let parent = path
         .parent()
         .ok_or_else(|| String::from("resume session path is invalid"))?;
-    with_session_store_lock(parent, || load_at_unlocked(path, None))
+    with_session_store_lock(parent, || load_at_unlocked(path))
 }
 
 fn load_from_root(root: &Path) -> Result<Option<ResumeSnapshot>, String> {
@@ -843,7 +799,7 @@ fn load_from_root(root: &Path) -> Result<Option<ResumeSnapshot>, String> {
     // reading v2 so a stale plaintext artifact cannot coexist unnoticed.
     with_session_store_lock(root, || {
         clear_at_unlocked(&root.join(LEGACY_SESSION_FILE))?;
-        load_at_unlocked(&root.join(SESSION_FILE), None)
+        load_at_unlocked(&root.join(SESSION_FILE))
     })
 }
 
@@ -852,7 +808,7 @@ pub(crate) fn save_at_root(root: &Path, snapshot: &ResumeSnapshot) -> Result<(),
         return Err(String::from("resume session device binding is required"));
     }
     with_session_store_lock(root, || {
-        save_at_unlocked(&root.join(SESSION_FILE), snapshot, None)?;
+        save_at_unlocked(&root.join(SESSION_FILE), snapshot)?;
         // A v1 JSON snapshot is intentionally not migrated. Once a new
         // snapshot is successfully written, remove the obsolete plaintext
         // representation under the same lock boundary.
@@ -979,15 +935,6 @@ pub(crate) fn save_resume_state_at_root(
     snapshot: &ResumeSnapshot,
     metadata: &ResumeAccountMetadata,
 ) -> Result<(), String> {
-    save_resume_state_at_root_with_key(root, snapshot, metadata, None)
-}
-
-pub(crate) fn save_resume_state_at_root_with_key(
-    root: &Path,
-    snapshot: &ResumeSnapshot,
-    metadata: &ResumeAccountMetadata,
-    external_key: Option<&[u8]>,
-) -> Result<(), String> {
     if snapshot.device_fingerprint().is_none()
         || snapshot.username != metadata.username
         || metadata.device_fingerprint() != snapshot.device_fingerprint()
@@ -996,7 +943,7 @@ pub(crate) fn save_resume_state_at_root_with_key(
     }
     with_session_store_lock(root, || {
         let session_path = root.join(SESSION_FILE);
-        if let Err(error) = save_at_unlocked(&session_path, snapshot, external_key) {
+        if let Err(error) = save_at_unlocked(&session_path, snapshot) {
             let _ = clear_at_unlocked(&session_path);
             return Err(error);
         }
@@ -1328,49 +1275,6 @@ mod tests {
     }
 
     #[test]
-    fn backend_refactor_identity_snapshot_uses_host_key_and_preserves_data_on_key_mismatch() {
-        let root = test_dir("session-host-key");
-        let fingerprint = "0123456789abcdef0123456789abcdef";
-        let key = [19_u8; SESSION_KEY_BYTES];
-        let lease = begin_explicit_authority(&root, "fixture-user").unwrap();
-        let snapshot =
-            ResumeSnapshot::new("fixture-user", br#"{"cookie":"host-key-cookie-marker"}"#)
-                .unwrap()
-                .with_device_fingerprint(fingerprint)
-                .unwrap();
-        let metadata = ResumeAccountMetadata::new_with_stage_selection(
-            "fixture-user",
-            Some(crate::protocol::AcademicStage::Undergraduate),
-            Some(fingerprint),
-            true,
-            true,
-        )
-        .unwrap();
-        lease
-            .with_current(|| {
-                save_resume_state_at_root_with_key(&root, &snapshot, &metadata, Some(&key))
-            })
-            .unwrap();
-
-        let path = root.join(SESSION_FILE);
-        let raw = fs::read(&path).unwrap();
-        assert!(!String::from_utf8_lossy(&raw).contains("host-key-cookie-marker"));
-        assert!(!root.join(SESSION_KEY_FILE).exists());
-        assert_eq!(
-            load_authorized_state_with_key(&root, Some(&key)).unwrap().1,
-            Some(snapshot)
-        );
-
-        let wrong_key = [20_u8; SESSION_KEY_BYTES];
-        assert!(load_authorized_state_with_key(&root, Some(&wrong_key)).is_err());
-        assert!(
-            path.exists(),
-            "a host-key mismatch must not delete the snapshot"
-        );
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
     fn backend_refactor_session_envelope_v1_is_rejected_without_migration() {
         let snapshot = ResumeSnapshot::new("fixture-user", b"identity-cookie-checkpoint")
             .unwrap()
@@ -1400,13 +1304,14 @@ mod tests {
     }
 
     #[test]
-    fn backend_repair_file_session_store_discards_corrupt_or_expired_files() {
+    fn backend_repair_file_session_store_preserves_unreadable_and_discards_expired_files() {
         let root = test_dir("session-file-invalid");
         let path = root.join(SESSION_FILE);
-        ensure_private_directory(&root).unwrap();
-        fs::write(&path, b"not-json").unwrap();
-        assert_eq!(load_at(&path).unwrap(), None);
-        assert!(!path.exists());
+        let snapshot = ResumeSnapshot::new("fixture-user", b"cookie-state").unwrap();
+        save_at(&path, &snapshot).unwrap();
+        fs::remove_file(session_key_path(&root)).unwrap();
+        assert!(load_at(&path).is_err());
+        assert!(path.exists(), "an unreadable snapshot must be preserved");
 
         let mut expired = ResumeSnapshot::new("fixture-user", b"cookie-state").unwrap();
         expired.saved_at = Utc::now() - Duration::days(31);

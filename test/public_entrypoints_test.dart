@@ -32,18 +32,18 @@ void main() {
       isA<core.MemoryOnlyIdentitySessionPersistence>(),
     );
     expect(
-      core.IdentitySessionPersistence.platformSecureStorage(
+      core.IdentitySessionPersistence.encryptedDirectory(
         root: '/app/private',
         namespace: 'org.example.app',
       ),
-      isA<core.PlatformSecureStorageIdentitySessionPersistence>(),
+      isA<core.EncryptedDirectoryIdentitySessionPersistence>(),
     );
     expect(
-      core.NetworkProfilePersistence.platformSecureStorage(
+      core.NetworkProfilePersistence.encryptedDirectory(
         root: '/app/private',
         namespace: 'org.example.app',
       ),
-      isA<core.PlatformSecureStorageNetworkProfilePersistence>(),
+      isA<core.EncryptedDirectoryNetworkProfilePersistence>(),
     );
     expect(
       auth.AuthCredentialPersistence.memoryOnly(),
@@ -56,25 +56,10 @@ void main() {
       ),
       isA<auth.EncryptedDirectoryAuthCredentialPersistence>(),
     );
-    expect(
-      auth.AuthCredentialPersistence.platformSecureStorage(
-        root: '/app/private',
-        namespace: 'org.example.app',
-      ),
-      isA<auth.PlatformSecureStorageAuthCredentialPersistence>(),
-    );
     expect(auth.SecondFactorMethod.sms.name, 'sms');
     expect(network.NetworkAccessMethod.systemWifiEap.name, 'systemWifiEap');
     expect(network.PortalConnectionState.connected.name, 'connected');
     expect(_publicType<network.PortalConnectionResult>(), isNull);
-    expect(
-      _publicType<network.PlatformSecureStorageNetworkProfilePersistence>(),
-      isNull,
-    );
-    expect(
-      _publicType<auth.PlatformSecureStorageIdentitySessionPersistence>(),
-      isNull,
-    );
     expect(service_hall.ServiceHallTaskView.phases.name, 'phases');
     expect(news.NewsCatalogCoverage.complete.name, 'complete');
     expect(learn.LearnHomeworkState.pending.name, 'pending');

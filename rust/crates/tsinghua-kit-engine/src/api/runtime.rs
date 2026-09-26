@@ -2518,10 +2518,6 @@ pub struct CampusRuntime {
     // be copied back into the Identity checkpoint.
     sdk_identity_snapshot_once: bool,
     identity_snapshot_written: bool,
-    // The optional key is supplied by the host's secure store and protects
-    // only the Identity cookie checkpoint. It is never shared with the local
-    // network-profile store or either account password vault.
-    identity_session_key: Option<zeroize::Zeroizing<[u8; 32]>>,
     // Every persistent runtime carries its own Rust-selected application data
     // root. Tests can inject an isolated root; production always uses the
     // private application directory. This avoids process-global environment
@@ -2531,10 +2527,6 @@ pub struct CampusRuntime {
     // This is independent from session snapshots and is split by Auth domain
     // again inside credential_store.
     credential_store_root: PathBuf,
-    // The host may provide separate keys for each account domain. They stay
-    // in memory only and are never written beside their ciphertext.
-    identity_credential_store_key: Option<zeroize::Zeroizing<[u8; 32]>>,
-    self_service_credential_store_key: Option<zeroize::Zeroizing<[u8; 32]>>,
     // Captured at construction/explicit login, never refreshed by a late read.
     recovery_lease: Option<crate::session_persistence::SessionLease>,
     portal_bootstrapped: bool,
@@ -2657,7 +2649,6 @@ pub(crate) fn create_sdk_runtime(
         false,
         graduate.is_none(),
         Some(data_root),
-        None,
         Some(cache_root),
     )
     .map_err(|_| {
@@ -2671,34 +2662,15 @@ pub(crate) fn create_sdk_runtime(
 }
 
 /// Constructs an SDK runtime whose Identity cookie snapshot and account
-/// recovery authority use one host-selected root, independently from ordinary
+/// recovery authority use one app-managed file root, independently from ordinary
 /// service caches. The recovery boundary restores cookies only as
 /// `RestoredUnverified`; callers must explicitly reconcile them before any
 /// service capability is granted.
 pub(crate) fn create_sdk_runtime_with_identity_persistence(
     cache_path: &Path,
     data_root: PathBuf,
-    external_key: Option<&[u8]>,
     cache_root: PathBuf,
 ) -> Result<CampusRuntime, crate::error::Error> {
-    let identity_session_key = match external_key {
-        Some(key) => {
-            if key.len() != 32 {
-                return Err(crate::error::Error::new(
-                    crate::error::Service::Local,
-                    crate::error::ErrorCode::InvalidInput,
-                ));
-            }
-            let key: [u8; 32] = key.try_into().map_err(|_| {
-                crate::error::Error::new(
-                    crate::error::Service::Local,
-                    crate::error::ErrorCode::InvalidInput,
-                )
-            })?;
-            Some(zeroize::Zeroizing::new(key))
-        }
-        None => None,
-    };
     let mut runtime = CampusRuntime::new_with_stage_mode(
         AUTO_SEMESTER.to_owned(),
         false,
@@ -2706,7 +2678,6 @@ pub(crate) fn create_sdk_runtime_with_identity_persistence(
         true,
         true,
         Some(data_root),
-        identity_session_key,
         Some(cache_root),
     )
     .map_err(|_| {
@@ -2834,7 +2805,6 @@ pub fn create_backend_validation_runtime(
         true,
         Some(workspace.root().to_path_buf()),
         None,
-        None,
     )?;
     runtime.validation_workspace = Some(workspace);
     runtime.fingerprint = fingerprint;
@@ -2878,7 +2848,7 @@ pub async fn run_backend_validation_batch(
 #[cfg_attr(feature = "ffi-bridge", frb)]
 impl CampusRuntime {
     fn new(semester: String, graduate: bool, cache_path: String) -> Result<Self, String> {
-        Self::new_with_stage_mode(semester, graduate, cache_path, true, true, None, None, None)
+        Self::new_with_stage_mode(semester, graduate, cache_path, true, true, None, None)
     }
 
     fn new_with_persistence(
@@ -2898,7 +2868,6 @@ impl CampusRuntime {
             false,
             None,
             None,
-            None,
         )
     }
 
@@ -2914,7 +2883,6 @@ impl CampusRuntime {
             cache_path,
             persist_sessions,
             true,
-            None,
             None,
             None,
         )
@@ -2936,7 +2904,6 @@ impl CampusRuntime {
             true,
             Some(persistence_root),
             None,
-            None,
         )
     }
 
@@ -2947,7 +2914,6 @@ impl CampusRuntime {
         persist_sessions: bool,
         stage_auto_detection: bool,
         persistence_root: Option<PathBuf>,
-        identity_session_key: Option<zeroize::Zeroizing<[u8; 32]>>,
         service_cache_root: Option<PathBuf>,
     ) -> Result<Self, String> {
         if semester.trim().is_empty()
@@ -3056,9 +3022,7 @@ impl CampusRuntime {
 
         let mut resume_storage_warning = None;
         let (recovery_lease, resume_snapshot, resume_account_metadata) = if persist_sessions {
-            let key = identity_session_key.as_ref().map(|key| &key[..]);
-            match crate::session_persistence::load_authorized_state_with_key(&persistence_root, key)
-            {
+            match crate::session_persistence::load_authorized_state(&persistence_root) {
                 Ok(state) => state,
                 Err(_) => {
                     resume_storage_warning = Some(
@@ -3242,10 +3206,7 @@ impl CampusRuntime {
             persist_sessions,
             sdk_identity_snapshot_once: false,
             identity_snapshot_written: false,
-            identity_session_key,
             credential_store_root: persistence_root.clone(),
-            identity_credential_store_key: None,
-            self_service_credential_store_key: None,
             persistence_root,
             recovery_lease,
             portal_bootstrapped: false,
@@ -16159,11 +16120,10 @@ impl CampusRuntime {
         )
         .map_err(|_| String::from("账号恢复元数据无效"))?;
         let persistence_result = lease.with_current(|| {
-            crate::session_persistence::save_resume_state_at_root_with_key(
+            crate::session_persistence::save_resume_state_at_root(
                 &self.persistence_root,
                 &snapshot,
                 &metadata,
-                self.identity_session_key.as_ref().map(|key| &key[..]),
             )
         });
         if persistence_result.is_err() {

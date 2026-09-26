@@ -5,10 +5,7 @@ use tsinghua_kit::{
         AccountAuthState, AuthDomain, IdentityLoginRequest, SecondFactorMethod,
         SelfServiceLoginRequest,
     },
-    config::{
-        ClientCachePolicy, CredentialStorageKey, CredentialStoragePolicy,
-        IdentitySessionStorageKey, IdentitySessionStoragePolicy,
-    },
+    config::{ClientCachePolicy, CredentialStoragePolicy, IdentitySessionStoragePolicy},
     error::{ErrorCode, Service},
     learn::{CourseDiscussion, CourseFile, CourseFileCategory, CourseFileRef, CourseRef},
     self_service::SelfServiceClient,
@@ -48,7 +45,7 @@ fn client_owns_two_signed_out_account_domains_without_logging_in() {
 }
 
 #[test]
-fn host_secure_storage_uses_separate_auth_keys_without_creating_sessions() {
+fn app_managed_files_store_credentials_and_identity_snapshots_separately() {
     let root = std::env::temp_dir().join(format!(
         "tsinghua-kit-public-host-keys-{}",
         std::time::SystemTime::now()
@@ -56,28 +53,25 @@ fn host_secure_storage_uses_separate_auth_keys_without_creating_sessions() {
             .unwrap()
             .as_nanos()
     ));
-    let identity_key = CredentialStorageKey::from_bytes(vec![0x21; 32]).unwrap();
-    let self_service_key = CredentialStorageKey::from_bytes(vec![0x31; 32]).unwrap();
-    let policy = CredentialStoragePolicy::HostSecureStorage {
-        root: root.join("credentials"),
-        namespace: "org.example.tsinghua-kit-auth".to_owned(),
-        identity_key,
-        self_service_key,
-    };
-    let debug = format!("{policy:?}");
-    assert!(!debug.contains("21"));
-    assert!(!debug.contains("31"));
-    assert!(debug.contains("configured: true"));
-
-    let session_key = IdentitySessionStorageKey::from_bytes(vec![0x41; 32]).unwrap();
+    let credential_directory = root
+        .join("credentials")
+        .join("TsinghuaKit")
+        .join("auth-credentials")
+        .join("org.example.tsinghua-kit-auth");
+    let session_directory = root.join("identity-session");
     let mut client = Client::builder()
-        .credential_storage(policy)
-        .identity_session_storage(IdentitySessionStoragePolicy::HostSecureStorage {
-            directory: root.join("identity"),
-            key: session_key,
+        .credential_storage(CredentialStoragePolicy::EncryptedDirectory {
+            root: root.join("credentials"),
+            namespace: "org.example.tsinghua-kit-auth".to_owned(),
         })
+        .identity_session_storage(IdentitySessionStoragePolicy::EncryptedDirectory(
+            session_directory.clone(),
+        ))
         .build()
         .unwrap();
+
+    assert!(credential_directory.is_dir());
+    assert!(session_directory.is_dir());
 
     let status = client.auth().status();
     assert_eq!(status.identity().state(), AccountAuthState::SignedOut);

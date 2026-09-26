@@ -161,22 +161,6 @@ pub(crate) fn load_authorized_state(
     ),
     String,
 > {
-    load_authorized_state_with_key(root, None)
-}
-
-/// Reads an authorized Identity snapshot using an optional host-held key.
-/// A bad/missing external key is reported without deleting encrypted data.
-pub(crate) fn load_authorized_state_with_key(
-    root: &Path,
-    external_key: Option<&[u8]>,
-) -> Result<
-    (
-        Option<SessionLease>,
-        Option<ResumeSnapshot>,
-        Option<ResumeAccountMetadata>,
-    ),
-    String,
-> {
     with_lock(root, || {
         let state = read_unlocked(root)?;
         if state.revoked {
@@ -189,7 +173,7 @@ pub(crate) fn load_authorized_state_with_key(
         with_session_store_lock(root, || {
             clear_at_unlocked(&root.join(LEGACY_SESSION_FILE))?;
             let metadata = load_account_metadata_at_unlocked(&root.join(ACCOUNT_METADATA_FILE))?;
-            let snapshot = load_at_unlocked(&root.join(SESSION_FILE), external_key)?;
+            let snapshot = load_at_unlocked(&root.join(SESSION_FILE))?;
             Ok((Some(lease), snapshot, metadata))
         })
     })

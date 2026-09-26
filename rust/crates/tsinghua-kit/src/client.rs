@@ -18,11 +18,11 @@ use tsinghua_kit_engine::{
         ClientBuilder as EngineClientBuilder, ClientCachePolicy as EngineCachePolicy,
         CredentialStoragePolicy as EngineCredentialStoragePolicy,
         ElectricityClient as EngineElectricityClient, IdentityLoginOutcome, IdentityLoginRequest,
-        IdentitySessionStoragePolicy, LearnClient as EngineLearnClient,
-        LibraryClient as EngineLibraryClient, NetworkClient as EngineNetworkClient,
-        NetworkProfilesClient as EngineNetworkProfilesClient, NewsClient as EngineNewsClient,
-        RegistrarClient as EngineRegistrarClient, SelfServiceCaptcha,
-        SelfServiceClient as EngineSelfServiceClient, SelfServiceLoginOutcome,
+        IdentitySessionStoragePolicy as EngineIdentitySessionStoragePolicy,
+        LearnClient as EngineLearnClient, LibraryClient as EngineLibraryClient,
+        NetworkClient as EngineNetworkClient, NetworkProfilesClient as EngineNetworkProfilesClient,
+        NewsClient as EngineNewsClient, RegistrarClient as EngineRegistrarClient,
+        SelfServiceCaptcha, SelfServiceClient as EngineSelfServiceClient, SelfServiceLoginOutcome,
         ServiceHallClient as EngineServiceHallClient,
     },
     electricity_api::{ElectricityPaymentHistory, ElectricityRemainder},
@@ -53,8 +53,6 @@ use tsinghua_kit_engine::{
 };
 use zeroize::Zeroize;
 
-pub use tsinghua_kit_engine::client::CredentialStorageKey;
-
 /// Cache-directory behavior for one client instance.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -78,23 +76,16 @@ impl From<ClientCachePolicy> for EngineCachePolicy {
 /// Storage for credentials the user explicitly chooses to remember.
 ///
 /// This is independent from Identity session snapshots and local network
-/// profiles. The encrypted-directory backend is a compatibility option whose
-/// key is stored beside its data. Hosts should prefer `HostSecureStorage` and
-/// keep one independent key per Auth domain in their platform secure store.
+/// profiles. `EncryptedDirectory` is the app-managed file mode: Rust encrypts
+/// the saved records and keeps their random key beside those records in the
+/// private application directory. This is a local file boundary, not an OS
+/// Keychain or a defense against another process running as the same user.
 #[non_exhaustive]
 pub enum CredentialStoragePolicy {
     /// Do not persist Auth passwords.
     MemoryOnly,
     /// Store explicitly remembered credentials in this private directory.
     EncryptedDirectory { root: PathBuf, namespace: String },
-    /// Store encrypted credential files while the host keeps both independent
-    /// Auth-domain keys in operating-system secure storage.
-    HostSecureStorage {
-        root: PathBuf,
-        namespace: String,
-        identity_key: CredentialStorageKey,
-        self_service_key: CredentialStorageKey,
-    },
 }
 
 impl std::fmt::Debug for CredentialStoragePolicy {
@@ -104,12 +95,6 @@ impl std::fmt::Debug for CredentialStoragePolicy {
             Self::EncryptedDirectory { .. } => formatter
                 .debug_struct("CredentialStoragePolicy::EncryptedDirectory")
                 .field("configured", &true)
-                .finish(),
-            Self::HostSecureStorage { .. } => formatter
-                .debug_struct("CredentialStoragePolicy::HostSecureStorage")
-                .field("configured", &true)
-                .field("identity_key", &"[REDACTED]")
-                .field("self_service_key", &"[REDACTED]")
                 .finish(),
         }
     }
@@ -122,17 +107,32 @@ impl From<CredentialStoragePolicy> for EngineCredentialStoragePolicy {
             CredentialStoragePolicy::EncryptedDirectory { root, namespace } => {
                 Self::EncryptedDirectory { root, namespace }
             }
-            CredentialStoragePolicy::HostSecureStorage {
-                root,
-                namespace,
-                identity_key,
-                self_service_key,
-            } => Self::HostSecureStorage {
-                root,
-                namespace,
-                identity_key,
-                self_service_key,
-            },
+        }
+    }
+}
+
+/// Persistence for Identity cookies used by explicit session recovery.
+///
+/// The default keeps cookies in memory. The file option stores an encrypted,
+/// device-bound snapshot under the application-selected private directory;
+/// Rust manages its key and ciphertext in that directory. Restored sessions
+/// remain unverified until explicitly checked.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum IdentitySessionStoragePolicy {
+    /// Keep Identity cookies only for the owning Client lifetime.
+    MemoryOnly,
+    /// Store an encrypted, device-bound snapshot in this private directory.
+    EncryptedDirectory(PathBuf),
+}
+
+impl From<IdentitySessionStoragePolicy> for EngineIdentitySessionStoragePolicy {
+    fn from(value: IdentitySessionStoragePolicy) -> Self {
+        match value {
+            IdentitySessionStoragePolicy::MemoryOnly => Self::MemoryOnly,
+            IdentitySessionStoragePolicy::EncryptedDirectory(path) => {
+                Self::EncryptedDirectory(path)
+            }
         }
     }
 }
@@ -161,7 +161,7 @@ impl ClientBuilder {
     /// Restored cookies remain unverified until the caller invokes
     /// [`IdentityAuthClient::revalidate_restored_session`].
     pub fn identity_session_storage(mut self, policy: IdentitySessionStoragePolicy) -> Self {
-        self.inner = self.inner.identity_session_storage(policy);
+        self.inner = self.inner.identity_session_storage(policy.into());
         self
     }
 

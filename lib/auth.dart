@@ -19,8 +19,6 @@ export 'tsinghua_kit.dart'
         LoginStage,
         MemoryOnlyIdentitySessionPersistence,
         MemoryOnlyAuthCredentialPersistence,
-        PlatformSecureStorageAuthCredentialPersistence,
-        PlatformSecureStorageIdentitySessionPersistence,
         SecondFactorMethod,
         SelfServiceAuthClient,
         SelfServiceCaptcha,

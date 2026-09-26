@@ -10,9 +10,8 @@ mod client;
 /// Storage choices for one Client. Cache data, Auth sessions, Auth passwords,
 /// and local network profiles have separate policies.
 pub mod config {
-    pub use crate::client::{ClientCachePolicy, CredentialStorageKey, CredentialStoragePolicy};
-    pub use tsinghua_kit_engine::client::{
-        IdentitySessionStorageKey, IdentitySessionStoragePolicy,
+    pub use crate::client::{
+        ClientCachePolicy, CredentialStoragePolicy, IdentitySessionStoragePolicy,
     };
     pub use tsinghua_kit_engine::network::NetworkProfileStoragePolicy;
 }

@@ -26,8 +26,8 @@ use tsinghua_kit_sdk::{
         ClassroomWeekSelection,
     },
     config::{
-        ClientCachePolicy, CredentialStorageKey, CredentialStoragePolicy,
-        IdentitySessionStorageKey, IdentitySessionStoragePolicy, NetworkProfileStoragePolicy,
+        ClientCachePolicy, CredentialStoragePolicy, IdentitySessionStoragePolicy,
+        NetworkProfileStoragePolicy,
     },
     electricity::{ElectricityPaymentHistory, ElectricityRemainder},
     learn::{
@@ -63,7 +63,6 @@ use tsinghua_kit_sdk::{
         WorkflowTaskList, WorkflowTaskRef,
     },
 };
-use zeroize::Zeroizing;
 
 /// The account state of one of the two independent Auth domains.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -3450,84 +3449,23 @@ pub struct ClientHandle {
 }
 
 impl ClientHandle {
-    /// Creates a Client without login or network activity.
-    ///
-    /// Business caches, Network profiles and Identity session snapshots use
-    /// separate policies. Service caches are memory-only by default. Supplying
-    /// `cache_root` opts into persistent service caches in that private
-    /// directory; the Identity session directory may be elsewhere.
-    /// Supplying credential root and namespace opts into a separately
-    /// encrypted Auth credential vault. Supplying a different secure-store
-    /// key for each Auth domain keeps those vaults separate. Saving each Auth
-    /// account still requires explicit login opt-in.
-    /// When the optional network profile arguments are absent, profile data is
-    /// memory-only. Supplying the root and namespace without a key opts into
-    /// the legacy Unix encrypted-directory backend whose key is stored beside
-    /// the ciphertext. Supplying all three opts into that backend with an
-    /// operating-system credential-store key; the key is zeroized from this
-    /// Client's temporary construction data and is never written beside the
-    /// ciphertext. Supplying both Identity session arguments opts into the
-    /// separate encrypted Identity snapshot. Supplying its key as well keeps
-    /// that key in a distinct host secure-storage namespace. Neither session
-    /// policy saves Auth passwords.
+    /// Creates a Client without login or network activity. Persistent Auth
+    /// credentials, Identity snapshots and network profiles are managed as
+    /// separate encrypted files under app-private directories. No operating-
+    /// system credential store is used.
     pub fn new(
         cache_root: Option<String>,
         credential_storage_root: Option<String>,
         credential_storage_namespace: Option<String>,
         profile_storage_root: Option<String>,
         application_namespace: Option<String>,
-        profile_storage_key: Option<Vec<u8>>,
         identity_session_root: Option<String>,
         identity_session_namespace: Option<String>,
-        identity_session_key: Option<Vec<u8>>,
     ) -> Result<Self, SdkErrorDto> {
-        Self::new_with_credential_keys(
-            cache_root,
-            credential_storage_root,
-            credential_storage_namespace,
-            None,
-            None,
-            profile_storage_root,
-            application_namespace,
-            profile_storage_key,
-            identity_session_root,
-            identity_session_namespace,
-            identity_session_key,
-        )
-    }
-
-    /// Creates a Client while accepting platform-secure Auth vault keys.
-    /// Both keys are independent, and Rust consumes/zeroizes their temporary
-    /// input buffers. This constructor performs no login or network request.
-    pub fn new_with_credential_keys(
-        cache_root: Option<String>,
-        credential_storage_root: Option<String>,
-        credential_storage_namespace: Option<String>,
-        identity_credential_storage_key: Option<Vec<u8>>,
-        self_service_credential_storage_key: Option<Vec<u8>>,
-        profile_storage_root: Option<String>,
-        application_namespace: Option<String>,
-        profile_storage_key: Option<Vec<u8>>,
-        identity_session_root: Option<String>,
-        identity_session_namespace: Option<String>,
-        identity_session_key: Option<Vec<u8>>,
-    ) -> Result<Self, SdkErrorDto> {
-        let identity_session_key = identity_session_key.map(Zeroizing::new);
-        let policy = match (
-            profile_storage_root,
-            application_namespace,
-            profile_storage_key,
-        ) {
-            (None, None, None) => NetworkProfileStoragePolicy::MemoryOnly,
-            (Some(root), Some(namespace), None) => {
+        let profile_policy = match (profile_storage_root, application_namespace) {
+            (None, None) => NetworkProfileStoragePolicy::MemoryOnly,
+            (Some(root), Some(namespace)) => {
                 NetworkProfileStoragePolicy::encrypted_directory(PathBuf::from(root), namespace)?
-            }
-            (Some(root), Some(namespace), Some(key)) => {
-                NetworkProfileStoragePolicy::keychain_encrypted_directory(
-                    PathBuf::from(root),
-                    namespace,
-                    key,
-                )?
             }
             _ => {
                 let Err(error) = NetworkProfileStoragePolicy::encrypted_directory("/", "") else {
@@ -3536,27 +3474,12 @@ impl ClientHandle {
                 return Err(error.into());
             }
         };
-        let credential_policy = match (
-            credential_storage_root,
-            credential_storage_namespace,
-            identity_credential_storage_key,
-            self_service_credential_storage_key,
-        ) {
-            (None, None, None, None) => CredentialStoragePolicy::MemoryOnly,
-            (Some(root), Some(namespace), None, None) => {
-                CredentialStoragePolicy::EncryptedDirectory {
-                    root: PathBuf::from(root),
-                    namespace,
-                }
-            }
-            (Some(root), Some(namespace), Some(identity_key), Some(self_service_key)) => {
-                CredentialStoragePolicy::HostSecureStorage {
-                    root: PathBuf::from(root),
-                    namespace,
-                    identity_key: CredentialStorageKey::from_bytes(identity_key)?,
-                    self_service_key: CredentialStorageKey::from_bytes(self_service_key)?,
-                }
-            }
+        let credential_policy = match (credential_storage_root, credential_storage_namespace) {
+            (None, None) => CredentialStoragePolicy::MemoryOnly,
+            (Some(root), Some(namespace)) => CredentialStoragePolicy::EncryptedDirectory {
+                root: PathBuf::from(root),
+                namespace,
+            },
             _ => {
                 let Err(error) = NetworkProfileStoragePolicy::encrypted_directory("/", "") else {
                     unreachable!("empty application namespace must be rejected")
@@ -3565,7 +3488,7 @@ impl ClientHandle {
             }
         };
         let mut builder = ClientBuilder::default()
-            .network_profile_storage(policy)
+            .network_profile_storage(profile_policy)
             .credential_storage(credential_policy);
         if let Some(root) = cache_root {
             builder = builder.cache_policy(ClientCachePolicy::Directory(PathBuf::from(root)));
@@ -3594,27 +3517,9 @@ impl ClientHandle {
                 return Err(error.into());
             }
         };
-        match (identity_session_root, identity_session_key) {
-            (Some(root), key) => {
-                builder = match key {
-                    Some(key) => builder.identity_session_storage(
-                        IdentitySessionStoragePolicy::HostSecureStorage {
-                            directory: root,
-                            key: IdentitySessionStorageKey::from_bytes(key.to_vec())?,
-                        },
-                    ),
-                    None => builder.identity_session_storage(
-                        IdentitySessionStoragePolicy::EncryptedDirectory(root),
-                    ),
-                };
-            }
-            (None, None) => {}
-            (None, Some(_)) => {
-                let Err(error) = NetworkProfileStoragePolicy::encrypted_directory("/", "") else {
-                    unreachable!("empty application namespace must be rejected")
-                };
-                return Err(error.into());
-            }
+        if let Some(root) = identity_session_root {
+            builder = builder
+                .identity_session_storage(IdentitySessionStoragePolicy::EncryptedDirectory(root));
         }
         let inner = builder.build()?;
         Ok(Self {
@@ -4737,8 +4642,7 @@ mod tests {
     };
 
     fn client() -> ClientHandle {
-        ClientHandle::new(None, None, None, None, None, None, None, None, None)
-            .expect("memory-only client")
+        ClientHandle::new(None, None, None, None, None, None, None).expect("memory-only client")
     }
 
     #[test]
@@ -4848,8 +4752,6 @@ mod tests {
             None,
             None,
             None,
-            None,
-            None,
         )
         .expect("Auth credential storage can be configured without session snapshots");
         assert!(directory.is_dir());
@@ -4865,64 +4767,6 @@ mod tests {
         let _ = std::fs::remove_dir_all(root);
     }
 
-    #[test]
-    fn bridge_auth_host_keys_are_required_to_be_valid_and_use_a_separate_root() {
-        let root = std::env::temp_dir().join(format!(
-            "tsinghua-kit-auth-host-credentials-{}",
-            uuid::Uuid::new_v4().simple()
-        ));
-        let namespace = "org.example.host-credentials-test";
-        let directory = root
-            .join("TsinghuaKit")
-            .join("auth-credentials-host-key-v2")
-            .join(namespace);
-        let mut client = ClientHandle::new_with_credential_keys(
-            None,
-            Some(root.to_string_lossy().into_owned()),
-            Some(namespace.to_owned()),
-            Some(vec![0x21; 32]),
-            Some(vec![0x31; 32]),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
-        .expect("separate host-secure keys configure Auth persistence");
-
-        assert!(directory.is_dir());
-        assert_eq!(
-            client.auth_status().identity.state,
-            AccountStateDto::SignedOut
-        );
-        assert_eq!(
-            client.auth_status().self_service.state,
-            AccountStateDto::SignedOut
-        );
-        drop(client);
-
-        let error = match ClientHandle::new_with_credential_keys(
-            None,
-            Some(root.to_string_lossy().into_owned()),
-            Some(namespace.to_owned()),
-            Some(vec![0x21; 31]),
-            Some(vec![0x31; 32]),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        ) {
-            Ok(_) => panic!("each platform key must be exactly 32 bytes"),
-            Err(error) => error,
-        };
-        assert_eq!(error.code, "invalid_input");
-
-        let _ = std::fs::remove_dir_all(root);
-    }
-
     #[tokio::test]
     async fn bridge_identity_session_storage_is_opt_in_and_revalidation_is_explicit() {
         let root = std::env::temp_dir().join(format!(
@@ -4935,10 +4779,8 @@ mod tests {
             None,
             None,
             None,
-            None,
             Some(root.to_string_lossy().into_owned()),
             Some("org.example.identity-session-test".to_owned()),
-            None,
         )
         .expect("explicitly configured private session directory");
 
@@ -4953,49 +4795,6 @@ mod tests {
         assert_eq!(reconciled.self_service.state, AccountStateDto::SignedOut);
 
         drop(client);
-        let _ = std::fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn bridge_identity_session_accepts_a_host_key_separate_from_profile_storage() {
-        let key = IdentitySessionStorageKey::from_bytes(vec![0x71; 32]).unwrap();
-        assert_eq!(format!("{key:?}"), "IdentitySessionStorageKey([REDACTED])");
-        let root = std::env::temp_dir().join(format!(
-            "tsinghua-kit-host-identity-key-{}",
-            uuid::Uuid::new_v4().simple()
-        ));
-        let mut client = ClientHandle::new(
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            Some(root.to_string_lossy().into_owned()),
-            Some("org.example.identity-key-test".to_owned()),
-            Some(vec![0x71; 32]),
-        )
-        .expect("Identity snapshots accept a distinct host-held key");
-        let status = client.auth_status();
-        assert_eq!(status.identity.state, AccountStateDto::SignedOut);
-        assert_eq!(status.self_service.state, AccountStateDto::SignedOut);
-        drop(client);
-
-        let error = match ClientHandle::new(
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            Some(root.to_string_lossy().into_owned()),
-            Some("org.example.identity-key-test".to_owned()),
-            Some(vec![0x72; 31]),
-        ) {
-            Ok(_) => panic!("Identity session keys must be exactly 32 bytes"),
-            Err(error) => error,
-        };
-        assert_eq!(error.code, "invalid_input");
         let _ = std::fs::remove_dir_all(root);
     }
 
@@ -5017,10 +4816,8 @@ mod tests {
             None,
             None,
             None,
-            None,
             Some(identity_root.to_string_lossy().into_owned()),
             Some("org.example.independent-storage-test".to_owned()),
-            None,
         )
         .expect("service cache and Identity snapshot may use separate roots");
 
@@ -5175,8 +4972,6 @@ mod tests {
             None,
             None,
             None,
-            None,
-            None,
         ) {
             Ok(_) => panic!("mismatched storage options must be rejected"),
             Err(error) => error,
@@ -5184,31 +4979,6 @@ mod tests {
         assert_eq!(error.service, "network");
         assert_eq!(error.code, "invalid_input");
         assert!(!error.diagnostic_id.is_empty());
-    }
-
-    #[test]
-    fn bridge_accepts_a_host_secure_storage_key_for_network_profiles() {
-        let root = std::env::temp_dir().join(format!(
-            "tsinghua-kit-keychain-profile-{}",
-            uuid::Uuid::new_v4().simple()
-        ));
-        let mut client = ClientHandle::new(
-            None,
-            None,
-            None,
-            Some(root.to_string_lossy().into_owned()),
-            Some("org.example.keychain-profile-test".to_owned()),
-            Some(vec![0x4a; 32]),
-            None,
-            None,
-            None,
-        )
-        .expect("an OS-keychain-backed profile store builds a local client");
-        let status = client.inner.auth().status();
-        assert_eq!(status.identity().state(), AccountAuthState::SignedOut);
-        assert_eq!(status.self_service().state(), AccountAuthState::SignedOut);
-        drop(client);
-        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
