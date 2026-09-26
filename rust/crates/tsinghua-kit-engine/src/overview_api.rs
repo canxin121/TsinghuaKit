@@ -263,7 +263,7 @@ fn schedule(value: CampusScheduleDto) -> Result<OverviewSchedule, Error> {
     }
     let starts_at = instant(&value.starts_at)?;
     let ends_at = value.ends_at.as_deref().map(instant).transpose()?;
-    if ends_at.is_some_and(|end| end <= starts_at) {
+    if ends_at.is_some_and(|end| end < starts_at) {
         return Err(invalid());
     }
     Ok(OverviewSchedule {
@@ -471,5 +471,29 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(error.code(), ErrorCode::InvalidResponse);
+    }
+
+    #[test]
+    fn zero_length_event_remains_compatible_with_existing_overview_rows() {
+        let mut value = fixture("live", "ready");
+        value
+            .overview
+            .as_mut()
+            .unwrap()
+            .today_schedule
+            .push(CampusScheduleDto {
+                id: "event-1".to_owned(),
+                title: "全天事件".to_owned(),
+                kind: "event".to_owned(),
+                starts_at: "2026-09-26T00:00:00Z".to_owned(),
+                ends_at: Some("2026-09-26T00:00:00Z".to_owned()),
+                all_day: true,
+                location: None,
+                course_id: None,
+                description: None,
+            });
+        let result =
+            map_overview(value, date(), ReadSource::ClientCache, ReadPolicy::Refresh).unwrap();
+        assert_eq!(result.data().today_schedule().len(), 1);
     }
 }
