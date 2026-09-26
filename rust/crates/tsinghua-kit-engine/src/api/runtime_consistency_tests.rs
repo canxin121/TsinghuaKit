@@ -274,7 +274,7 @@ async fn backend_repair_consistency_network_runtime_uses_existing_online_proof_o
     assert!(
         r.login_tunet_using(
             "fixture-net".into(),
-            "synthetic-password".into(),
+            zeroize::Zeroizing::new("synthetic-password".to_owned()),
             "192.0.2.10".into(),
             client
         )

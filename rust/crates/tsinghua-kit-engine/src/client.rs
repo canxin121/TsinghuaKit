@@ -54,8 +54,9 @@ use crate::{
         SectionRef, merge_socket_statuses, safe_label, validate_areas,
     },
     network::{
-        NetworkProfileId, NetworkProfileInput, NetworkProfilePassword, NetworkProfileStoragePolicy,
-        NetworkProfileSummary, PortalAddressRegistration, PortalObservation, PreparedNetworkInput,
+        NetworkAccessMethod, NetworkProfileId, NetworkProfileInput, NetworkProfilePassword,
+        NetworkProfileStoragePolicy, NetworkProfileSummary, PortalAddressRegistration,
+        PortalConnectionResult, PortalConnectionState, PortalObservation, PreparedNetworkInput,
         StoredNetworkProfile,
     },
     network_profile_store::NetworkProfileStore,
@@ -87,6 +88,39 @@ pub enum ClientCachePolicy {
     Directory(PathBuf),
 }
 
+/// Controls persistence of user-entered Auth credentials.
+///
+/// This policy is independent from Identity session snapshots, SelfService
+/// session state, business caches, and local network profiles. The encrypted
+/// directory backend stores its key inside the same private application
+/// directory; it is not an operating-system Keychain.
+#[non_exhaustive]
+pub enum CredentialStoragePolicy {
+    /// Keep credentials in memory only. Remembering credentials is disabled.
+    MemoryOnly,
+    /// Store explicitly remembered credentials in this private directory.
+    EncryptedDirectory { root: PathBuf, namespace: String },
+}
+
+impl fmt::Debug for CredentialStoragePolicy {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::MemoryOnly => formatter.write_str("MemoryOnly"),
+            Self::EncryptedDirectory { root, namespace } => formatter
+                .debug_tuple("EncryptedDirectory")
+                .field(root)
+                .field(namespace)
+                .finish(),
+        }
+    }
+}
+
+impl Default for CredentialStoragePolicy {
+    fn default() -> Self {
+        Self::MemoryOnly
+    }
+}
+
 /// Academic-stage preference used for Identity login.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
@@ -116,6 +150,7 @@ pub struct IdentityLoginRequest {
     password: String,
     stage: LoginStage,
     trust_device: bool,
+    remember_credentials: bool,
 }
 
 impl IdentityLoginRequest {
@@ -126,6 +161,7 @@ impl IdentityLoginRequest {
             password: password.into(),
             stage: LoginStage::Auto,
             trust_device: false,
+            remember_credentials: false,
         }
     }
 
@@ -140,6 +176,16 @@ impl IdentityLoginRequest {
         self.trust_device = trust;
         self
     }
+
+    /// Opts this Identity account into Rust-owned credential recovery.
+    ///
+    /// The Client must have a CredentialStoragePolicy configured.
+    /// The account password is stored separately from the encrypted cookie
+    /// snapshot and is never saved for SelfService or local network profiles.
+    pub fn remember_credentials(mut self, remember: bool) -> Self {
+        self.remember_credentials = remember;
+        self
+    }
 }
 
 impl fmt::Debug for IdentityLoginRequest {
@@ -150,6 +196,7 @@ impl fmt::Debug for IdentityLoginRequest {
             .field("password_present", &!self.password.is_empty())
             .field("stage", &self.stage)
             .field("trust_device", &self.trust_device)
+            .field("remember_credentials", &self.remember_credentials)
             .finish()
     }
 }
@@ -206,8 +253,13 @@ impl fmt::Debug for SelfServiceCaptcha {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum SelfServiceLoginOutcome {
-    /// The independently named SelfService account was verified.
-    Authenticated(AccountAuthStatus),
+    /// The independently named SelfService account was verified. Credential
+    /// storage is reported separately because login success is not rolled
+    /// back if the local store is unavailable.
+    Authenticated {
+        status: AccountAuthStatus,
+        credentials_saved: bool,
+    },
     /// The login flow remains active and requires another explicit step.
     NeedsInteraction,
 }
@@ -215,6 +267,7 @@ pub enum SelfServiceLoginOutcome {
 /// The single runtime-backed SDK client.
 pub struct Client {
     runtime: CampusRuntime,
+    credential_storage_enabled: bool,
     cache_root: PathBuf,
     remove_cache_on_drop: bool,
     instance_id: uuid::Uuid,
@@ -231,21 +284,75 @@ pub struct Client {
     network_profiles: NetworkProfileStore,
 }
 
+/// A 256-bit key supplied by the host's secure storage for an Identity
+/// session snapshot. Key bytes are zeroized when this value is dropped, and
+/// its debug representation never includes key material.
+pub struct IdentitySessionStorageKey(zeroize::Zeroizing<[u8; 32]>);
+
+impl IdentitySessionStorageKey {
+    /// Creates a key from exactly 32 bytes, consuming and zeroizing the input.
+    pub fn from_bytes(bytes: Vec<u8>) -> Result<Self, Error> {
+        let bytes = zeroize::Zeroizing::new(bytes);
+        let array: [u8; 32] = bytes
+            .as_slice()
+            .try_into()
+            .map_err(|_| Error::new(Service::Local, ErrorCode::InvalidInput))?;
+        Ok(Self(zeroize::Zeroizing::new(array)))
+    }
+
+    pub(crate) fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+
+impl fmt::Debug for IdentitySessionStorageKey {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("IdentitySessionStorageKey([REDACTED])")
+    }
+}
+
 /// Controls whether the Identity-bound shared cookie snapshot can be restored
 /// by a later Client created from the same private directory.
 ///
-/// The default is memory-only. `EncryptedDirectory` is an explicit opt-in to
-/// the engine's bounded, device-bound encrypted snapshot. Its encryption key
-/// is stored beside the snapshot, so this is not an operating-system keychain
-/// and should not be treated as equivalent to one. The configured directory
-/// must also be selected as this Client's persistent cache directory.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// The default is memory-only. `EncryptedDirectory` is a compatibility option
+/// whose encryption key is stored beside the snapshot. `HostSecureStorage`
+/// lets the host supply a key held in its operating-system secure store; that
+/// key is independent of NetworkProfile keys and account passwords. Both
+/// persistent options are explicit, device-bound snapshots stored separately
+/// from ordinary service read caches. The snapshot never contains a password.
+/// Remembered credentials use the separately configured
+/// CredentialStoragePolicy and are never stored in the session snapshot.
 #[non_exhaustive]
 pub enum IdentitySessionStoragePolicy {
     /// Keep Identity and service cookies only in memory.
     MemoryOnly,
     /// Keep an encrypted, device-bound Identity snapshot in this directory.
     EncryptedDirectory(PathBuf),
+    /// Keep the encrypted Identity snapshot in this directory, with its key
+    /// supplied by the host instead of stored alongside the ciphertext.
+    HostSecureStorage {
+        /// Private application directory used for the Identity snapshot.
+        directory: PathBuf,
+        /// Independent 32-byte key loaded from host secure storage.
+        key: IdentitySessionStorageKey,
+    },
+}
+
+impl fmt::Debug for IdentitySessionStoragePolicy {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::MemoryOnly => formatter.write_str("MemoryOnly"),
+            Self::EncryptedDirectory(directory) => formatter
+                .debug_tuple("EncryptedDirectory")
+                .field(directory)
+                .finish(),
+            Self::HostSecureStorage { directory, .. } => formatter
+                .debug_struct("HostSecureStorage")
+                .field("directory", directory)
+                .field("key", &"[REDACTED]")
+                .finish(),
+        }
+    }
 }
 
 impl Default for IdentitySessionStoragePolicy {
@@ -260,6 +367,7 @@ pub struct ClientBuilder {
     cache_policy: ClientCachePolicy,
     network_profile_storage: NetworkProfileStoragePolicy,
     identity_session_storage: IdentitySessionStoragePolicy,
+    credential_storage: CredentialStoragePolicy,
 }
 
 impl ClientBuilder {
@@ -277,12 +385,22 @@ impl ClientBuilder {
     }
 
     /// Selects explicit persistence for the Identity-bound shared cookie
-    /// snapshot. The directory must match [`ClientCachePolicy::Directory`].
-    /// This never persists account passwords or marks restored sessions as
-    /// authenticated; the caller must invoke the explicit Identity
-    /// revalidation operation after process restart.
+    /// snapshot. This storage location is independent from the service-cache
+    /// directory selected by [`ClientCachePolicy`].
+    /// Cookie snapshots never contain account passwords and restored sessions
+    /// are not authenticated; the caller must invoke explicit Identity
+    /// revalidation after process restart. Password storage is selected
+    /// separately through CredentialStoragePolicy.
     pub fn identity_session_storage(mut self, policy: IdentitySessionStoragePolicy) -> Self {
         self.identity_session_storage = policy;
+        self
+    }
+
+    /// Selects a separate store for credentials that the user explicitly
+    /// chooses to remember. Identity and SelfService records use distinct
+    /// internal namespaces; memory-only is the default.
+    pub fn credential_storage(mut self, policy: CredentialStoragePolicy) -> Self {
+        self.credential_storage = policy;
         self
     }
 
@@ -300,15 +418,57 @@ impl ClientBuilder {
                 (root, true)
             }
             ClientCachePolicy::Directory(root) => {
-                if !root.is_absolute() {
+                if !root.is_absolute()
+                    || root
+                        .components()
+                        .any(|part| matches!(part, std::path::Component::ParentDir))
+                {
                     return Err(Error::new(Service::Local, ErrorCode::InvalidInput));
                 }
                 fs::create_dir_all(&root)
                     .map_err(|_| Error::new(Service::Local, ErrorCode::StorageUnavailable))?;
+                set_private_directory_permissions(&root)?;
+                let root = fs::canonicalize(&root)
+                    .map_err(|_| Error::new(Service::Local, ErrorCode::StorageUnavailable))?;
                 (root, false)
             }
         };
-        let runtime = match self.identity_session_storage {
+        let (credential_store_root, credential_storage_enabled) = match self.credential_storage {
+            CredentialStoragePolicy::MemoryOnly => (cache_root.clone(), false),
+            CredentialStoragePolicy::EncryptedDirectory { root, namespace } => {
+                if !root.is_absolute()
+                    || root.components().count() < 2
+                    || root
+                        .components()
+                        .any(|part| matches!(part, std::path::Component::ParentDir))
+                    || namespace.is_empty()
+                    || namespace.len() > 128
+                    || namespace == "."
+                    || namespace == ".."
+                    || !namespace
+                        .bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || b".-_".contains(&byte))
+                {
+                    return Err(Error::new(Service::Local, ErrorCode::InvalidInput));
+                }
+                fs::create_dir_all(&root)
+                    .map_err(|_| Error::new(Service::Local, ErrorCode::StorageUnavailable))?;
+                set_private_directory_permissions(&root)?;
+                let root = fs::canonicalize(&root)
+                    .map_err(|_| Error::new(Service::Local, ErrorCode::StorageUnavailable))?;
+                let root = root
+                    .join("TsinghuaKit")
+                    .join("auth-credentials")
+                    .join(namespace);
+                fs::create_dir_all(&root)
+                    .map_err(|_| Error::new(Service::Local, ErrorCode::StorageUnavailable))?;
+                set_private_directory_permissions(&root)?;
+                let root = fs::canonicalize(&root)
+                    .map_err(|_| Error::new(Service::Local, ErrorCode::StorageUnavailable))?;
+                (root, true)
+            }
+        };
+        let mut runtime = match self.identity_session_storage {
             IdentitySessionStoragePolicy::MemoryOnly => {
                 create_sdk_runtime(&cache_root.join("cache.json"), cache_root.clone(), None)?
             }
@@ -323,22 +483,41 @@ impl ClientBuilder {
                 fs::create_dir_all(&session_root)
                     .map_err(|_| Error::new(Service::Local, ErrorCode::StorageUnavailable))?;
                 set_private_directory_permissions(&session_root)?;
-                let canonical_session_root = fs::canonicalize(&session_root)
+                let session_root = fs::canonicalize(&session_root)
                     .map_err(|_| Error::new(Service::Local, ErrorCode::StorageUnavailable))?;
-                let canonical_cache_root = fs::canonicalize(&cache_root)
-                    .map_err(|_| Error::new(Service::Local, ErrorCode::StorageUnavailable))?;
-                if canonical_session_root != canonical_cache_root {
-                    return Err(Error::new(Service::Local, ErrorCode::InvalidInput));
-                }
                 create_sdk_runtime_with_identity_persistence(
                     &cache_root.join("cache.json"),
+                    session_root,
+                    None,
+                    cache_root.clone(),
+                )?
+            }
+            IdentitySessionStoragePolicy::HostSecureStorage { directory, key } => {
+                if !directory.is_absolute()
+                    || directory
+                        .components()
+                        .any(|part| matches!(part, std::path::Component::ParentDir))
+                {
+                    return Err(Error::new(Service::Local, ErrorCode::InvalidInput));
+                }
+                fs::create_dir_all(&directory)
+                    .map_err(|_| Error::new(Service::Local, ErrorCode::StorageUnavailable))?;
+                set_private_directory_permissions(&directory)?;
+                let directory = fs::canonicalize(&directory)
+                    .map_err(|_| Error::new(Service::Local, ErrorCode::StorageUnavailable))?;
+                create_sdk_runtime_with_identity_persistence(
+                    &cache_root.join("cache.json"),
+                    directory,
+                    Some(key.as_bytes()),
                     cache_root.clone(),
                 )?
             }
         };
+        runtime.set_credential_store_root(credential_store_root);
         let network_profiles = NetworkProfileStore::open(self.network_profile_storage)?;
         Ok(Client {
             runtime,
+            credential_storage_enabled,
             cache_root,
             remove_cache_on_drop,
             instance_id: uuid::Uuid::new_v4(),
@@ -364,6 +543,7 @@ impl Client {
             cache_policy: ClientCachePolicy::Ephemeral,
             network_profile_storage: NetworkProfileStoragePolicy::MemoryOnly,
             identity_session_storage: IdentitySessionStoragePolicy::MemoryOnly,
+            credential_storage: CredentialStoragePolicy::MemoryOnly,
         }
     }
 
@@ -409,7 +589,10 @@ impl Client {
     }
 
     /// Performs an explicit Identity login. Credentials are sent only through
-    /// this client's shared Rust transport and are not persisted.
+    /// this client's shared Rust transport. The password is persisted only
+    /// when the request explicitly opts in and the Client has a credential
+    /// store configured; SelfService and network credentials remain
+    /// separate.
     pub async fn login_identity(
         &mut self,
         mut request: IdentityLoginRequest,
@@ -424,6 +607,12 @@ impl Client {
                 ErrorCode::InvalidInput,
             ));
         }
+        if request.remember_credentials && !self.credential_storage_enabled {
+            return Err(Error::new(
+                Service::Auth(AuthDomain::Identity),
+                ErrorCode::StorageUnavailable,
+            ));
+        }
         let (graduate, stage_explicit) = request.stage.runtime_value();
         let username = std::mem::take(&mut request.username);
         let password = std::mem::take(&mut request.password);
@@ -435,7 +624,7 @@ impl Client {
                 graduate,
                 stage_explicit,
                 request.trust_device,
-                false,
+                request.remember_credentials,
             )
             .await
             .map_err(|_| {
@@ -496,11 +685,18 @@ impl Client {
         &mut self,
         username: String,
         password: String,
+        remember_credentials: bool,
     ) -> Result<SelfServiceCaptcha, Error> {
         if username.trim().is_empty() || password.is_empty() {
             return Err(Error::new(
                 Service::Auth(AuthDomain::SelfService),
                 ErrorCode::InvalidInput,
+            ));
+        }
+        if remember_credentials && !self.credential_storage_enabled {
+            return Err(Error::new(
+                Service::Auth(AuthDomain::SelfService),
+                ErrorCode::StorageUnavailable,
             ));
         }
         if let Some(error) = identity_access_error(&self.runtime) {
@@ -509,7 +705,7 @@ impl Client {
         self.runtime.clear_usereg_failure_code();
         let captcha = self
             .runtime
-            .start_usereg_login(username, password)
+            .start_usereg_login_with_options(username, password, remember_credentials)
             .await
             .map_err(|_| {
                 usereg_error(
@@ -523,6 +719,54 @@ impl Client {
             content_type: captcha.content_type,
             bytes: captcha.bytes,
         })
+    }
+
+    /// Starts an explicit captcha flow using a previously remembered
+    /// SelfService password. The password remains inside Rust, and captcha
+    /// submission is still a separate user action.
+    pub async fn start_saved_self_service_login(
+        &mut self,
+        username: String,
+    ) -> Result<SelfServiceCaptcha, Error> {
+        if !self.credential_storage_enabled {
+            return Err(Error::new(
+                Service::Auth(AuthDomain::SelfService),
+                ErrorCode::StorageUnavailable,
+            ));
+        }
+        let stored = self
+            .runtime
+            .load_saved_self_service_credentials(&username)
+            .map_err(|_| {
+                Error::new(
+                    Service::Auth(AuthDomain::SelfService),
+                    ErrorCode::StorageUnavailable,
+                )
+            })?
+            .ok_or_else(|| {
+                Error::new(
+                    Service::Auth(AuthDomain::SelfService),
+                    ErrorCode::InteractionRequired,
+                )
+            })?;
+        self.start_self_service_login(username, stored.password, true)
+            .await
+    }
+
+    /// Removes one remembered SelfService password without logging out either
+    /// account domain.
+    pub fn forget_saved_self_service_credentials(&mut self, username: &str) -> Result<(), Error> {
+        if !self.credential_storage_enabled {
+            return Ok(());
+        }
+        self.runtime
+            .clear_saved_self_service_credentials(username)
+            .map_err(|_| {
+                Error::new(
+                    Service::Auth(AuthDomain::SelfService),
+                    ErrorCode::StorageUnavailable,
+                )
+            })
     }
 
     /// Returns the current local phase of the SelfService captcha challenge.
@@ -573,14 +817,15 @@ impl Client {
         self.runtime.clear_usereg_failure_code();
         match self
             .runtime
-            .complete_usereg_login(captcha_answer, sms_code)
+            .complete_usereg_login_with_result(captcha_answer, sms_code)
             .await
         {
-            Ok(_) => match self.runtime.auth_status().self_service().state() {
+            Ok((_, credentials_saved)) => match self.runtime.auth_status().self_service().state() {
                 crate::auth::AccountAuthState::Authenticated => {
-                    Ok(SelfServiceLoginOutcome::Authenticated(
-                        self.runtime.auth_status().self_service().clone(),
-                    ))
+                    Ok(SelfServiceLoginOutcome::Authenticated {
+                        status: self.runtime.auth_status().self_service().clone(),
+                        credentials_saved,
+                    })
                 }
                 crate::auth::AccountAuthState::NeedsInteraction
                 | crate::auth::AccountAuthState::Authenticating => {
@@ -3352,6 +3597,83 @@ impl NetworkClient<'_> {
             .map_err(|_| Error::new(Service::Network, ErrorCode::ServiceUnavailable))?;
         portal_observation(value)
     }
+
+    /// Explicitly connects one saved Portal profile. A supplied password is
+    /// used for this attempt only and is never saved; otherwise Rust uses the
+    /// profile's explicitly saved password. SystemWifiEap profiles are
+    /// rejected here and must be handled by a capable operating-system
+    /// adapter.
+    pub async fn connect_portal_profile(
+        &mut self,
+        prepared: &PreparedNetworkInput,
+        password_override: Option<String>,
+    ) -> Result<PortalConnectionResult, Error> {
+        let password_override = password_override.map(zeroize::Zeroizing::new);
+        let profile = self
+            .profiles
+            .profiles
+            .get(&prepared.summary().id())
+            .ok_or_else(|| Error::new(Service::Network, ErrorCode::ContextMismatch))?;
+        if !prepared.belongs_to(self.owner, profile) {
+            return Err(Error::new(Service::Network, ErrorCode::ContextMismatch));
+        }
+        if profile.method != NetworkAccessMethod::Portal {
+            return Err(Error::new(Service::Network, ErrorCode::Unsupported));
+        }
+        let password = match password_override {
+            Some(password)
+                if !password.is_empty()
+                    && password.len() <= 4096
+                    && !password.chars().any(char::is_control) =>
+            {
+                password
+            }
+            Some(_) => return Err(Error::new(Service::Network, ErrorCode::InvalidInput)),
+            None => profile
+                .password
+                .clone()
+                .ok_or_else(|| Error::new(Service::Network, ErrorCode::InteractionRequired))?,
+        };
+        self.runtime
+            .login_tunet(profile.username.clone(), password.to_string())
+            .await
+            .map_err(|failure| portal_operation_error(&failure))?;
+        Ok(PortalConnectionResult::verified(
+            PortalConnectionState::Connected,
+            Utc::now(),
+        ))
+    }
+
+    /// Explicitly disconnects the Portal connection target proven by this
+    /// process. Restarting the Client, changing the local IPv4 address, or
+    /// merely observing an online address does not recreate that capability.
+    pub async fn disconnect_portal(&mut self) -> Result<PortalConnectionResult, Error> {
+        let result = self
+            .runtime
+            .disconnect_tunet()
+            .await
+            .map_err(|failure| portal_operation_error(&failure))?;
+        if result.state != "offline" || result.online || result.signal != "negative" {
+            return Err(Error::new(Service::Network, ErrorCode::OutcomeUnconfirmed));
+        }
+        Ok(PortalConnectionResult::verified(
+            PortalConnectionState::Disconnected,
+            Utc::now(),
+        ))
+    }
+}
+
+fn portal_operation_error(failure: &str) -> Error {
+    let code = match failure {
+        "校园网账号或密码错误，请检查后重试" => ErrorCode::AuthenticationRejected,
+        "校园网返回账号与本次登录账号不一致" => ErrorCode::ContextMismatch,
+        "当前进程没有可验证的校园网断开目标" | "本机网络地址已变化，请先重新读取当前网络状态" => {
+            ErrorCode::ContextMismatch
+        }
+        "请输入校园网账号" | "请输入校园网密码" => ErrorCode::InvalidInput,
+        _ => ErrorCode::OutcomeUnconfirmed,
+    };
+    Error::new(Service::Network, code)
 }
 
 /// Client-lifetime local network profiles and non-secret form preparation.
@@ -3634,6 +3956,7 @@ impl Default for ClientBuilder {
             cache_policy: ClientCachePolicy::Ephemeral,
             network_profile_storage: NetworkProfileStoragePolicy::MemoryOnly,
             identity_session_storage: IdentitySessionStoragePolicy::MemoryOnly,
+            credential_storage: CredentialStoragePolicy::MemoryOnly,
         }
     }
 }
@@ -4374,6 +4697,20 @@ mod tests {
     }
 
     #[test]
+    fn portal_operation_errors_are_stable_and_redacted() {
+        let rejected = portal_operation_error("校园网账号或密码错误，请检查后重试");
+        assert_eq!(rejected.service(), Service::Network);
+        assert_eq!(rejected.code(), ErrorCode::AuthenticationRejected);
+
+        let ambiguous = portal_operation_error("tunet login: upstream response unavailable");
+        assert_eq!(ambiguous.code(), ErrorCode::OutcomeUnconfirmed);
+        assert!(!format!("{ambiguous:?}").contains("upstream response"));
+
+        let no_target = portal_operation_error("当前进程没有可验证的校园网断开目标");
+        assert_eq!(no_target.code(), ErrorCode::ContextMismatch);
+    }
+
+    #[test]
     fn contradictory_portal_status_is_not_reported_as_online_or_offline() {
         let error = portal_observation(TunetNetworkStatusDto {
             state: "online".into(),
@@ -4479,6 +4816,60 @@ mod tests {
                 .code(),
             ErrorCode::ContextMismatch
         );
+        assert_eq!(
+            client.auth_status().identity().state(),
+            AccountAuthState::SignedOut
+        );
+        assert_eq!(
+            client.auth_status().self_service().state(),
+            AccountAuthState::SignedOut
+        );
+    }
+
+    #[tokio::test]
+    async fn portal_connection_requires_portal_profile_and_explicit_secret() {
+        let mut client = Client::builder().build().unwrap();
+        let (portal_fill, eap_fill) = {
+            let mut network = client.network();
+            let mut profiles = network.profiles();
+            let portal = profiles
+                .save(
+                    NetworkProfileInput::new("Portal", "portal-user", NetworkAccessMethod::Portal)
+                        .unwrap(),
+                )
+                .unwrap();
+            let eap = profiles
+                .save(
+                    NetworkProfileInput::new(
+                        "Secure Wi-Fi",
+                        "eap-user",
+                        NetworkAccessMethod::SystemWifiEap,
+                    )
+                    .unwrap()
+                    .save_password("eap-only-secret")
+                    .unwrap(),
+                )
+                .unwrap();
+            let portal_fill = profiles.prepare_fill(portal.id()).unwrap();
+            let eap_fill = profiles.prepare_fill(eap.id()).unwrap();
+            (portal_fill, eap_fill)
+        };
+
+        let missing_password = client
+            .network()
+            .connect_portal_profile(&portal_fill, None)
+            .await
+            .unwrap_err();
+        assert_eq!(missing_password.service(), Service::Network);
+        assert_eq!(missing_password.code(), ErrorCode::InteractionRequired);
+
+        let wrong_method = client
+            .network()
+            .connect_portal_profile(&eap_fill, Some("eap-only-secret".into()))
+            .await
+            .unwrap_err();
+        assert_eq!(wrong_method.service(), Service::Network);
+        assert_eq!(wrong_method.code(), ErrorCode::Unsupported);
         assert_eq!(
             client.auth_status().identity().state(),
             AccountAuthState::SignedOut
@@ -5194,13 +5585,27 @@ mod tests {
             false,
         )
         .unwrap();
-        crate::session_persistence::save_resume_state_at_root(&root, &snapshot, &metadata).unwrap();
+        let key = [0x3d; 32];
+        let lease =
+            crate::session_persistence::begin_explicit_authority(&root, "fixture-identity-account")
+                .unwrap();
+        lease
+            .with_current(|| {
+                crate::session_persistence::save_resume_state_at_root_with_key(
+                    &root,
+                    &snapshot,
+                    &metadata,
+                    Some(&key),
+                )
+            })
+            .unwrap();
 
         let client = ClientBuilder::default()
             .cache_policy(ClientCachePolicy::Directory(root.clone()))
-            .identity_session_storage(IdentitySessionStoragePolicy::EncryptedDirectory(
-                root.clone(),
-            ))
+            .identity_session_storage(IdentitySessionStoragePolicy::HostSecureStorage {
+                directory: root.clone(),
+                key: IdentitySessionStorageKey::from_bytes(key.to_vec()).unwrap(),
+            })
             .build()
             .unwrap();
         let status = client.auth_status();
@@ -5214,5 +5619,62 @@ mod tests {
         );
         assert_eq!(status.self_service().state(), AccountAuthState::SignedOut);
         assert_eq!(status.self_service().username(), None);
+    }
+
+    #[tokio::test]
+    async fn backend_auth_identity_credential_opt_in_requires_storage_before_login() {
+        let mut client = ClientBuilder::default().build().unwrap();
+        let request = IdentityLoginRequest::new("fixture-identity", "synthetic-password")
+            .remember_credentials(true);
+
+        let error = client.login_identity(request).await.unwrap_err();
+
+        assert_eq!(error.service(), Service::Auth(AuthDomain::Identity));
+        assert_eq!(error.code(), ErrorCode::StorageUnavailable);
+        assert_eq!(
+            client.auth_status().identity().state(),
+            AccountAuthState::SignedOut
+        );
+    }
+
+    #[tokio::test]
+    async fn backend_auth_self_service_credential_opt_in_requires_separate_storage() {
+        let mut client = Client::builder()
+            .build()
+            .expect("memory-only client builds");
+        let error = client
+            .start_self_service_login(
+                "fixture-self-service".to_owned(),
+                "synthetic-password".to_owned(),
+                true,
+            )
+            .await
+            .expect_err("remembering SelfService requires its credential policy");
+        assert_eq!(error.service(), Service::Auth(AuthDomain::SelfService));
+        assert_eq!(error.code(), ErrorCode::StorageUnavailable);
+        assert_eq!(
+            client.auth_status().identity().state(),
+            AccountAuthState::SignedOut
+        );
+        assert_eq!(
+            client.auth_status().self_service().state(),
+            AccountAuthState::SignedOut
+        );
+        let debug = format!("{error:?}");
+        assert!(!debug.contains("fixture-self-service"));
+        assert!(!debug.contains("synthetic-password"));
+    }
+
+    #[test]
+    fn backend_auth_identity_login_request_debug_redacts_inputs_and_reports_choice() {
+        let request =
+            IdentityLoginRequest::new("fixture-private-identity", "synthetic-private-password")
+                .remember_credentials(true);
+
+        let debug = format!("{request:?}");
+
+        assert!(debug.contains("remember_credentials: true"));
+        assert!(!debug.contains("fixture-private-identity"));
+        assert!(!debug.contains("synthetic-private-password"));
     }
 }

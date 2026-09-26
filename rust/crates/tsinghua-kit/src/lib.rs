@@ -7,6 +7,15 @@
 
 mod client;
 
+/// Storage choices for one Client. Cache data, Auth sessions, Auth passwords,
+/// and local network profiles have separate policies.
+pub mod config {
+    pub use crate::client::{ClientCachePolicy, CredentialStoragePolicy};
+    pub use tsinghua_kit_engine::client::{
+        IdentitySessionStorageKey, IdentitySessionStoragePolicy,
+    };
+}
+
 pub mod auth {
     pub use crate::client::{
         AuthClient, IdentityAuthClient, SelfServiceAuthClient, SelfServiceLoginRequest,
@@ -16,8 +25,8 @@ pub mod auth {
         SelfServiceLoginPhase,
     };
     pub use tsinghua_kit_engine::client::{
-        IdentityLoginOutcome, IdentityLoginRequest, IdentitySessionStoragePolicy, LoginStage,
-        SelfServiceCaptcha, SelfServiceLoginOutcome,
+        IdentityLoginOutcome, IdentityLoginRequest, IdentitySessionStorageKey,
+        IdentitySessionStoragePolicy, LoginStage, SelfServiceCaptcha, SelfServiceLoginOutcome,
     };
 
     /// Suggests the academic login route from a supported student-id rule.
@@ -104,7 +113,7 @@ pub mod network {
     pub use tsinghua_kit_engine::network::{
         NetworkAccessMethod, NetworkProfileId, NetworkProfileInput, NetworkProfilePassword,
         NetworkProfileStoragePolicy, NetworkProfileSummary, PortalAddressRegistration,
-        PortalObservation, PreparedNetworkInput,
+        PortalConnectionResult, PortalConnectionState, PortalObservation, PreparedNetworkInput,
     };
 }
 
@@ -151,8 +160,9 @@ pub mod self_service {
 
 pub use client::{
     CalendarClient, CampusCardClient, ClassroomsClient, Client, ClientBuilder, ClientCachePolicy,
-    ElectricityClient, LearnClient, LibraryClient, NetworkClient, NetworkProfilesClient,
-    NewsClient, RegistrarClient, SelfServiceClient, SelfServiceLoginRequest, ServiceHallClient,
+    CredentialStoragePolicy, ElectricityClient, LearnClient, LibraryClient, NetworkClient,
+    NetworkProfilesClient, NewsClient, RegistrarClient, SelfServiceClient, SelfServiceLoginRequest,
+    ServiceHallClient,
 };
 pub use error::{Error, ErrorCode, Service};
 

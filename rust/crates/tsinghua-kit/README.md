@@ -13,11 +13,12 @@ target-specific password is a one-shot service interaction, not a third
 account.
 
 `Client::network()` also manages local Portal/EAP fill profiles and reads
-TUNet's registration status for the current IPv4 address. Profiles are not
-Auth accounts and their existence does not prove a connection. The SDK does
-not yet execute Portal login or configure operating-system Wi-Fi/EAP. THOS
-write operations and Identity/SelfService credential restoration also remain
-outside the current public API. The Flutter facade can use Flutter Secure
+TUNet's registration status for the current IPv4 address. It can explicitly
+connect or disconnect a Portal profile through the shared Rust transport.
+Connections are local network operations, not Auth sessions; EAP profiles are
+rejected by Portal calls and operating-system Wi-Fi/EAP configuration remains
+outside the SDK. THOS write operations and Identity/SelfService credential
+restoration also remain outside the current public API. The Flutter facade can use Flutter Secure
 Storage to hold the encryption key for persistent local network profiles;
 Rust receives that key only while constructing the Client and never writes it
 beside the encrypted profile file.
@@ -70,7 +71,10 @@ credentials or cookies. Both Auth accounts stay in memory until the client is
 dropped by default.
 The default cache policy creates a private temporary directory and removes it
 on drop; a host can select a private persistent directory for business read
-caches. A cache never creates an authenticated session.
+caches. Flutter and Rust expose that as `ClientCachePersistence.directory` and
+`ClientCachePolicy::Directory` respectively. The service-cache directory,
+Identity snapshot directory, and NetworkProfile directory are configured
+independently. A cache never creates an authenticated session.
 
 Identity may opt into an encrypted shared-cookie snapshot, but the current
 directory backend stores its key beside the ciphertext and the snapshot is not

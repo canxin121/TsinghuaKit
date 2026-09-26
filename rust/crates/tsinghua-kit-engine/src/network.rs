@@ -458,6 +458,42 @@ impl PortalObservation {
     }
 }
 
+/// Result of an explicit TUNet Portal operation.
+///
+/// This is local-network evidence only. It does not establish either Auth
+/// account or report the operating-system-managed Tsinghua Secure connection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum PortalConnectionState {
+    /// The Portal positively verified this Client's explicit login attempt.
+    Connected,
+    /// The Portal positively verified the explicitly disconnected target.
+    Disconnected,
+}
+
+/// A successful, positively verified TUNet Portal operation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PortalConnectionResult {
+    state: PortalConnectionState,
+    observed_at: DateTime<Utc>,
+}
+
+impl PortalConnectionResult {
+    pub(crate) fn verified(state: PortalConnectionState, observed_at: DateTime<Utc>) -> Self {
+        Self { state, observed_at }
+    }
+
+    /// Returns the result state confirmed by the Portal.
+    pub fn state(&self) -> PortalConnectionState {
+        self.state
+    }
+
+    /// Returns when the result was confirmed, in UTC.
+    pub fn observed_at(&self) -> DateTime<Utc> {
+        self.observed_at
+    }
+}
+
 /// A local profile record owned by one engine Client.
 #[derive(Clone)]
 pub(crate) struct StoredNetworkProfile {

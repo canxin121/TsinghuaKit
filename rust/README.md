@@ -31,26 +31,40 @@ memory-only by default. A host may explicitly enable the Unix encrypted-
 directory backend by providing both a private storage root and an application
 namespace; it stores profile data only and never restores Auth sessions. Its
 key and ciphertext share the private directory, so this is not an OS Keychain.
-Auth sessions remain memory-only unless a host explicitly selects
-`IdentitySessionStoragePolicy::EncryptedDirectory` together with the same
-`ClientCachePolicy::Directory`. That opt-in restores the shared Identity-bound
-Cookie snapshot as `RestoredUnverified`; the host must call
+Auth sessions remain memory-only unless a host explicitly selects an
+Identity snapshot policy; its directory is independent from the service
+cache. `IdentitySessionStoragePolicy::HostSecureStorage`
+accepts a separately stored 32-byte key through
+`IdentitySessionStorageKey::from_bytes`; `EncryptedDirectory` is the legacy
+option that stores its key beside the ciphertext. The snapshot key must
+not be reused for network profiles or Auth passwords. `CredentialStoragePolicy`
+selects a separate app-private credential directory. A successful Identity
+login or completed SelfService captcha flow saves its account-domain record
+only after explicit `remember_credentials(true)` opt-in; the two namespaces
+remain separate even for identical account names. The vault uses its own
+app-private file key and is not an OS Keychain. Either
+snapshot opt-in restores the shared Identity-bound Cookie snapshot as
+`RestoredUnverified`; the host must call
 `identity.revalidate_restored_session()` to perform a read-only validation.
 The snapshot is device-bound, expires after its bounded lifetime, and never
 stores a password. The SDK writes the whole shared Cookie jar once at the first
 successful Identity checkpoint; later business and SelfService responses do
 not refresh the on-disk snapshot. Cookies already present at that checkpoint
 may still be included, so this is not per-account Cookie partitioning. Schema
-1 envelopes are rejected without migration. This file backend is a migration
-step, not an OS Keychain or the final production two-account secret store. It
-does not restore SelfService account state or authorization.
-The Flutter facade exposes Auth, local profile CRUD/fill operations, service
-hall, SelfService, Registrar/Calendar, INFO, Learn, Library, Classroom,
-CampusCard and Electricity reads. There is no Portal connector or
-operating-system Wi-Fi/EAP adapter. Auth is not restored across Client
-lifetimes; only the explicit Identity snapshot can be revalidated across
-processes, while SelfService restoration and OS Keychain integration remain
-unimplemented.
+1 envelopes are rejected without migration. The legacy co-located-key file
+backend is not an OS Keychain. Snapshot policies do not put passwords inside
+the cookie snapshot or restore SelfService account state or authorization. The Flutter facade obtains the
+Identity key from a separate Flutter Secure Storage entry when
+`IdentitySessionPersistence.platformSecureStorage` is selected; this path has
+not yet been verified against a real device keychain.
+The Flutter facade exposes Auth, local profile CRUD/fill and explicit Portal
+connect/disconnect operations, service hall, SelfService, Registrar/Calendar,
+INFO, Learn, Library, Classroom, CampusCard and Electricity reads. The
+operating-system Wi-Fi/EAP adapter is not implemented. Only an explicitly
+configured Identity snapshot can be revalidated across processes; it does not
+restore the SelfService account or bypass its captcha. Saved SelfService
+passwords can start a new captcha flow, but SelfService session restoration is
+not implemented.
 Configuring Tsinghua Secure remains an operating-system operation and is not
 inferred from a saved profile.
 

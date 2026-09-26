@@ -707,6 +707,46 @@ pub(crate) fn clear_at_root(root: &Path, account: &str) -> Result<(), Credential
     clear_at(root, account)
 }
 
+/// Stores an independent SelfService password below its own namespace. A
+/// matching username in Identity can never address this record.
+pub(crate) fn save_self_service_at_root(
+    root: &Path,
+    account: &str,
+    password: &str,
+    device_fingerprint: &str,
+) -> Result<(), CredentialStoreError> {
+    let domain_root = root.join("self-service");
+    crate::telemetry::timing::measure_sync(crate::telemetry::timing::Phase::CredentialStore, || {
+        save_at_with_stage_selection(
+            &domain_root,
+            account,
+            password,
+            None,
+            device_fingerprint,
+            false,
+        )
+    })
+}
+
+pub(crate) fn load_self_service_at_root(
+    root: &Path,
+    account: &str,
+    device_fingerprint: &str,
+) -> Result<Option<StoredCredential>, CredentialStoreError> {
+    let domain_root = root.join("self-service");
+    crate::telemetry::timing::measure_sync(crate::telemetry::timing::Phase::CredentialStore, || {
+        load_at(&domain_root, account, device_fingerprint)
+    })
+}
+
+pub(crate) fn clear_self_service_at_root(
+    root: &Path,
+    account: &str,
+) -> Result<(), CredentialStoreError> {
+    let domain_root = root.join("self-service");
+    clear_at(&domain_root, account)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -852,6 +892,53 @@ mod tests {
             load_at(&root, "student", fixture_device())
                 .expect("bound record loads")
                 .is_some()
+        );
+        cleanup(&root);
+    }
+
+    #[test]
+    fn backend_auth_credential_domains_do_not_share_same_named_account_records() {
+        let root = fixture_root();
+        save_at(
+            &root,
+            "shared-name",
+            "identity-password",
+            Some(AcademicStage::Graduate),
+            fixture_device(),
+        )
+        .expect("Identity record saves");
+        save_self_service_at_root(
+            &root,
+            "shared-name",
+            "self-service-password",
+            fixture_device(),
+        )
+        .expect("SelfService record saves");
+
+        let identity = load_at(&root, "shared-name", fixture_device())
+            .expect("Identity record loads")
+            .expect("Identity record exists");
+        let self_service = load_self_service_at_root(&root, "shared-name", fixture_device())
+            .expect("SelfService record loads")
+            .expect("SelfService record exists");
+        assert_eq!(identity.password, "identity-password");
+        assert_eq!(identity.stage, Some(AcademicStage::Graduate));
+        assert_eq!(self_service.password, "self-service-password");
+        assert_eq!(self_service.stage, None);
+
+        clear_self_service_at_root(&root, "shared-name")
+            .expect("SelfService record can be forgotten independently");
+        assert!(
+            load_self_service_at_root(&root, "shared-name", fixture_device())
+                .expect("forgotten SelfService record loads")
+                .is_none()
+        );
+        assert_eq!(
+            load_at(&root, "shared-name", fixture_device())
+                .expect("Identity record remains")
+                .expect("Identity record still exists")
+                .password,
+            "identity-password"
         );
         cleanup(&root);
     }

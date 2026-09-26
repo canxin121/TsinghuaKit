@@ -16,6 +16,7 @@ use tsinghua_kit_engine::{
         CalendarClient as EngineCalendarClient, CampusCardClient as EngineCampusCardClient,
         ClassroomsClient as EngineClassroomsClient, Client as EngineClient,
         ClientBuilder as EngineClientBuilder, ClientCachePolicy as EngineCachePolicy,
+        CredentialStoragePolicy as EngineCredentialStoragePolicy,
         ElectricityClient as EngineElectricityClient, IdentityLoginOutcome, IdentityLoginRequest,
         IdentitySessionStoragePolicy, LearnClient as EngineLearnClient,
         LibraryClient as EngineLibraryClient, NetworkClient as EngineNetworkClient,
@@ -36,7 +37,7 @@ use tsinghua_kit_engine::{
     },
     network::{
         NetworkProfileId, NetworkProfileInput, NetworkProfilePassword, NetworkProfileStoragePolicy,
-        NetworkProfileSummary, PreparedNetworkInput,
+        NetworkProfileSummary, PortalConnectionResult, PreparedNetworkInput,
     },
     news::{
         ArticleDetail, ArticleRef, NewsCatalog, NewsFavorites, NewsPage, NewsQuery,
@@ -72,6 +73,31 @@ impl From<ClientCachePolicy> for EngineCachePolicy {
     }
 }
 
+/// Storage for credentials the user explicitly chooses to remember.
+///
+/// This is independent from Identity session snapshots and local network
+/// profiles. The encrypted-directory backend keeps its key in the same
+/// private application directory and is not equivalent to an OS Keychain.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum CredentialStoragePolicy {
+    /// Do not persist Auth passwords.
+    MemoryOnly,
+    /// Store explicitly remembered credentials in this private directory.
+    EncryptedDirectory { root: PathBuf, namespace: String },
+}
+
+impl From<CredentialStoragePolicy> for EngineCredentialStoragePolicy {
+    fn from(value: CredentialStoragePolicy) -> Self {
+        match value {
+            CredentialStoragePolicy::MemoryOnly => Self::MemoryOnly,
+            CredentialStoragePolicy::EncryptedDirectory { root, namespace } => {
+                Self::EncryptedDirectory { root, namespace }
+            }
+        }
+    }
+}
+
 /// Builds a client without performing authentication or network requests.
 pub struct ClientBuilder {
     inner: EngineClientBuilder,
@@ -92,11 +118,17 @@ impl ClientBuilder {
     }
 
     /// Selects explicit persistence for Identity and its shared service-cookie
-    /// snapshot. When enabled, the same path must be selected as the cache
-    /// directory. Restored cookies remain unverified until the caller invokes
+    /// snapshot. Its path is independent from the service-cache directory.
+    /// Restored cookies remain unverified until the caller invokes
     /// [`IdentityAuthClient::revalidate_restored_session`].
     pub fn identity_session_storage(mut self, policy: IdentitySessionStoragePolicy) -> Self {
         self.inner = self.inner.identity_session_storage(policy);
+        self
+    }
+
+    /// Selects a separately scoped store for explicit Auth credential choices.
+    pub fn credential_storage(mut self, policy: CredentialStoragePolicy) -> Self {
+        self.inner = self.inner.credential_storage(policy.into());
         self
     }
 
@@ -309,6 +341,7 @@ impl IdentityAuthClient<'_> {
 pub struct SelfServiceLoginRequest {
     username: String,
     password: String,
+    remember_credentials: bool,
 }
 
 impl SelfServiceLoginRequest {
@@ -318,7 +351,16 @@ impl SelfServiceLoginRequest {
         Self {
             username: username.into(),
             password: password.into(),
+            remember_credentials: false,
         }
+    }
+
+    /// Explicitly opts this SelfService account into Rust-owned credential
+    /// storage. The Client must have a credential store configured. This
+    /// never restores a session or bypasses a future captcha.
+    pub fn remember_credentials(mut self, remember: bool) -> Self {
+        self.remember_credentials = remember;
+        self
     }
 }
 
@@ -327,6 +369,7 @@ impl fmt::Debug for SelfServiceLoginRequest {
         f.debug_struct("SelfServiceLoginRequest")
             .field("username_present", &!self.username.trim().is_empty())
             .field("password_present", &!self.password.is_empty())
+            .field("remember_credentials", &self.remember_credentials)
             .finish()
     }
 }
@@ -373,8 +416,25 @@ impl SelfServiceAuthClient<'_> {
             .start_self_service_login(
                 std::mem::take(&mut request.username),
                 std::mem::take(&mut request.password),
+                request.remember_credentials,
             )
             .await
+    }
+
+    /// Starts the captcha flow using a previously remembered credential. The
+    /// password remains in Rust and the user must still complete the captcha.
+    pub async fn start_saved_login(
+        &mut self,
+        username: impl Into<String>,
+    ) -> Result<SelfServiceCaptcha, Error> {
+        self.inner
+            .start_saved_self_service_login(username.into())
+            .await
+    }
+
+    /// Forgets one account's stored SelfService password without logging out.
+    pub fn forget_saved_credentials(&mut self, username: &str) -> Result<(), Error> {
+        self.inner.forget_saved_self_service_credentials(username)
     }
 
     /// Refreshes the active captcha explicitly. This does not resubmit a
@@ -792,6 +852,26 @@ impl NetworkClient<'_> {
         &mut self,
     ) -> Result<crate::network::PortalObservation, Error> {
         self.inner.observe_portal_status().await
+    }
+
+    /// Explicitly connects a saved Portal profile. A per-attempt password
+    /// override is never saved; when omitted, Rust uses only a password that
+    /// the user previously opted to store with this profile. Profiles for
+    /// system-managed Wi-Fi/EAP return `Unsupported`.
+    pub async fn connect_portal_profile(
+        &mut self,
+        prepared: &PreparedNetworkInput,
+        password_override: Option<String>,
+    ) -> Result<PortalConnectionResult, Error> {
+        self.inner
+            .connect_portal_profile(prepared, password_override)
+            .await
+    }
+
+    /// Explicitly disconnects a Portal target verified by this process.
+    /// The target is one-shot and is not restored after Client disposal.
+    pub async fn disconnect_portal(&mut self) -> Result<PortalConnectionResult, Error> {
+        self.inner.disconnect_portal().await
     }
 }
 

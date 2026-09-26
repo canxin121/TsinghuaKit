@@ -48,6 +48,10 @@ pub(super) fn transient_proof_failure(reason: &str) -> bool {
 }
 
 impl CampusRuntime {
+    pub(crate) fn set_credential_store_root(&mut self, root: std::path::PathBuf) {
+        self.credential_store_root = root;
+    }
+
     pub(super) fn load_credential_for_current_authority(
         &self,
         username: &str,
@@ -57,7 +61,7 @@ impl CampusRuntime {
     > {
         let load = || {
             crate::credential_store::load_at_root(
-                &self.persistence_root,
+                &self.credential_store_root,
                 username,
                 &self.fingerprint,
             )
@@ -82,7 +86,7 @@ impl CampusRuntime {
     ) -> Result<(), crate::credential_store::CredentialStoreError> {
         let save = || {
             crate::credential_store::save_at_root_with_stage_selection(
-                &self.persistence_root,
+                &self.credential_store_root,
                 username,
                 password,
                 stage,
@@ -106,7 +110,8 @@ impl CampusRuntime {
         &self,
         username: &str,
     ) -> Result<(), crate::credential_store::CredentialStoreError> {
-        let clear = || crate::credential_store::clear_at_root(&self.persistence_root, username);
+        let clear =
+            || crate::credential_store::clear_at_root(&self.credential_store_root, username);
         if !self.persist_sessions {
             return clear();
         }
@@ -117,6 +122,40 @@ impl CampusRuntime {
         lease
             .with_current(|| Ok(clear()))
             .map_err(|_| crate::credential_store::CredentialStoreError::Backend)?
+    }
+
+    pub(crate) fn load_saved_self_service_credentials(
+        &self,
+        username: &str,
+    ) -> Result<
+        Option<crate::credential_store::StoredCredential>,
+        crate::credential_store::CredentialStoreError,
+    > {
+        crate::credential_store::load_self_service_at_root(
+            &self.credential_store_root,
+            username,
+            &self.fingerprint,
+        )
+    }
+
+    pub(crate) fn save_self_service_credential(
+        &self,
+        username: &str,
+        password: &str,
+    ) -> Result<(), crate::credential_store::CredentialStoreError> {
+        crate::credential_store::save_self_service_at_root(
+            &self.credential_store_root,
+            username,
+            password,
+            &self.fingerprint,
+        )
+    }
+
+    pub(crate) fn clear_saved_self_service_credentials(
+        &self,
+        username: &str,
+    ) -> Result<(), crate::credential_store::CredentialStoreError> {
+        crate::credential_store::clear_self_service_at_root(&self.credential_store_root, username)
     }
 
     pub(super) fn saved_credential_opt_in_matches(&self, user: &UserIdentity) -> bool {

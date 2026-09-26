@@ -24,7 +24,7 @@ use tsinghua_kit::{
     network::{
         NetworkAccessMethod, NetworkProfileId, NetworkProfileInput, NetworkProfilePassword,
         NetworkProfileStoragePolicy, NetworkProfileSummary, PortalAddressRegistration,
-        PortalObservation, PreparedNetworkInput,
+        PortalConnectionResult, PortalConnectionState, PortalObservation, PreparedNetworkInput,
     },
     news::{
         NewsCatalog, NewsChannelRef, NewsFavorites, NewsPage, NewsQuery, NewsSourceRef,
@@ -269,6 +269,20 @@ fn compile_network_profiles_api(client: &mut tsinghua_kit::Client) -> Result<()>
     Ok(())
 }
 
+async fn compile_portal_api(
+    client: &mut tsinghua_kit::Client,
+    prepared: &PreparedNetworkInput,
+) -> Result<()> {
+    let result = client
+        .network()
+        .connect_portal_profile(prepared, None)
+        .await?;
+    let _: PortalConnectionState = result.state();
+    let _: PortalConnectionResult = result;
+    let _ = client.network().disconnect_portal().await?;
+    Ok(())
+}
+
 async fn compile_campus_card_api(client: &mut tsinghua_kit::Client) -> Result<()> {
     let mut card = client.campus_card();
     let account = card.account().await?;
@@ -301,6 +315,7 @@ fn rust_consumers_can_import_curated_domain_modules_without_ffi() {
         PortalAddressRegistration::Unknown
     );
     accepts_public_types::<PortalObservation>(None);
+    accepts_public_types::<PortalConnectionResult>(None);
     assert_eq!(
         format!("{:?}", AccountAuthState::Authenticated),
         "Authenticated"
@@ -354,6 +369,7 @@ fn rust_consumers_can_import_curated_domain_modules_without_ffi() {
     let _ = compile_campus_card_api;
     let _ = compile_electricity_api;
     let _ = compile_network_profiles_api;
+    let _ = compile_portal_api;
     let _ = compile_disconnect_device_api;
     succeeds().unwrap();
 }
@@ -468,6 +484,91 @@ fn network_profile_storage_and_form_preparation_are_local_and_redacted() {
         client.auth().status().self_service().state(),
         AccountAuthState::SignedOut
     );
+}
+
+#[tokio::test]
+async fn portal_connect_is_explicit_and_rejects_system_eap_profiles() {
+    let mut client = tsinghua_kit::Client::builder().build().unwrap();
+    let (portal_id, portal, eap) = {
+        let mut network = client.network();
+        let mut profiles = network.profiles();
+        let portal = profiles
+            .save(
+                NetworkProfileInput::new("Portal", "portal-user", NetworkAccessMethod::Portal)
+                    .unwrap(),
+            )
+            .unwrap();
+        let portal_id = portal.id();
+        let eap = profiles
+            .save(
+                NetworkProfileInput::new(
+                    "Tsinghua Secure",
+                    "eap-user",
+                    NetworkAccessMethod::SystemWifiEap,
+                )
+                .unwrap()
+                .save_password("eap-only-secret")
+                .unwrap(),
+            )
+            .unwrap();
+        (
+            portal_id,
+            profiles.prepare_fill(portal_id).unwrap(),
+            profiles.prepare_fill(eap.id()).unwrap(),
+        )
+    };
+
+    let missing_password = client
+        .network()
+        .connect_portal_profile(&portal, None)
+        .await
+        .unwrap_err();
+    assert_eq!(missing_password.service(), Service::Network);
+    assert_eq!(missing_password.code(), ErrorCode::InteractionRequired);
+
+    let wrong_method = client
+        .network()
+        .connect_portal_profile(&eap, Some("eap-only-secret".to_owned()))
+        .await
+        .unwrap_err();
+    assert_eq!(wrong_method.service(), Service::Network);
+    assert_eq!(wrong_method.code(), ErrorCode::Unsupported);
+
+    let mut other_client = tsinghua_kit::Client::builder().build().unwrap();
+    let cross_client_reference = other_client
+        .network()
+        .connect_portal_profile(&portal, Some("portal-only-secret".to_owned()))
+        .await
+        .unwrap_err();
+    assert_eq!(cross_client_reference.service(), Service::Network);
+    assert_eq!(cross_client_reference.code(), ErrorCode::ContextMismatch);
+
+    {
+        let mut network = client.network();
+        let mut profiles = network.profiles();
+        profiles
+            .update(
+                portal_id,
+                NetworkProfileInput::new(
+                    "Edited Portal",
+                    "portal-user",
+                    NetworkAccessMethod::Portal,
+                )
+                .unwrap(),
+            )
+            .unwrap();
+    }
+    let stale_reference = client
+        .network()
+        .connect_portal_profile(&portal, Some("portal-only-secret".to_owned()))
+        .await
+        .unwrap_err();
+    assert_eq!(stale_reference.service(), Service::Network);
+    assert_eq!(stale_reference.code(), ErrorCode::ContextMismatch);
+
+    let status = client.auth().status();
+    assert_eq!(status.identity().state(), AccountAuthState::SignedOut);
+    assert_eq!(status.self_service().state(), AccountAuthState::SignedOut);
 }
 
 #[test]

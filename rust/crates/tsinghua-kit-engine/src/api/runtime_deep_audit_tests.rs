@@ -335,6 +335,7 @@ fn pending_login(server: &FixtureServer) -> CampusRuntime {
         transport: r.identity.transport().clone(),
         created_at: std::time::Instant::now(),
         captcha_ready: true,
+        remember_credentials: false,
     });
     r
 }

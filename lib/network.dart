@@ -1,4 +1,5 @@
-/// Local campus-network profiles and read-only TUNet registration evidence.
+/// Local campus-network profiles, TUNet registration evidence, and explicit
+/// TUNet Portal operations.
 ///
 /// Network profiles are local inputs, not Auth accounts. System Wi-Fi/EAP
 /// connection and configuration remain owned by the operating system.
@@ -17,6 +18,8 @@ export 'tsinghua_kit.dart'
         NetworkProfilesClient,
         PlatformSecureStorageNetworkProfilePersistence,
         PortalAddressRegistration,
+        PortalConnectionResult,
+        PortalConnectionState,
         PortalObservation,
         PreparedNetworkProfile,
         TsinghuaKitClient;

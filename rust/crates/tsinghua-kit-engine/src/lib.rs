@@ -124,8 +124,9 @@ pub use classroom_read::{
     ClassroomState, ClassroomStateResult, gb2312_percent_encode,
 };
 pub use client::{
-    Client, ClientBuilder, ClientCachePolicy, IdentityLoginOutcome, IdentityLoginRequest,
-    IdentitySessionStoragePolicy, LoginStage, ServiceHallClient,
+    Client, ClientBuilder, ClientCachePolicy, CredentialStoragePolicy, IdentityLoginOutcome,
+    IdentityLoginRequest, IdentitySessionStorageKey, IdentitySessionStoragePolicy, LoginStage,
+    ServiceHallClient,
 };
 pub use domain::*;
 pub use dorm_electricity_read::{

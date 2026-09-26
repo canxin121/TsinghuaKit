@@ -7,7 +7,8 @@
 use std::{collections::HashMap, fmt, path::PathBuf};
 
 use tsinghua_kit_sdk::{
-    Client as SdkClient, ClientBuilder, ClientCachePolicy, Error as SdkError,
+    Client as SdkClient, ClientBuilder, ClientCachePolicy, CredentialStoragePolicy,
+    Error as SdkError,
     auth::{
         AccountAuthState, AccountAuthStatus, AuthStatus, IdentityLoginOutcome,
         IdentityLoginRequest, IdentitySessionStoragePolicy, LoginStage, SecondFactorMethod,
@@ -39,7 +40,7 @@ use tsinghua_kit_sdk::{
     network::{
         NetworkAccessMethod, NetworkProfileId, NetworkProfileInput, NetworkProfilePassword,
         NetworkProfileStoragePolicy, NetworkProfileSummary, PortalAddressRegistration,
-        PreparedNetworkInput,
+        PortalConnectionResult, PortalConnectionState, PreparedNetworkInput,
     },
     news::{
         ArticleDetail, ArticleRef, NewsArticle, NewsCatalog, NewsCatalogCoverage, NewsChannelRef,
@@ -59,6 +60,7 @@ use tsinghua_kit_sdk::{
         WorkflowTaskList, WorkflowTaskRef,
     },
 };
+use zeroize::Zeroizing;
 
 /// The account state of one of the two independent Auth domains.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -196,6 +198,7 @@ pub struct SelfServiceCaptchaDto {
 pub struct SelfServiceLoginResultDto {
     pub status: AuthStatusDto,
     pub requires_interaction: bool,
+    pub credentials_saved: bool,
 }
 
 /// Current local phase of an explicit SelfService captcha login.
@@ -1986,6 +1989,40 @@ pub struct PortalObservationDto {
     pub observed_at_utc: String,
 }
 
+/// State explicitly confirmed by a Portal connect or disconnect operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PortalConnectionStateDto {
+    Connected,
+    Disconnected,
+    Unknown,
+}
+
+impl From<PortalConnectionState> for PortalConnectionStateDto {
+    fn from(value: PortalConnectionState) -> Self {
+        match value {
+            PortalConnectionState::Connected => Self::Connected,
+            PortalConnectionState::Disconnected => Self::Disconnected,
+            _ => Self::Unknown,
+        }
+    }
+}
+
+/// Result of one explicitly requested, positively verified Portal operation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PortalConnectionResultDto {
+    pub state: PortalConnectionStateDto,
+    pub observed_at_utc: String,
+}
+
+fn portal_connection_result(value: PortalConnectionResult) -> PortalConnectionResultDto {
+    PortalConnectionResultDto {
+        state: value.state().into(),
+        observed_at_utc: value
+            .observed_at()
+            .to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+    }
+}
+
 /// The only dates currently accepted by the library service.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LibraryDayDto {
@@ -3412,7 +3449,13 @@ pub struct ClientHandle {
 impl ClientHandle {
     /// Creates a Client without login or network activity.
     ///
-    /// Network profiles and Identity session snapshots use separate policies.
+    /// Business caches, Network profiles and Identity session snapshots use
+    /// separate policies. Service caches are memory-only by default. Supplying
+    /// `cache_root` opts into persistent service caches in that private
+    /// directory; the Identity session directory may be elsewhere.
+    /// Supplying credential root and namespace opts into a separately
+    /// encrypted Auth credential vault. This vault is not an OS Keychain;
+    /// saving each Auth account still requires explicit login opt-in.
     /// When the optional network profile arguments are absent, profile data is
     /// memory-only. Supplying the root and namespace without a key opts into
     /// the legacy Unix encrypted-directory backend whose key is stored beside
@@ -3420,16 +3463,21 @@ impl ClientHandle {
     /// operating-system credential-store key; the key is zeroized from this
     /// Client's temporary construction data and is never written beside the
     /// ciphertext. Supplying both Identity session arguments opts into the
-    /// separate encrypted Identity snapshot, whose current directory backend
-    /// still stores its key beside the data. Neither option saves Auth
-    /// passwords.
+    /// separate encrypted Identity snapshot. Supplying its key as well keeps
+    /// that key in a distinct host secure-storage namespace. Neither session
+    /// policy saves Auth passwords.
     pub fn new(
+        cache_root: Option<String>,
+        credential_storage_root: Option<String>,
+        credential_storage_namespace: Option<String>,
         profile_storage_root: Option<String>,
         application_namespace: Option<String>,
         profile_storage_key: Option<Vec<u8>>,
         identity_session_root: Option<String>,
         identity_session_namespace: Option<String>,
+        identity_session_key: Option<Vec<u8>>,
     ) -> Result<Self, SdkErrorDto> {
+        let identity_session_key = identity_session_key.map(Zeroizing::new);
         let policy = match (
             profile_storage_root,
             application_namespace,
@@ -3453,7 +3501,25 @@ impl ClientHandle {
                 return Err(error.into());
             }
         };
-        let mut builder = ClientBuilder::default().network_profile_storage(policy);
+        let credential_policy = match (credential_storage_root, credential_storage_namespace) {
+            (None, None) => CredentialStoragePolicy::MemoryOnly,
+            (Some(root), Some(namespace)) => CredentialStoragePolicy::EncryptedDirectory {
+                root: PathBuf::from(root),
+                namespace,
+            },
+            _ => {
+                let Err(error) = NetworkProfileStoragePolicy::encrypted_directory("/", "") else {
+                    unreachable!("empty application namespace must be rejected")
+                };
+                return Err(error.into());
+            }
+        };
+        let mut builder = ClientBuilder::default()
+            .network_profile_storage(policy)
+            .credential_storage(credential_policy);
+        if let Some(root) = cache_root {
+            builder = builder.cache_policy(ClientCachePolicy::Directory(PathBuf::from(root)));
+        }
         let identity_session_root = match (identity_session_root, identity_session_namespace) {
             (None, None) => None,
             (Some(root), Some(namespace)) => {
@@ -3478,10 +3544,29 @@ impl ClientHandle {
                 return Err(error.into());
             }
         };
-        if let Some(root) = identity_session_root {
-            builder = builder
-                .cache_policy(ClientCachePolicy::Directory(root.clone()))
-                .identity_session_storage(IdentitySessionStoragePolicy::EncryptedDirectory(root));
+        match (identity_session_root, identity_session_key) {
+            (Some(root), key) => {
+                builder = match key {
+                    Some(key) => builder.identity_session_storage(
+                        IdentitySessionStoragePolicy::HostSecureStorage {
+                            directory: root,
+                            key: tsinghua_kit_sdk::auth::IdentitySessionStorageKey::from_bytes(
+                                key.to_vec(),
+                            )?,
+                        },
+                    ),
+                    None => builder.identity_session_storage(
+                        IdentitySessionStoragePolicy::EncryptedDirectory(root),
+                    ),
+                };
+            }
+            (None, None) => {}
+            (None, Some(_)) => {
+                let Err(error) = NetworkProfileStoragePolicy::encrypted_directory("/", "") else {
+                    unreachable!("empty application namespace must be rejected")
+                };
+                return Err(error.into());
+            }
         }
         let inner = builder.build()?;
         Ok(Self {
@@ -4148,6 +4233,33 @@ impl ClientHandle {
         })
     }
 
+    /// Explicitly connects a Portal profile. An optional password is a
+    /// one-attempt override and is never persisted; absent an override, Rust
+    /// uses only a profile password explicitly saved earlier. EAP profiles
+    /// are rejected with `unsupported` and remain OS-managed.
+    pub async fn network_connect_portal(
+        &mut self,
+        prepared: &PreparedNetworkProfile,
+        password: Option<String>,
+    ) -> Result<PortalConnectionResultDto, SdkErrorDto> {
+        let result = self
+            .inner
+            .network()
+            .connect_portal_profile(&prepared.inner, password)
+            .await?;
+        Ok(portal_connection_result(result))
+    }
+
+    /// Explicitly disconnects the current process's proven Portal target.
+    /// The operation cannot be recreated from a saved profile or an
+    /// observation after this Client is disposed.
+    pub async fn network_disconnect_portal(
+        &mut self,
+    ) -> Result<PortalConnectionResultDto, SdkErrorDto> {
+        let result = self.inner.network().disconnect_portal().await?;
+        Ok(portal_connection_result(result))
+    }
+
     fn clear_library_availability_descendants(&mut self) {
         self.library_availability_references.clear();
         self.library_seat_reference_ids.clear();
@@ -4238,11 +4350,13 @@ impl ClientHandle {
         password: String,
         stage: LoginStageDto,
         trust_device: bool,
+        remember_credentials: bool,
     ) -> Result<IdentityLoginResultDto, SdkErrorDto> {
         self.invalidate_auth_bound_references();
         let request = IdentityLoginRequest::new(username, password)
             .stage(stage.into())
-            .trust_device(trust_device);
+            .trust_device(trust_device)
+            .remember_credentials(remember_credentials);
         let outcome = self.inner.auth().identity().login(request).await?;
         Ok(map_identity_outcome(&mut self.inner, outcome))
     }
@@ -4296,18 +4410,53 @@ impl ClientHandle {
         &mut self,
         username: String,
         password: String,
+        remember_credentials: bool,
     ) -> Result<SelfServiceCaptchaDto, SdkErrorDto> {
         self.invalidate_auth_bound_references();
         let captcha = self
             .inner
             .auth()
             .self_service()
-            .start_login(SelfServiceLoginRequest::new(username, password))
+            .start_login(
+                SelfServiceLoginRequest::new(username, password)
+                    .remember_credentials(remember_credentials),
+            )
             .await?;
         Ok(SelfServiceCaptchaDto {
             content_type: captcha.content_type().to_owned(),
             bytes: captcha.bytes().to_vec(),
         })
+    }
+
+    /// Starts the SelfService captcha flow using an explicitly requested
+    /// stored credential. Passwords remain inside Rust.
+    pub async fn start_saved_self_service_login(
+        &mut self,
+        username: String,
+    ) -> Result<SelfServiceCaptchaDto, SdkErrorDto> {
+        self.invalidate_auth_bound_references();
+        let captcha = self
+            .inner
+            .auth()
+            .self_service()
+            .start_saved_login(username)
+            .await?;
+        Ok(SelfServiceCaptchaDto {
+            content_type: captcha.content_type().to_owned(),
+            bytes: captcha.bytes().to_vec(),
+        })
+    }
+
+    /// Forgets one stored SelfService password without changing its session.
+    pub fn forget_saved_self_service_credentials(
+        &mut self,
+        username: String,
+    ) -> Result<(), SdkErrorDto> {
+        self.inner
+            .auth()
+            .self_service()
+            .forget_saved_credentials(&username)?;
+        Ok(())
     }
 
     /// Explicitly refreshes the current SelfService image challenge.
@@ -4335,9 +4484,17 @@ impl ClientHandle {
             .self_service()
             .submit_captcha(answer, sms_code)
             .await?;
+        let credentials_saved = matches!(
+            &outcome,
+            SelfServiceLoginOutcome::Authenticated {
+                credentials_saved: true,
+                ..
+            }
+        );
         Ok(SelfServiceLoginResultDto {
             status: map_auth_status(self.inner.auth().status()),
             requires_interaction: matches!(outcome, SelfServiceLoginOutcome::NeedsInteraction),
+            credentials_saved,
         })
     }
 
@@ -4532,7 +4689,8 @@ mod tests {
     };
 
     fn client() -> ClientHandle {
-        ClientHandle::new(None, None, None, None, None).expect("memory-only client")
+        ClientHandle::new(None, None, None, None, None, None, None, None, None)
+            .expect("memory-only client")
     }
 
     #[test]
@@ -4574,6 +4732,92 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn bridge_identity_credential_opt_in_requires_configured_storage() {
+        let mut client = client();
+        let error = client
+            .login_identity(
+                "fixture-identity".to_owned(),
+                "synthetic-password".to_owned(),
+                LoginStageDto::Auto,
+                false,
+                true,
+            )
+            .await
+            .unwrap_err();
+
+        assert_eq!(error.code, "storage_unavailable");
+        assert_eq!(
+            client.auth_status().identity.state,
+            AccountStateDto::SignedOut
+        );
+        let debug = format!("{error:?}");
+        assert!(!debug.contains("fixture-identity"));
+        assert!(!debug.contains("synthetic-password"));
+    }
+
+    #[tokio::test]
+    async fn bridge_self_service_credential_opt_in_requires_separate_storage() {
+        let mut client = client();
+        let error = client
+            .start_self_service_login(
+                "fixture-self-service".to_owned(),
+                "synthetic-password".to_owned(),
+                true,
+            )
+            .await
+            .expect_err("SelfService credentials require a separate store");
+
+        assert_eq!(error.service, "self_service_auth");
+        assert_eq!(error.code, "storage_unavailable");
+        assert_eq!(
+            client.auth_status().identity.state,
+            AccountStateDto::SignedOut
+        );
+        assert_eq!(
+            client.auth_status().self_service.state,
+            AccountStateDto::SignedOut
+        );
+        let debug = format!("{error:?}");
+        assert!(!debug.contains("fixture-self-service"));
+        assert!(!debug.contains("synthetic-password"));
+    }
+
+    #[test]
+    fn bridge_auth_credential_storage_is_independent_from_session_storage() {
+        let root = std::env::temp_dir().join(format!(
+            "tsinghua-kit-auth-credentials-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let directory = root
+            .join("TsinghuaKit")
+            .join("auth-credentials")
+            .join("org.example.credentials-test");
+        let mut client = ClientHandle::new(
+            None,
+            Some(root.to_string_lossy().into_owned()),
+            Some("org.example.credentials-test".to_owned()),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .expect("Auth credential storage can be configured without session snapshots");
+        assert!(directory.is_dir());
+        assert_eq!(
+            client.auth_status().identity.state,
+            AccountStateDto::SignedOut
+        );
+        assert_eq!(
+            client.auth_status().self_service.state,
+            AccountStateDto::SignedOut
+        );
+        drop(client);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
     async fn bridge_identity_session_storage_is_opt_in_and_revalidation_is_explicit() {
         let root = std::env::temp_dir().join(format!(
             "tsinghua-kit-identity-session-{}",
@@ -4583,8 +4827,12 @@ mod tests {
             None,
             None,
             None,
+            None,
+            None,
+            None,
             Some(root.to_string_lossy().into_owned()),
             Some("org.example.identity-session-test".to_owned()),
+            None,
         )
         .expect("explicitly configured private session directory");
 
@@ -4597,6 +4845,94 @@ mod tests {
             .expect("a fresh session revalidation is a local no-op");
         assert_eq!(reconciled.identity.state, AccountStateDto::SignedOut);
         assert_eq!(reconciled.self_service.state, AccountStateDto::SignedOut);
+
+        drop(client);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn bridge_identity_session_accepts_a_host_key_separate_from_profile_storage() {
+        let key =
+            tsinghua_kit_sdk::auth::IdentitySessionStorageKey::from_bytes(vec![0x71; 32]).unwrap();
+        assert_eq!(format!("{key:?}"), "IdentitySessionStorageKey([REDACTED])");
+        let root = std::env::temp_dir().join(format!(
+            "tsinghua-kit-host-identity-key-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let mut client = ClientHandle::new(
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(root.to_string_lossy().into_owned()),
+            Some("org.example.identity-key-test".to_owned()),
+            Some(vec![0x71; 32]),
+        )
+        .expect("Identity snapshots accept a distinct host-held key");
+        let status = client.auth_status();
+        assert_eq!(status.identity.state, AccountStateDto::SignedOut);
+        assert_eq!(status.self_service.state, AccountStateDto::SignedOut);
+        drop(client);
+
+        let error = match ClientHandle::new(
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(root.to_string_lossy().into_owned()),
+            Some("org.example.identity-key-test".to_owned()),
+            Some(vec![0x72; 31]),
+        ) {
+            Ok(_) => panic!("Identity session keys must be exactly 32 bytes"),
+            Err(error) => error,
+        };
+        assert_eq!(error.code, "invalid_input");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn bridge_business_cache_and_identity_session_use_independent_directories() {
+        let root = std::env::temp_dir().join(format!(
+            "tsinghua-kit-independent-storage-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let cache_root = root.join("service-cache");
+        let identity_root = root.join("identity-state");
+        let identity_session_directory = identity_root
+            .join("TsinghuaKit")
+            .join("identity-session")
+            .join("org.example.independent-storage-test");
+        let mut client = ClientHandle::new(
+            Some(cache_root.to_string_lossy().into_owned()),
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(identity_root.to_string_lossy().into_owned()),
+            Some("org.example.independent-storage-test".to_owned()),
+            None,
+        )
+        .expect("service cache and Identity snapshot may use separate roots");
+
+        assert!(cache_root.is_dir());
+        assert!(identity_session_directory.is_dir());
+        assert_ne!(
+            std::fs::canonicalize(&cache_root).unwrap(),
+            std::fs::canonicalize(&identity_session_directory).unwrap(),
+        );
+        assert_eq!(
+            client.auth_status().identity.state,
+            AccountStateDto::SignedOut
+        );
+        assert_eq!(
+            client.auth_status().self_service.state,
+            AccountStateDto::SignedOut
+        );
 
         drop(client);
         let _ = std::fs::remove_dir_all(root);
@@ -4662,13 +4998,84 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn bridge_portal_operations_reject_eap_and_unproven_disconnects() {
+        let mut client = client();
+        let portal = client
+            .save_network_profile(
+                "Portal".to_owned(),
+                "portal-user".to_owned(),
+                NetworkAccessMethodDto::Portal,
+                None,
+            )
+            .unwrap();
+        let eap = client
+            .save_network_profile(
+                "Tsinghua Secure".to_owned(),
+                "eap-user".to_owned(),
+                NetworkAccessMethodDto::SystemWifiEap,
+                Some("eap-only-secret".to_owned()),
+            )
+            .unwrap();
+        let portal_fill = client
+            .prepare_network_profile_fill(portal.id.clone())
+            .unwrap();
+        let eap_fill = client.prepare_network_profile_fill(eap.id.clone()).unwrap();
+
+        let missing_portal_password = client
+            .network_connect_portal(&portal_fill, None)
+            .await
+            .unwrap_err();
+        assert_eq!(missing_portal_password.service, "network");
+        assert_eq!(missing_portal_password.code, "interaction_required");
+
+        let eap_rejection = client
+            .network_connect_portal(&eap_fill, Some("eap-only-secret".to_owned()))
+            .await
+            .unwrap_err();
+        assert_eq!(eap_rejection.service, "network");
+        assert_eq!(eap_rejection.code, "unsupported");
+
+        client
+            .update_network_profile(
+                eap.id,
+                "Portal after edit".to_owned(),
+                "changed-user".to_owned(),
+                NetworkAccessMethodDto::Portal,
+                None,
+            )
+            .unwrap();
+        let stale_profile_rejection = client
+            .network_connect_portal(&eap_fill, Some("one-shot-only".to_owned()))
+            .await
+            .unwrap_err();
+        assert_eq!(stale_profile_rejection.service, "network");
+        assert_eq!(stale_profile_rejection.code, "context_mismatch");
+
+        let disconnect_rejection = client.network_disconnect_portal().await.unwrap_err();
+        assert_eq!(disconnect_rejection.service, "network");
+        assert_eq!(disconnect_rejection.code, "context_mismatch");
+        let status = client.auth_status();
+        assert_eq!(status.identity.state, AccountStateDto::SignedOut);
+        assert_eq!(status.self_service.state, AccountStateDto::SignedOut);
+    }
+
     #[test]
     fn unmatched_storage_configuration_is_rejected_before_client_creation() {
-        let error =
-            match ClientHandle::new(Some("/tmp/profiles".to_owned()), None, None, None, None) {
-                Ok(_) => panic!("mismatched storage options must be rejected"),
-                Err(error) => error,
-            };
+        let error = match ClientHandle::new(
+            None,
+            None,
+            None,
+            Some("/tmp/profiles".to_owned()),
+            None,
+            None,
+            None,
+            None,
+            None,
+        ) {
+            Ok(_) => panic!("mismatched storage options must be rejected"),
+            Err(error) => error,
+        };
         assert_eq!(error.service, "network");
         assert_eq!(error.code, "invalid_input");
         assert!(!error.diagnostic_id.is_empty());
@@ -4681,9 +5088,13 @@ mod tests {
             uuid::Uuid::new_v4().simple()
         ));
         let mut client = ClientHandle::new(
+            None,
+            None,
+            None,
             Some(root.to_string_lossy().into_owned()),
             Some("org.example.keychain-profile-test".to_owned()),
             Some(vec![0x4a; 32]),
+            None,
             None,
             None,
         )

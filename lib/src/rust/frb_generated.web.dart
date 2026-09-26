@@ -618,6 +618,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
       dynamic raw);
 
   @protected
+  PortalConnectionResultDto dco_decode_portal_connection_result_dto(
+      dynamic raw);
+
+  @protected
+  PortalConnectionStateDto dco_decode_portal_connection_state_dto(dynamic raw);
+
+  @protected
   PortalObservationDto dco_decode_portal_observation_dto(dynamic raw);
 
   @protected
@@ -1426,6 +1433,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PortalAddressRegistrationDto sse_decode_portal_address_registration_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  PortalConnectionResultDto sse_decode_portal_connection_result_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  PortalConnectionStateDto sse_decode_portal_connection_state_dto(
       SseDeserializer deserializer);
 
   @protected
@@ -2273,6 +2288,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_portal_address_registration_dto(
       PortalAddressRegistrationDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_portal_connection_result_dto(
+      PortalConnectionResultDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_portal_connection_state_dto(
+      PortalConnectionStateDto self, SseSerializer serializer);
 
   @protected
   void sse_encode_portal_observation_dto(

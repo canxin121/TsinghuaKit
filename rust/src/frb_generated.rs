@@ -40,7 +40,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -10298000;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1973216546;
 
 // Section: executor
 
@@ -848,6 +848,60 @@ fn wire__crate__sdk_api__ClientHandle_electricity_remainder_impl(
                     })()
                     .await,
                 )
+            }
+        },
+    )
+}
+fn wire__crate__sdk_api__ClientHandle_forget_saved_self_service_credentials_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "ClientHandle_forget_saved_self_service_credentials",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<ClientHandle>,
+            >>::sse_decode(&mut deserializer);
+            let api_username = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::sdk_api::SdkErrorDto>((move || {
+                    let mut api_that_guard = None;
+                    let decode_indices_ =
+                        flutter_rust_bridge::for_generated::lockable_compute_decode_order(vec![
+                            flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                &api_that, 0, true,
+                            ),
+                        ]);
+                    for i in decode_indices_ {
+                        match i {
+                            0 => api_that_guard = Some(api_that.lockable_decode_sync_ref_mut()),
+                            _ => unreachable!(),
+                        }
+                    }
+                    let mut api_that_guard = api_that_guard.unwrap();
+                    let output_ok =
+                        crate::sdk_api::ClientHandle::forget_saved_self_service_credentials(
+                            &mut *api_that_guard,
+                            api_username,
+                        )?;
+                    std::result::Result::Ok(output_ok)
+                })())
             }
         },
     )
@@ -1893,6 +1947,7 @@ fn wire__crate__sdk_api__ClientHandle_login_identity_impl(
             let api_password = <String>::sse_decode(&mut deserializer);
             let api_stage = <crate::sdk_api::LoginStageDto>::sse_decode(&mut deserializer);
             let api_trust_device = <bool>::sse_decode(&mut deserializer);
+            let api_remember_credentials = <bool>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
                 transform_result_sse::<_, crate::sdk_api::SdkErrorDto>(
@@ -1920,6 +1975,7 @@ fn wire__crate__sdk_api__ClientHandle_login_identity_impl(
                             api_password,
                             api_stage,
                             api_trust_device,
+                            api_remember_credentials,
                         )
                         .await?;
                         std::result::Result::Ok(output_ok)
@@ -2076,6 +2132,141 @@ fn wire__crate__sdk_api__ClientHandle_logout_self_service_impl(
                     )?;
                     std::result::Result::Ok(output_ok)
                 })())
+            }
+        },
+    )
+}
+fn wire__crate__sdk_api__ClientHandle_network_connect_portal_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "ClientHandle_network_connect_portal",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<ClientHandle>,
+            >>::sse_decode(&mut deserializer);
+            let api_prepared = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<PreparedNetworkProfile>,
+            >>::sse_decode(&mut deserializer);
+            let api_password = <Option<String>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, crate::sdk_api::SdkErrorDto>(
+                    (move || async move {
+                        let mut api_that_guard = None;
+                        let mut api_prepared_guard = None;
+                        let decode_indices_ =
+                            flutter_rust_bridge::for_generated::lockable_compute_decode_order(
+                                vec![
+                                    flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                        &api_that, 0, true,
+                                    ),
+                                    flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                        &api_prepared,
+                                        1,
+                                        false,
+                                    ),
+                                ],
+                            );
+                        for i in decode_indices_ {
+                            match i {
+                                0 => {
+                                    api_that_guard =
+                                        Some(api_that.lockable_decode_async_ref_mut().await)
+                                }
+                                1 => {
+                                    api_prepared_guard =
+                                        Some(api_prepared.lockable_decode_async_ref().await)
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
+                        let mut api_that_guard = api_that_guard.unwrap();
+                        let api_prepared_guard = api_prepared_guard.unwrap();
+                        let output_ok = crate::sdk_api::ClientHandle::network_connect_portal(
+                            &mut *api_that_guard,
+                            &*api_prepared_guard,
+                            api_password,
+                        )
+                        .await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__sdk_api__ClientHandle_network_disconnect_portal_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "ClientHandle_network_disconnect_portal",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<ClientHandle>,
+            >>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, crate::sdk_api::SdkErrorDto>(
+                    (move || async move {
+                        let mut api_that_guard = None;
+                        let decode_indices_ =
+                            flutter_rust_bridge::for_generated::lockable_compute_decode_order(
+                                vec![flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                    &api_that, 0, true,
+                                )],
+                            );
+                        for i in decode_indices_ {
+                            match i {
+                                0 => {
+                                    api_that_guard =
+                                        Some(api_that.lockable_decode_async_ref_mut().await)
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
+                        let mut api_that_guard = api_that_guard.unwrap();
+                        let output_ok = crate::sdk_api::ClientHandle::network_disconnect_portal(
+                            &mut *api_that_guard,
+                        )
+                        .await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
             }
         },
     )
@@ -2275,20 +2466,28 @@ fn wire__crate__sdk_api__ClientHandle_new_impl(
             };
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_cache_root = <Option<String>>::sse_decode(&mut deserializer);
+            let api_credential_storage_root = <Option<String>>::sse_decode(&mut deserializer);
+            let api_credential_storage_namespace = <Option<String>>::sse_decode(&mut deserializer);
             let api_profile_storage_root = <Option<String>>::sse_decode(&mut deserializer);
             let api_application_namespace = <Option<String>>::sse_decode(&mut deserializer);
             let api_profile_storage_key = <Option<Vec<u8>>>::sse_decode(&mut deserializer);
             let api_identity_session_root = <Option<String>>::sse_decode(&mut deserializer);
             let api_identity_session_namespace = <Option<String>>::sse_decode(&mut deserializer);
+            let api_identity_session_key = <Option<Vec<u8>>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, crate::sdk_api::SdkErrorDto>((move || {
                     let output_ok = crate::sdk_api::ClientHandle::new(
+                        api_cache_root,
+                        api_credential_storage_root,
+                        api_credential_storage_namespace,
                         api_profile_storage_root,
                         api_application_namespace,
                         api_profile_storage_key,
                         api_identity_session_root,
                         api_identity_session_namespace,
+                        api_identity_session_key,
                     )?;
                     std::result::Result::Ok(output_ok)
                 })())
@@ -3664,6 +3863,67 @@ fn wire__crate__sdk_api__ClientHandle_service_hall_tasks_impl(
         },
     )
 }
+fn wire__crate__sdk_api__ClientHandle_start_saved_self_service_login_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "ClientHandle_start_saved_self_service_login",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<ClientHandle>,
+            >>::sse_decode(&mut deserializer);
+            let api_username = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, crate::sdk_api::SdkErrorDto>(
+                    (move || async move {
+                        let mut api_that_guard = None;
+                        let decode_indices_ =
+                            flutter_rust_bridge::for_generated::lockable_compute_decode_order(
+                                vec![flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                    &api_that, 0, true,
+                                )],
+                            );
+                        for i in decode_indices_ {
+                            match i {
+                                0 => {
+                                    api_that_guard =
+                                        Some(api_that.lockable_decode_async_ref_mut().await)
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
+                        let mut api_that_guard = api_that_guard.unwrap();
+                        let output_ok =
+                            crate::sdk_api::ClientHandle::start_saved_self_service_login(
+                                &mut *api_that_guard,
+                                api_username,
+                            )
+                            .await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
 fn wire__crate__sdk_api__ClientHandle_start_self_service_login_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -3691,6 +3951,7 @@ fn wire__crate__sdk_api__ClientHandle_start_self_service_login_impl(
             >>::sse_decode(&mut deserializer);
             let api_username = <String>::sse_decode(&mut deserializer);
             let api_password = <String>::sse_decode(&mut deserializer);
+            let api_remember_credentials = <bool>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
                 transform_result_sse::<_, crate::sdk_api::SdkErrorDto>(
@@ -3716,6 +3977,7 @@ fn wire__crate__sdk_api__ClientHandle_start_self_service_login_impl(
                             &mut *api_that_guard,
                             api_username,
                             api_password,
+                            api_remember_credentials,
                         )
                         .await?;
                         std::result::Result::Ok(output_ok)
@@ -6200,6 +6462,31 @@ impl SseDecode for crate::sdk_api::PortalAddressRegistrationDto {
     }
 }
 
+impl SseDecode for crate::sdk_api::PortalConnectionResultDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_state = <crate::sdk_api::PortalConnectionStateDto>::sse_decode(deserializer);
+        let mut var_observedAtUtc = <String>::sse_decode(deserializer);
+        return crate::sdk_api::PortalConnectionResultDto {
+            state: var_state,
+            observed_at_utc: var_observedAtUtc,
+        };
+    }
+}
+
+impl SseDecode for crate::sdk_api::PortalConnectionStateDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::sdk_api::PortalConnectionStateDto::Connected,
+            1 => crate::sdk_api::PortalConnectionStateDto::Disconnected,
+            2 => crate::sdk_api::PortalConnectionStateDto::Unknown,
+            _ => unreachable!("Invalid variant for PortalConnectionStateDto: {}", inner),
+        };
+    }
+}
+
 impl SseDecode for crate::sdk_api::PortalObservationDto {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -6510,9 +6797,11 @@ impl SseDecode for crate::sdk_api::SelfServiceLoginResultDto {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_status = <crate::sdk_api::AuthStatusDto>::sse_decode(deserializer);
         let mut var_requiresInteraction = <bool>::sse_decode(deserializer);
+        let mut var_credentialsSaved = <bool>::sse_decode(deserializer);
         return crate::sdk_api::SelfServiceLoginResultDto {
             status: var_status,
             requires_interaction: var_requiresInteraction,
+            credentials_saved: var_credentialsSaved,
         };
     }
 }
@@ -6916,300 +7205,324 @@ fn pde_ffi_dispatcher_primary_impl(
             rust_vec_len,
             data_len,
         ),
-        15 => wire__crate__sdk_api__ClientHandle_identity_interaction_impl(
+        15 => wire__crate__sdk_api__ClientHandle_forget_saved_self_service_credentials_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        16 => wire__crate__sdk_api__ClientHandle_identity_revalidate_restored_session_impl(
+        16 => wire__crate__sdk_api__ClientHandle_identity_interaction_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        17 => wire__crate__sdk_api__ClientHandle_is_current_network_profile_fill_impl(
+        17 => wire__crate__sdk_api__ClientHandle_identity_revalidate_restored_session_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        18 => wire__crate__sdk_api__ClientHandle_learn_announcements_impl(
+        18 => wire__crate__sdk_api__ClientHandle_is_current_network_profile_fill_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        19 => {
+        19 => wire__crate__sdk_api__ClientHandle_learn_announcements_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        20 => {
             wire__crate__sdk_api__ClientHandle_learn_courses_impl(port, ptr, rust_vec_len, data_len)
         }
-        20 => wire__crate__sdk_api__ClientHandle_learn_discussions_impl(
+        21 => wire__crate__sdk_api__ClientHandle_learn_discussions_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        21 => wire__crate__sdk_api__ClientHandle_learn_file_categories_impl(
+        22 => wire__crate__sdk_api__ClientHandle_learn_file_categories_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        22 => {
+        23 => {
             wire__crate__sdk_api__ClientHandle_learn_files_impl(port, ptr, rust_vec_len, data_len)
         }
-        23 => wire__crate__sdk_api__ClientHandle_learn_homework_impl(
+        24 => wire__crate__sdk_api__ClientHandle_learn_homework_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        24 => wire__crate__sdk_api__ClientHandle_learn_homework_detail_impl(
+        25 => wire__crate__sdk_api__ClientHandle_learn_homework_detail_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        25 => wire__crate__sdk_api__ClientHandle_learn_save_file_impl(
+        26 => wire__crate__sdk_api__ClientHandle_learn_save_file_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        26 => wire__crate__sdk_api__ClientHandle_library_directory_impl(
+        27 => wire__crate__sdk_api__ClientHandle_library_directory_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        27 => wire__crate__sdk_api__ClientHandle_library_floors_impl(
+        28 => wire__crate__sdk_api__ClientHandle_library_floors_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        28 => {
+        29 => {
             wire__crate__sdk_api__ClientHandle_library_seats_impl(port, ptr, rust_vec_len, data_len)
         }
-        29 => wire__crate__sdk_api__ClientHandle_library_sections_impl(
+        30 => wire__crate__sdk_api__ClientHandle_library_sections_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        30 => wire__crate__sdk_api__ClientHandle_library_sockets_impl(
+        31 => wire__crate__sdk_api__ClientHandle_library_sockets_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        31 => wire__crate__sdk_api__ClientHandle_library_time_windows_impl(
+        32 => wire__crate__sdk_api__ClientHandle_library_time_windows_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        32 => wire__crate__sdk_api__ClientHandle_login_identity_impl(
+        33 => wire__crate__sdk_api__ClientHandle_login_identity_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        33 => wire__crate__sdk_api__ClientHandle_logout_all_impl(port, ptr, rust_vec_len, data_len),
-        34 => wire__crate__sdk_api__ClientHandle_logout_identity_impl(
+        34 => wire__crate__sdk_api__ClientHandle_logout_all_impl(port, ptr, rust_vec_len, data_len),
+        35 => wire__crate__sdk_api__ClientHandle_logout_identity_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        35 => wire__crate__sdk_api__ClientHandle_logout_self_service_impl(
+        36 => wire__crate__sdk_api__ClientHandle_logout_self_service_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        36 => wire__crate__sdk_api__ClientHandle_network_portal_observation_impl(
+        37 => wire__crate__sdk_api__ClientHandle_network_connect_portal_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        37 => wire__crate__sdk_api__ClientHandle_network_profile_password_for_fill_impl(
+        38 => wire__crate__sdk_api__ClientHandle_network_disconnect_portal_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        38 => wire__crate__sdk_api__ClientHandle_network_profiles_impl(
+        39 => wire__crate__sdk_api__ClientHandle_network_portal_observation_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        39 => wire__crate__sdk_api__ClientHandle_new_impl(port, ptr, rust_vec_len, data_len),
-        40 => {
+        40 => wire__crate__sdk_api__ClientHandle_network_profile_password_for_fill_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        41 => wire__crate__sdk_api__ClientHandle_network_profiles_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        42 => wire__crate__sdk_api__ClientHandle_new_impl(port, ptr, rust_vec_len, data_len),
+        43 => {
             wire__crate__sdk_api__ClientHandle_news_article_impl(port, ptr, rust_vec_len, data_len)
         }
-        41 => {
+        44 => {
             wire__crate__sdk_api__ClientHandle_news_articles_impl(port, ptr, rust_vec_len, data_len)
         }
-        42 => {
+        45 => {
             wire__crate__sdk_api__ClientHandle_news_catalog_impl(port, ptr, rust_vec_len, data_len)
         }
-        43 => wire__crate__sdk_api__ClientHandle_news_favorites_impl(
+        46 => wire__crate__sdk_api__ClientHandle_news_favorites_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        44 => {
+        47 => {
             wire__crate__sdk_api__ClientHandle_news_search_impl(port, ptr, rust_vec_len, data_len)
         }
-        45 => wire__crate__sdk_api__ClientHandle_news_subscription_articles_impl(
+        48 => wire__crate__sdk_api__ClientHandle_news_subscription_articles_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        46 => wire__crate__sdk_api__ClientHandle_news_subscriptions_impl(
+        49 => wire__crate__sdk_api__ClientHandle_news_subscriptions_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        47 => wire__crate__sdk_api__ClientHandle_prepare_network_profile_fill_impl(
+        50 => wire__crate__sdk_api__ClientHandle_prepare_network_profile_fill_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        48 => wire__crate__sdk_api__ClientHandle_refresh_self_service_captcha_impl(
+        51 => wire__crate__sdk_api__ClientHandle_refresh_self_service_captcha_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        49 => wire__crate__sdk_api__ClientHandle_registrar_exams_impl(
+        52 => wire__crate__sdk_api__ClientHandle_registrar_exams_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        50 => wire__crate__sdk_api__ClientHandle_registrar_grades_impl(
+        53 => wire__crate__sdk_api__ClientHandle_registrar_grades_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        51 => wire__crate__sdk_api__ClientHandle_registrar_semester_schedule_impl(
+        54 => wire__crate__sdk_api__ClientHandle_registrar_semester_schedule_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        52 => wire__crate__sdk_api__ClientHandle_save_network_profile_impl(
+        55 => wire__crate__sdk_api__ClientHandle_save_network_profile_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        53 => wire__crate__sdk_api__ClientHandle_self_service_account_impl(
+        56 => wire__crate__sdk_api__ClientHandle_self_service_account_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        54 => wire__crate__sdk_api__ClientHandle_self_service_disconnect_device_impl(
+        57 => wire__crate__sdk_api__ClientHandle_self_service_disconnect_device_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        55 => wire__crate__sdk_api__ClientHandle_self_service_login_phase_impl(
+        58 => wire__crate__sdk_api__ClientHandle_self_service_login_phase_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        56 => wire__crate__sdk_api__ClientHandle_self_service_online_devices_impl(
+        59 => wire__crate__sdk_api__ClientHandle_self_service_online_devices_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        57 => wire__crate__sdk_api__ClientHandle_self_service_usage_impl(
+        60 => wire__crate__sdk_api__ClientHandle_self_service_usage_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        58 => wire__crate__sdk_api__ClientHandle_send_identity_code_impl(
+        61 => wire__crate__sdk_api__ClientHandle_send_identity_code_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        59 => wire__crate__sdk_api__ClientHandle_service_hall_pending_impl(
+        62 => wire__crate__sdk_api__ClientHandle_service_hall_pending_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        60 => wire__crate__sdk_api__ClientHandle_service_hall_phase_details_impl(
+        63 => wire__crate__sdk_api__ClientHandle_service_hall_phase_details_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        61 => wire__crate__sdk_api__ClientHandle_service_hall_services_impl(
+        64 => wire__crate__sdk_api__ClientHandle_service_hall_services_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        62 => wire__crate__sdk_api__ClientHandle_service_hall_tasks_impl(
+        65 => wire__crate__sdk_api__ClientHandle_service_hall_tasks_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        63 => wire__crate__sdk_api__ClientHandle_start_self_service_login_impl(
+        66 => wire__crate__sdk_api__ClientHandle_start_saved_self_service_login_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        64 => wire__crate__sdk_api__ClientHandle_submit_identity_code_impl(
+        67 => wire__crate__sdk_api__ClientHandle_start_self_service_login_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        65 => wire__crate__sdk_api__ClientHandle_submit_self_service_captcha_impl(
+        68 => wire__crate__sdk_api__ClientHandle_submit_identity_code_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        66 => wire__crate__sdk_api__ClientHandle_update_network_profile_impl(
+        69 => wire__crate__sdk_api__ClientHandle_submit_self_service_captcha_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        67 => wire__crate__sdk_api__NetworkProfilePasswordHandle_expose_for_form_impl(
+        70 => wire__crate__sdk_api__ClientHandle_update_network_profile_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        68 => wire__crate__sdk_api__PreparedNetworkProfile_form_fields_impl(
+        71 => wire__crate__sdk_api__NetworkProfilePasswordHandle_expose_for_form_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        69 => wire__crate__sdk_api__suggest_identity_login_stage_impl(
+        72 => wire__crate__sdk_api__PreparedNetworkProfile_form_fields_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        73 => wire__crate__sdk_api__suggest_identity_login_stage_impl(
             port,
             ptr,
             rust_vec_len,
@@ -9474,6 +9787,49 @@ impl flutter_rust_bridge::IntoIntoDart<crate::sdk_api::PortalAddressRegistration
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::sdk_api::PortalConnectionResultDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.state.into_into_dart().into_dart(),
+            self.observed_at_utc.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::sdk_api::PortalConnectionResultDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::sdk_api::PortalConnectionResultDto>
+    for crate::sdk_api::PortalConnectionResultDto
+{
+    fn into_into_dart(self) -> crate::sdk_api::PortalConnectionResultDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::sdk_api::PortalConnectionStateDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Connected => 0.into_dart(),
+            Self::Disconnected => 1.into_dart(),
+            Self::Unknown => 2.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::sdk_api::PortalConnectionStateDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::sdk_api::PortalConnectionStateDto>
+    for crate::sdk_api::PortalConnectionStateDto
+{
+    fn into_into_dart(self) -> crate::sdk_api::PortalConnectionStateDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::sdk_api::PortalObservationDto {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -9927,6 +10283,7 @@ impl flutter_rust_bridge::IntoDart for crate::sdk_api::SelfServiceLoginResultDto
         [
             self.status.into_into_dart().into_dart(),
             self.requires_interaction.into_into_dart().into_dart(),
+            self.credentials_saved.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -12007,6 +12364,31 @@ impl SseEncode for crate::sdk_api::PortalAddressRegistrationDto {
     }
 }
 
+impl SseEncode for crate::sdk_api::PortalConnectionResultDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <crate::sdk_api::PortalConnectionStateDto>::sse_encode(self.state, serializer);
+        <String>::sse_encode(self.observed_at_utc, serializer);
+    }
+}
+
+impl SseEncode for crate::sdk_api::PortalConnectionStateDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::sdk_api::PortalConnectionStateDto::Connected => 0,
+                crate::sdk_api::PortalConnectionStateDto::Disconnected => 1,
+                crate::sdk_api::PortalConnectionStateDto::Unknown => 2,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
 impl SseEncode for crate::sdk_api::PortalObservationDto {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -12276,6 +12658,7 @@ impl SseEncode for crate::sdk_api::SelfServiceLoginResultDto {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <crate::sdk_api::AuthStatusDto>::sse_encode(self.status, serializer);
         <bool>::sse_encode(self.requires_interaction, serializer);
+        <bool>::sse_encode(self.credentials_saved, serializer);
     }
 }
 

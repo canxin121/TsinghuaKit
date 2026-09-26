@@ -96,54 +96,155 @@ abstract final class TsinghuaKit {
   /// Creates one single-runtime Client. Construction performs no login or
   /// network request. Network profiles are memory-only by default.
   static Future<TsinghuaKitClient> createClient({
+    ClientCachePersistence cache = const ClientCachePersistence.memoryOnly(),
+    AuthCredentialPersistence authCredentials =
+        const AuthCredentialPersistence.memoryOnly(),
     NetworkProfilePersistence networkProfiles =
         const NetworkProfilePersistence.memoryOnly(),
     IdentitySessionPersistence identitySession =
         const IdentitySessionPersistence.memoryOnly(),
   }) async {
     await initialize();
-    final (storageRoot, applicationNamespace, profileStorageKey) =
-        switch (networkProfiles) {
-      MemoryOnlyNetworkProfilePersistence() => (null, null, null),
-      EncryptedDirectoryNetworkProfilePersistence(
-        :final root,
-        :final namespace
-      ) =>
-        (root, namespace, null),
-      PlatformSecureStorageNetworkProfilePersistence(
-        :final root,
-        :final namespace,
-      ) =>
-        (
-          root,
-          namespace,
-          await _loadOrCreateNetworkProfileKey(namespace),
-        ),
+    final cacheRoot = switch (cache) {
+      MemoryOnlyClientCachePersistence() => null,
+      DirectoryClientCachePersistence(:final root) => root,
     };
-    final (identitySessionRoot, identitySessionNamespace) =
-        switch (identitySession) {
-      MemoryOnlyIdentitySessionPersistence() => (null, null),
-      EncryptedDirectoryIdentitySessionPersistence(
+    final (authCredentialRoot, authCredentialNamespace) =
+        switch (authCredentials) {
+      MemoryOnlyAuthCredentialPersistence() => (null, null),
+      EncryptedDirectoryAuthCredentialPersistence(
         :final root,
         :final namespace,
       ) =>
         (root, namespace),
     };
-    final handle = await _sdkCall(() async {
-      try {
-        return await native.ClientHandle.newInstance(
+    Uint8List? profileStorageKey;
+    Uint8List? identitySessionKey;
+    try {
+      final (storageRoot, applicationNamespace, loadedProfileStorageKey) =
+          switch (networkProfiles) {
+        MemoryOnlyNetworkProfilePersistence() => (null, null, null),
+        EncryptedDirectoryNetworkProfilePersistence(
+          :final root,
+          :final namespace
+        ) =>
+          (root, namespace, null),
+        PlatformSecureStorageNetworkProfilePersistence(
+          :final root,
+          :final namespace,
+        ) =>
+          (
+            root,
+            namespace,
+            await _loadOrCreateNetworkProfileKey(namespace),
+          ),
+      };
+      profileStorageKey = loadedProfileStorageKey;
+      final (
+        identitySessionRoot,
+        identitySessionNamespace,
+        loadedIdentitySessionKey,
+      ) = switch (identitySession) {
+        MemoryOnlyIdentitySessionPersistence() => (null, null, null),
+        EncryptedDirectoryIdentitySessionPersistence(
+          :final root,
+          :final namespace,
+        ) =>
+          (root, namespace, null),
+        PlatformSecureStorageIdentitySessionPersistence(
+          :final root,
+          :final namespace,
+        ) =>
+          (root, namespace, await _loadOrCreateIdentitySessionKey(namespace)),
+      };
+      identitySessionKey = loadedIdentitySessionKey;
+      final handle = await _sdkCall(
+        () => native.ClientHandle.newInstance(
+          cacheRoot: cacheRoot,
+          credentialStorageRoot: authCredentialRoot,
+          credentialStorageNamespace: authCredentialNamespace,
           profileStorageRoot: storageRoot,
           applicationNamespace: applicationNamespace,
           profileStorageKey: profileStorageKey,
           identitySessionRoot: identitySessionRoot,
           identitySessionNamespace: identitySessionNamespace,
-        );
-      } finally {
-        profileStorageKey?.fillRange(0, profileStorageKey.length, 0);
-      }
-    });
-    return TsinghuaKitClient._(handle);
+          identitySessionKey: identitySessionKey,
+        ),
+      );
+      return TsinghuaKitClient._(handle);
+    } finally {
+      profileStorageKey?.fillRange(0, profileStorageKey.length, 0);
+      identitySessionKey?.fillRange(0, identitySessionKey.length, 0);
+    }
   }
+}
+
+/// Persistence choices for non-secret service read caches.
+///
+/// Service caches remain memory-only by default. They are independent from
+/// Identity's optional encrypted session snapshot and local network profiles.
+sealed class ClientCachePersistence {
+  const ClientCachePersistence();
+
+  /// Keeps read caches only for this Client's lifetime.
+  const factory ClientCachePersistence.memoryOnly() =
+      MemoryOnlyClientCachePersistence;
+
+  /// Persists read caches beneath this absolute app-private directory.
+  const factory ClientCachePersistence.directory({required String root}) =
+      DirectoryClientCachePersistence;
+}
+
+final class MemoryOnlyClientCachePersistence extends ClientCachePersistence {
+  const MemoryOnlyClientCachePersistence();
+}
+
+final class DirectoryClientCachePersistence extends ClientCachePersistence {
+  const DirectoryClientCachePersistence({required this.root});
+
+  /// Absolute private directory selected by the host application.
+  final String root;
+}
+
+/// Persistence choices for credentials the user explicitly chooses to
+/// remember in either Auth domain.
+///
+/// This store is separate from Auth session snapshots, service caches, and
+/// NetworkProfiles. Saved SelfService credentials only start an explicit
+/// captcha flow; they never bypass captcha or create a restored session.
+sealed class AuthCredentialPersistence {
+  const AuthCredentialPersistence();
+
+  /// Keeps Auth passwords only in memory.
+  const factory AuthCredentialPersistence.memoryOnly() =
+      MemoryOnlyAuthCredentialPersistence;
+
+  /// Stores explicitly remembered credentials in an encrypted private
+  /// directory. The encryption key is stored beside the ciphertext; this is
+  /// not equivalent to an operating-system Keychain.
+  const factory AuthCredentialPersistence.encryptedDirectory({
+    required String root,
+    required String namespace,
+  }) = EncryptedDirectoryAuthCredentialPersistence;
+}
+
+final class MemoryOnlyAuthCredentialPersistence
+    extends AuthCredentialPersistence {
+  const MemoryOnlyAuthCredentialPersistence();
+}
+
+final class EncryptedDirectoryAuthCredentialPersistence
+    extends AuthCredentialPersistence {
+  const EncryptedDirectoryAuthCredentialPersistence({
+    required this.root,
+    required this.namespace,
+  });
+
+  /// Absolute app-private directory.
+  final String root;
+
+  /// Stable application namespace, not an account name.
+  final String namespace;
 }
 
 final Map<String, Future<Uint8List>> _pendingProfileKeys = {};
@@ -171,10 +272,37 @@ Future<Uint8List> _loadOrCreateNetworkProfileKey(String namespace) {
   }).whenComplete(() => _pendingProfileKeys.remove(namespace));
 }
 
+final Map<String, Future<Uint8List>> _pendingIdentitySessionKeys = {};
+
+Future<Uint8List> _loadOrCreateIdentitySessionKey(String namespace) {
+  return _pendingIdentitySessionKeys.putIfAbsent(namespace, () async {
+    const storage = FlutterSecureStorage();
+    final storageKey = 'org.tsinghua_kit.identity_session_key.$namespace';
+    final stored = await storage.read(key: storageKey);
+    if (stored != null) {
+      try {
+        final key = base64Url.decode(base64Url.normalize(stored));
+        if (key.length == 32) return Uint8List.fromList(key);
+      } on FormatException {
+        // Never rotate a malformed key implicitly: an existing snapshot may
+        // still depend on the original secure-store value.
+      }
+      throw StateError('The saved Identity session key is unavailable.');
+    }
+    final key = Uint8List.fromList(
+      List<int>.generate(32, (_) => Random.secure().nextInt(256)),
+    );
+    await storage.write(key: storageKey, value: base64UrlEncode(key));
+    return key;
+  }).whenComplete(() => _pendingIdentitySessionKeys.remove(namespace));
+}
+
 /// Persistence choices for the Identity-bound shared session snapshot.
 ///
 /// This is separate from SelfService account state and from local network
-/// fill profiles. The default keeps Auth sessions only in memory.
+/// fill profiles. The default keeps Auth sessions only in memory. Auth
+/// password storage is separately configured through AuthCredentialPersistence
+/// and requires a per-login opt-in.
 sealed class IdentitySessionPersistence {
   const IdentitySessionPersistence();
 
@@ -183,13 +311,25 @@ sealed class IdentitySessionPersistence {
       MemoryOnlyIdentitySessionPersistence;
 
   /// Explicitly stores an encrypted, device-bound Identity snapshot under a
-  /// host-selected app-private directory. The same directory stores Rust
-  /// caches. This backend is not an OS Keychain; its encryption key is stored
-  /// beside the encrypted data. Passwords are never saved.
+  /// host-selected app-private directory. Service caches use their own
+  /// ClientCachePersistence policy. This backend is not an OS Keychain; its
+  /// encryption key is stored beside the encrypted data. Auth passwords are
+  /// stored by the separate AuthCredentialPersistence policy.
   const factory IdentitySessionPersistence.encryptedDirectory({
     required String root,
     required String namespace,
   }) = EncryptedDirectoryIdentitySessionPersistence;
+
+  /// Stores the encrypted Identity snapshot in the host-selected app-private
+  /// directory and keeps its independent encryption key in platform secure
+  /// storage. The snapshot key uses its own secure-storage entry. A separately
+  /// opted-in Auth password remains in AuthCredentialPersistence, not in this
+  /// key entry or the cookie snapshot. Restored cookies still require
+  /// explicit Identity revalidation.
+  const factory IdentitySessionPersistence.platformSecureStorage({
+    required String root,
+    required String namespace,
+  }) = PlatformSecureStorageIdentitySessionPersistence;
 }
 
 /// Default memory-only Identity session storage.
@@ -210,6 +350,22 @@ final class EncryptedDirectoryIdentitySessionPersistence
   final String root;
 
   /// Stable application namespace. It is not an account name.
+  final String namespace;
+}
+
+/// Identity-session persistence backed by an encrypted private file and a
+/// separately stored platform key.
+final class PlatformSecureStorageIdentitySessionPersistence
+    extends IdentitySessionPersistence {
+  const PlatformSecureStorageIdentitySessionPersistence({
+    required this.root,
+    required this.namespace,
+  });
+
+  /// Absolute private application-data directory selected by the host.
+  final String root;
+
+  /// Stable application namespace, separate from NetworkProfile key names.
   final String namespace;
 }
 
@@ -398,11 +554,19 @@ class IdentityAuthClient {
       );
 
   /// Starts one explicit Identity login attempt.
+  ///
+  /// [rememberCredentials] defaults to false. When true, the Client must
+  /// have [AuthCredentialPersistence] configured; Rust saves the password in
+  /// the Identity credential namespace only after authentication succeeds.
+  /// Identity session snapshots are a separate policy. Cross-process session
+  /// recovery requires both policies, and the password is never written to
+  /// the cookie snapshot. SelfService credentials use the other namespace.
   Future<IdentityLoginResult> login({
     required String username,
     required String password,
     LoginStage stage = LoginStage.auto,
     bool trustDevice = false,
+    bool rememberCredentials = false,
   }) =>
       _sdkCall(() async {
         final result = await _handle.loginIdentity(
@@ -410,6 +574,7 @@ class IdentityAuthClient {
           password: password,
           stage: _loginStage(stage),
           trustDevice: trustDevice,
+          rememberCredentials: rememberCredentials,
         );
         return _identityResult(result);
       });
@@ -459,15 +624,30 @@ class SelfServiceAuthClient {
   Future<SelfServiceCaptcha> startLogin({
     required String username,
     required String password,
+    bool rememberCredentials = false,
   }) =>
       _sdkCall(
         () async => _captcha(
           await _handle.startSelfServiceLogin(
             username: username,
             password: password,
+            rememberCredentials: rememberCredentials,
           ),
         ),
       );
+
+  /// Starts the captcha flow using this account's saved password. Rust keeps
+  /// the password private and still requires explicit captcha completion.
+  Future<SelfServiceCaptcha> startSavedLogin({required String username}) =>
+      _sdkCall(() async => _captcha(
+            await _handle.startSavedSelfServiceLogin(username: username),
+          ));
+
+  /// Deletes this account's saved SelfService password without logging out.
+  Future<void> forgetSavedCredentials({required String username}) =>
+      _sdkCall(() => _handle.forgetSavedSelfServiceCredentials(
+            username: username,
+          ));
 
   /// Explicitly refreshes the active image captcha. The password is not
   /// resubmitted.
@@ -487,6 +667,7 @@ class SelfServiceAuthClient {
         return SelfServiceLoginResult(
           status: _authStatus(result.status),
           requiresInteraction: result.requiresInteraction,
+          credentialsSaved: result.credentialsSaved,
         );
       });
 
@@ -501,7 +682,8 @@ class SelfServiceAuthClient {
 }
 
 /// Local campus-network profile operations. These do not create an Auth
-/// account and do not connect or disconnect the device.
+/// account. Portal actions are explicit, while system Wi-Fi/EAP stays owned by
+/// the operating system.
 class NetworkClient {
   NetworkClient._(native.ClientHandle handle)
       : _handle = handle,
@@ -526,6 +708,38 @@ class NetworkClient {
               PortalAddressRegistration.unknown,
           },
           observedAt: DateTime.parse(value.observedAtUtc).toUtc(),
+        );
+      });
+
+  /// Explicitly attempts the saved profile's TUNet Portal connection. When
+  /// [password] is supplied, Rust uses it for this attempt only and never
+  /// saves it. Otherwise Rust uses only a password previously saved with the
+  /// profile. A `systemWifiEap` profile is rejected as unsupported. [profile]
+  /// must come from this Client's current `profiles.prepareFill()` result, so
+  /// edits, deletion, or another Client invalidate the connection reference.
+  Future<PortalConnectionResult> connectPortal({
+    required PreparedNetworkProfile profile,
+    String? password,
+  }) =>
+      _sdkCall(() async {
+        final result = await _handle.networkConnectPortal(
+          prepared: profile._handle,
+          password: password,
+        );
+        return PortalConnectionResult(
+          state: _portalConnectionState(result.state),
+          observedAt: DateTime.parse(result.observedAtUtc).toUtc(),
+        );
+      });
+
+  /// Explicitly disconnects the TUNet target proven by this same Client.
+  /// The capability is process-local and is consumed by the attempt. This
+  /// does not disconnect Wi-Fi or a Tsinghua Secure system profile.
+  Future<PortalConnectionResult> disconnectPortal() => _sdkCall(() async {
+        final result = await _handle.networkDisconnectPortal();
+        return PortalConnectionResult(
+          state: _portalConnectionState(result.state),
+          observedAt: DateTime.parse(result.observedAtUtc).toUtc(),
         );
       });
 }
@@ -727,9 +941,11 @@ class SelfServiceLoginResult {
   const SelfServiceLoginResult({
     required this.status,
     required this.requiresInteraction,
+    required this.credentialsSaved,
   });
   final AuthStatus status;
   final bool requiresInteraction;
+  final bool credentialsSaved;
 }
 
 /// The current phase of one explicit SelfService captcha interaction.
@@ -748,6 +964,9 @@ enum NetworkAccessMethod { portal, systemWifiEap, unknown }
 /// Narrow evidence about the current TUNet portal registration query.
 enum PortalAddressRegistration { registered, notRegistered, unknown }
 
+/// State positively confirmed by an explicit TUNet Portal operation.
+enum PortalConnectionState { connected, disconnected, unknown }
+
 class PortalObservation {
   const PortalObservation(
       {required this.registration, required this.observedAt});
@@ -755,6 +974,15 @@ class PortalObservation {
   final PortalAddressRegistration registration;
 
   /// UTC time when Rust interpreted the portal response.
+  final DateTime observedAt;
+}
+
+class PortalConnectionResult {
+  const PortalConnectionResult({required this.state, required this.observedAt});
+
+  final PortalConnectionState state;
+
+  /// UTC time when Rust interpreted the verified operation result.
   final DateTime observedAt;
 }
 
@@ -831,6 +1059,17 @@ NetworkAccessMethod _networkMethodFromNative(
       native.NetworkAccessMethodDto.systemWifiEap =>
         NetworkAccessMethod.systemWifiEap,
       native.NetworkAccessMethodDto.unknown => NetworkAccessMethod.unknown,
+    };
+
+PortalConnectionState _portalConnectionState(
+  native.PortalConnectionStateDto value,
+) =>
+    switch (value) {
+      native.PortalConnectionStateDto.connected =>
+        PortalConnectionState.connected,
+      native.PortalConnectionStateDto.disconnected =>
+        PortalConnectionState.disconnected,
+      native.PortalConnectionStateDto.unknown => PortalConnectionState.unknown,
     };
 
 NetworkProfile _profile(native.NetworkProfileDto value) => NetworkProfile(

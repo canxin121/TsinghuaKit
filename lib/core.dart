@@ -3,9 +3,15 @@ library;
 
 export 'tsinghua_kit.dart'
     show
+        ClientCachePersistence,
+        DirectoryClientCachePersistence,
+        AuthCredentialPersistence,
+        EncryptedDirectoryAuthCredentialPersistence,
         EncryptedDirectoryIdentitySessionPersistence,
         EncryptedDirectoryNetworkProfilePersistence,
         IdentitySessionPersistence,
+        MemoryOnlyClientCachePersistence,
+        MemoryOnlyAuthCredentialPersistence,
         MemoryOnlyIdentitySessionPersistence,
         MemoryOnlyNetworkProfilePersistence,
         NetworkProfilePersistence,

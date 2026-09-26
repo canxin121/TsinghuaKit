@@ -2026,6 +2026,7 @@ struct UseregPendingLogin {
     transport: crate::transport::CampusHttpTransport,
     created_at: std::time::Instant,
     captcha_ready: bool,
+    remember_credentials: bool,
 }
 
 /// State of the process-local startup/session-resume gate.
@@ -2517,11 +2518,19 @@ pub struct CampusRuntime {
     // be copied back into the Identity checkpoint.
     sdk_identity_snapshot_once: bool,
     identity_snapshot_written: bool,
+    // The optional key is supplied by the host's secure store and protects
+    // only the Identity cookie checkpoint. It is never shared with the local
+    // network-profile store or either account password vault.
+    identity_session_key: Option<zeroize::Zeroizing<[u8; 32]>>,
     // Every persistent runtime carries its own Rust-selected application data
     // root. Tests can inject an isolated root; production always uses the
     // private application directory. This avoids process-global environment
     // state while keeping all credential/session I/O inside Rust.
     persistence_root: PathBuf,
+    // User-entered credentials have their own host-selected storage root.
+    // This is independent from session snapshots and is split by Auth domain
+    // again inside credential_store.
+    credential_store_root: PathBuf,
     // Captured at construction/explicit login, never refreshed by a late read.
     recovery_lease: Option<crate::session_persistence::SessionLease>,
     portal_bootstrapped: bool,
@@ -2636,6 +2645,7 @@ pub(crate) fn create_sdk_runtime(
     data_root: PathBuf,
     graduate: Option<bool>,
 ) -> Result<CampusRuntime, crate::error::Error> {
+    let cache_root = data_root.clone();
     let mut runtime = CampusRuntime::new_with_stage_mode(
         AUTO_SEMESTER.to_owned(),
         graduate.unwrap_or(false),
@@ -2643,6 +2653,8 @@ pub(crate) fn create_sdk_runtime(
         false,
         graduate.is_none(),
         Some(data_root),
+        None,
+        Some(cache_root),
     )
     .map_err(|_| {
         crate::error::Error::new(
@@ -2654,14 +2666,35 @@ pub(crate) fn create_sdk_runtime(
     Ok(runtime)
 }
 
-/// Constructs an SDK runtime whose Identity cookie snapshot is explicitly
-/// persisted under the same host-selected root as its caches. The existing
-/// recovery boundary restores cookies only as `RestoredUnverified`; callers
-/// must explicitly reconcile them before any service capability is granted.
+/// Constructs an SDK runtime whose Identity cookie snapshot and account
+/// recovery authority use one host-selected root, independently from ordinary
+/// service caches. The recovery boundary restores cookies only as
+/// `RestoredUnverified`; callers must explicitly reconcile them before any
+/// service capability is granted.
 pub(crate) fn create_sdk_runtime_with_identity_persistence(
     cache_path: &Path,
     data_root: PathBuf,
+    external_key: Option<&[u8]>,
+    cache_root: PathBuf,
 ) -> Result<CampusRuntime, crate::error::Error> {
+    let identity_session_key = match external_key {
+        Some(key) => {
+            if key.len() != 32 {
+                return Err(crate::error::Error::new(
+                    crate::error::Service::Local,
+                    crate::error::ErrorCode::InvalidInput,
+                ));
+            }
+            let key: [u8; 32] = key.try_into().map_err(|_| {
+                crate::error::Error::new(
+                    crate::error::Service::Local,
+                    crate::error::ErrorCode::InvalidInput,
+                )
+            })?;
+            Some(zeroize::Zeroizing::new(key))
+        }
+        None => None,
+    };
     let mut runtime = CampusRuntime::new_with_stage_mode(
         AUTO_SEMESTER.to_owned(),
         false,
@@ -2669,6 +2702,8 @@ pub(crate) fn create_sdk_runtime_with_identity_persistence(
         true,
         true,
         Some(data_root),
+        identity_session_key,
+        Some(cache_root),
     )
     .map_err(|_| {
         crate::error::Error::new(
@@ -2794,6 +2829,8 @@ pub fn create_backend_validation_runtime(
         false,
         true,
         Some(workspace.root().to_path_buf()),
+        None,
+        None,
     )?;
     runtime.validation_workspace = Some(workspace);
     runtime.fingerprint = fingerprint;
@@ -2837,7 +2874,7 @@ pub async fn run_backend_validation_batch(
 #[cfg_attr(feature = "ffi-bridge", frb)]
 impl CampusRuntime {
     fn new(semester: String, graduate: bool, cache_path: String) -> Result<Self, String> {
-        Self::new_with_stage_mode(semester, graduate, cache_path, true, true, None)
+        Self::new_with_stage_mode(semester, graduate, cache_path, true, true, None, None, None)
     }
 
     fn new_with_persistence(
@@ -2856,6 +2893,8 @@ impl CampusRuntime {
             persist_sessions,
             false,
             None,
+            None,
+            None,
         )
     }
 
@@ -2865,7 +2904,16 @@ impl CampusRuntime {
         cache_path: String,
         persist_sessions: bool,
     ) -> Result<Self, String> {
-        Self::new_with_stage_mode(semester, graduate, cache_path, persist_sessions, true, None)
+        Self::new_with_stage_mode(
+            semester,
+            graduate,
+            cache_path,
+            persist_sessions,
+            true,
+            None,
+            None,
+            None,
+        )
     }
 
     #[cfg(test)]
@@ -2883,6 +2931,8 @@ impl CampusRuntime {
             persist_sessions,
             true,
             Some(persistence_root),
+            None,
+            None,
         )
     }
 
@@ -2893,6 +2943,8 @@ impl CampusRuntime {
         persist_sessions: bool,
         stage_auto_detection: bool,
         persistence_root: Option<PathBuf>,
+        identity_session_key: Option<zeroize::Zeroizing<[u8; 32]>>,
+        service_cache_root: Option<PathBuf>,
     ) -> Result<Self, String> {
         if semester.trim().is_empty()
             || semester.contains(['/', '?', '#'])
@@ -2970,19 +3022,21 @@ impl CampusRuntime {
         let execution = IdentityExecutionClient::new(client, DEFAULT_USER_AGENT)
             .map_err(|error| public_error(error.to_string()))?;
 
-        // Resolve one Rust-owned application root first, then derive the
-        // default cache from that exact root.  This keeps cookies, encrypted
-        // credentials, device metadata, and slow-changing caches together
-        // across process restarts; an unavailable application directory is a
-        // real startup error, never a silent fallback to the OS temp folder.
+        // Resolve account persistence and service-cache roots explicitly.
+        // Older/compatibility constructors derive both from one application
+        // root; the public SDK may give service caches their own private root
+        // while Identity recovery authority remains separately scoped.
+        // Unavailable configured directories are startup errors, never a
+        // silent fallback to an unrelated OS temp location.
         let persistence_root = match persistence_root {
             Some(root) => root,
             None => crate::session_persistence::application_data_dir()?,
         };
+        let cache_root = service_cache_root.as_deref().unwrap_or(&persistence_root);
         let cache_path = if persist_sessions {
-            resolve_persistent_cache_path(&cache_path, &persistence_root)?
+            resolve_persistent_cache_path(&cache_path, cache_root)?
         } else {
-            resolve_cache_path(&cache_path, &persistence_root)
+            resolve_cache_path(&cache_path, cache_root)
         };
         // A persisted trusted-device identifier is only a record of what this
         // installation used previously.  It is never the source of the
@@ -2998,7 +3052,9 @@ impl CampusRuntime {
 
         let mut resume_storage_warning = None;
         let (recovery_lease, resume_snapshot, resume_account_metadata) = if persist_sessions {
-            match crate::session_persistence::load_authorized_state(&persistence_root) {
+            let key = identity_session_key.as_ref().map(|key| &key[..]);
+            match crate::session_persistence::load_authorized_state_with_key(&persistence_root, key)
+            {
                 Ok(state) => state,
                 Err(_) => {
                     resume_storage_warning = Some(
@@ -3182,6 +3238,8 @@ impl CampusRuntime {
             persist_sessions,
             sdk_identity_snapshot_once: false,
             identity_snapshot_written: false,
+            identity_session_key,
+            credential_store_root: persistence_root.clone(),
             persistence_root,
             recovery_lease,
             portal_bootstrapped: false,
@@ -9837,6 +9895,9 @@ impl CampusRuntime {
         password: String,
     ) -> Result<CampusRuntimeStatusDto, String> {
         crate::telemetry::observe("tunet", "login_tunet", async {
+            // Wrap the one-shot secret before any validation or state gate can
+            // return early, so every exit path zeroizes the input buffer.
+            let password = zeroize::Zeroizing::new(password);
             self.allow_live_operation()?;
             let username = username.trim().to_owned();
             if username.is_empty() {
@@ -9861,7 +9922,7 @@ impl CampusRuntime {
     async fn login_tunet_using(
         &mut self,
         username: String,
-        password: String,
+        password: zeroize::Zeroizing<String>,
         ip: String,
         client: TunetClient,
     ) -> Result<CampusRuntimeStatusDto, String> {
@@ -10701,6 +10762,18 @@ impl CampusRuntime {
         username: String,
         password: String,
     ) -> Result<UseregCaptchaDto, String> {
+        self.start_usereg_login_with_options(username, password, false)
+            .await
+    }
+
+    /// Starts one USEREG captcha flow with an explicit, per-login credential
+    /// persistence choice. The selected Auth domain remains SelfService.
+    pub async fn start_usereg_login_with_options(
+        &mut self,
+        username: String,
+        password: String,
+        remember_credentials: bool,
+    ) -> Result<UseregCaptchaDto, String> {
         crate::telemetry::observe("usereg", "start_usereg_login", async {
             self.allow_live_operation()?;
             if !self.service_session_is_proven(ServiceId::Identity) {
@@ -10721,6 +10794,13 @@ impl CampusRuntime {
             }
             if password.is_empty() {
                 return self.fail("请输入网络自助密码");
+            }
+            if !remember_credentials
+                && self
+                    .clear_saved_self_service_credentials(&username)
+                    .is_err()
+            {
+                return self.fail("网络自助凭据存储不可用，无法确认已取消保存");
             }
 
             // USEREG is WebVPN-mapped even on campus. Identity alone does
@@ -10779,6 +10859,7 @@ impl CampusRuntime {
                 transport: self.identity.transport().clone(),
                 created_at: std::time::Instant::now(),
                 captcha_ready: true,
+                remember_credentials,
             });
             self.last_error = None;
             Ok(map_usereg_captcha(image))
@@ -10826,6 +10907,18 @@ impl CampusRuntime {
         verify_code: String,
         sms_code: Option<String>,
     ) -> Result<CampusRuntimeStatusDto, String> {
+        self.complete_usereg_login_with_result(verify_code, sms_code)
+            .await
+            .map(|(status, _)| status)
+    }
+
+    /// Completes the explicit captcha flow and reports whether the selected
+    /// SelfService credential was durably stored after authentication.
+    pub async fn complete_usereg_login_with_result(
+        &mut self,
+        verify_code: String,
+        sms_code: Option<String>,
+    ) -> Result<(CampusRuntimeStatusDto, bool), String> {
         crate::telemetry::observe("usereg", "complete_usereg_login", async {
             self.allow_live_operation()?;
             if !self.service_session_is_proven(ServiceId::Identity) {
@@ -10852,6 +10945,7 @@ impl CampusRuntime {
             let Some(pending) = self.usereg_pending.as_ref() else {
                 return self.fail("请先开始网络自助登录");
             };
+            let remember_credentials = pending.remember_credentials;
             let adapter = pending.adapter.clone();
             let page = pending.page.clone();
             let credentials = pending.credentials.clone();
@@ -10980,7 +11074,11 @@ impl CampusRuntime {
             }
             self.self_service_account_username = Some(credentials.username.clone());
             self.last_error = None;
-            Ok(self.status())
+            let credentials_saved = remember_credentials
+                && self
+                    .save_self_service_credential(&credentials.username, credentials.password())
+                    .is_ok();
+            Ok((self.status(), credentials_saved))
         })
         .await
     }
@@ -12420,6 +12518,15 @@ impl CampusRuntime {
                 .map(|_| ())
                 .map_err(|_| "credential cleanup failed".to_owned())
         };
+        let configured_identity_credential_cleanup = username
+            .as_deref()
+            .map(|name| {
+                crate::credential_store::clear_at_root(&self.credential_store_root, name)
+                    .map_err(|_| "credential cleanup failed".to_owned())
+            })
+            .transpose()
+            .map(|_| ());
+        let revoked = revoked.and(configured_identity_credential_cleanup);
         // The current runtime has already logged out. The durable tombstone
         // suppresses surviving files; physical cleanup errors remain visible.
         self.recovery_lease = None;
@@ -16046,10 +16153,11 @@ impl CampusRuntime {
         )
         .map_err(|_| String::from("账号恢复元数据无效"))?;
         let persistence_result = lease.with_current(|| {
-            crate::session_persistence::save_resume_state_at_root(
+            crate::session_persistence::save_resume_state_at_root_with_key(
                 &self.persistence_root,
                 &snapshot,
                 &metadata,
+                self.identity_session_key.as_ref().map(|key| &key[..]),
             )
         });
         if persistence_result.is_err() {
@@ -16426,13 +16534,14 @@ fn resolve_cache_path(value: &str, persistence_root: &Path) -> PathBuf {
 ///
 /// `create_runtime` is a public bridge entry point, so a non-empty path is
 /// untrusted input even though the production Flutter caller currently passes
-/// an empty string.  Persistent cache files share the same account/device
-/// boundary as the session and credential files; accepting an arbitrary path
-/// would allow a caller to redirect the cache (and the adjacent device marker)
-/// outside that boundary.  Keep fixture-only, non-persistent runtimes free to
-/// use their isolated paths, but fail closed for the production boundary.
-fn resolve_persistent_cache_path(value: &str, persistence_root: &Path) -> Result<PathBuf, String> {
-    let path = resolve_cache_path(value, persistence_root);
+/// an empty string. Persistent cache files are confined to their explicitly
+/// selected private root, which may differ from the account/session root.
+/// Accepting an arbitrary path would allow a caller to redirect account-bound
+/// data and the adjacent device marker outside the host boundary. Keep
+/// fixture-only, non-persistent runtimes free to use their isolated paths, but
+/// fail closed for the production boundary.
+fn resolve_persistent_cache_path(value: &str, cache_root: &Path) -> Result<PathBuf, String> {
+    let path = resolve_cache_path(value, cache_root);
     if !path.is_absolute() {
         return Err(String::from("缓存路径必须是绝对路径"));
     }
@@ -16444,17 +16553,16 @@ fn resolve_persistent_cache_path(value: &str, persistence_root: &Path) -> Result
         .components()
         .any(|component| matches!(component, std::path::Component::ParentDir))
     {
-        return Err(String::from("缓存路径必须位于 THYou 私有数据目录"));
+        return Err(String::from("缓存路径必须位于应用私有数据目录"));
     }
 
-    let root =
-        fs::canonicalize(persistence_root).map_err(|_| String::from("THYou 私有数据目录不可用"))?;
+    let root = fs::canonicalize(cache_root).map_err(|_| String::from("应用私有数据目录不可用"))?;
     let existing =
         nearest_existing_path(&path).ok_or_else(|| String::from("缓存路径的父目录不可用"))?;
     let existing =
         fs::canonicalize(existing).map_err(|_| String::from("缓存路径的父目录不可用"))?;
     if !existing.starts_with(&root) {
-        return Err(String::from("缓存路径必须位于 THYou 私有数据目录"));
+        return Err(String::from("缓存路径必须位于应用私有数据目录"));
     }
 
     // If the final target already exists, canonicalize it as well.  This
@@ -16463,7 +16571,7 @@ fn resolve_persistent_cache_path(value: &str, persistence_root: &Path) -> Result
     if path.exists() {
         let target = fs::canonicalize(&path).map_err(|_| String::from("缓存路径不可用"))?;
         if !target.starts_with(&root) {
-            return Err(String::from("缓存路径必须位于 THYou 私有数据目录"));
+            return Err(String::from("缓存路径必须位于应用私有数据目录"));
         }
     }
 

@@ -19,10 +19,35 @@ void main() {
   test('domain entrypoints expose curated stable types', () {
     expect(_publicType<core.TsinghuaKit>(), isNull);
     expect(_publicType<core.TsinghuaKitException>(), isNull);
+    expect(
+      core.ClientCachePersistence.memoryOnly(),
+      isA<core.MemoryOnlyClientCachePersistence>(),
+    );
+    expect(
+      _publicType<core.DirectoryClientCachePersistence>(),
+      isNull,
+    );
+    expect(
+      auth.AuthCredentialPersistence.memoryOnly(),
+      isA<auth.MemoryOnlyAuthCredentialPersistence>(),
+    );
+    expect(
+      auth.AuthCredentialPersistence.encryptedDirectory(
+        root: '/app/private',
+        namespace: 'org.example.app',
+      ),
+      isA<auth.EncryptedDirectoryAuthCredentialPersistence>(),
+    );
     expect(auth.SecondFactorMethod.sms.name, 'sms');
     expect(network.NetworkAccessMethod.systemWifiEap.name, 'systemWifiEap');
+    expect(network.PortalConnectionState.connected.name, 'connected');
+    expect(_publicType<network.PortalConnectionResult>(), isNull);
     expect(
       _publicType<network.PlatformSecureStorageNetworkProfilePersistence>(),
+      isNull,
+    );
+    expect(
+      _publicType<auth.PlatformSecureStorageIdentitySessionPersistence>(),
       isNull,
     );
     expect(service_hall.ServiceHallTaskView.phases.name, 'phases');
@@ -33,6 +58,7 @@ void main() {
     expect(classrooms.ClassroomSlotStatus.unknown.name, 'unknown');
     expect(campus_card.CampusCardTransactionType.any.name, 'any');
     expect(_publicType<self_service.SelfServiceClient>(), isNull);
+    expect(_publicType<auth.SelfServiceAuthClient>(), isNull);
     expect(_publicType<electricity.ElectricityClient>(), isNull);
     expect(_publicType<read.ReadResult<int>>(), isNull);
   });
