@@ -2694,7 +2694,7 @@ pub(crate) fn create_sdk_runtime_with_identity_persistence(
 fn thos_compat_error(error: crate::error::Error) -> String {
     let message = match error.code() {
         crate::error::ErrorCode::SessionRequired => "请先完成统一认证后读取网上服务大厅待办",
-        crate::error::ErrorCode::SessionExpired => "网上服务大厅账号会话未确认，请重新登录",
+        crate::error::ErrorCode::SessionExpired => "网上服务大厅会话已失效，请重新建立登录会话",
         crate::error::ErrorCode::InteractionRequired => {
             "请先完成当前身份验证后读取网上服务大厅待办"
         }
@@ -2705,6 +2705,7 @@ fn thos_compat_error(error: crate::error::Error) -> String {
         crate::error::ErrorCode::ContextMismatch => "网上服务大厅账号会话未确认，请重新登录",
         crate::error::ErrorCode::NetworkUnavailable => "网上服务大厅网络连接失败，请稍后重试",
         crate::error::ErrorCode::InvalidResponse => "网上服务大厅待办数据格式未确认，请稍后重试",
+        crate::error::ErrorCode::RedirectRefused => "网上服务大厅返回了未允许的地址，已停止读取",
         crate::error::ErrorCode::OutcomeUnconfirmed => {
             "网上服务大厅会话续接未确认，请重新建立登录会话"
         }
@@ -8033,6 +8034,10 @@ impl CampusRuntime {
                 == Some(user.username.as_str()))
             .then(|| self.info_news_links.get(&article_id).cloned())
             .flatten();
+            // A recovered link is remembered as recovered, not as a list
+            // read: it proves this one (account, article, link) triple and
+            // must not repopulate the account's list mapping.
+            let mut bound_link_is_recovered = false;
             let mut stale_cache = None;
             if let Some(bound_link_value) = bound_link.as_deref() {
                 let cache = JsonFileCache::<InfoNewsDetailCachePayload>::new(
@@ -8091,6 +8096,7 @@ impl CampusRuntime {
                     find_info_news_detail_cache(&self.cache_path, &user.username, &article_id)
                 {
                     bound_link = Some(payload.bound_link.clone());
+                    bound_link_is_recovered = true;
                     let fresh = info_news_detail_cache_is_fresh(&payload.generated_at);
                     if policy == ReadPolicy::CacheOnly
                         || (fresh
@@ -8182,6 +8188,29 @@ impl CampusRuntime {
                     return Err(error);
                 }
             }
+            // A binding read may adopt a link only from this account's own
+            // state. An in-memory mapping must match it exactly; a link
+            // recovered from the typed cache payload already proves the same
+            // three values inside the bounded scanner, so it must not be
+            // rejected for being absent from a map that a restart erased --
+            // but it still never licenses a foreign owner.
+            let binding_is_authorized = if bound_link_is_recovered {
+                self.info_news_link_owner
+                    .as_deref()
+                    .is_none_or(|owner| owner == user.username.as_str())
+            } else {
+                self.info_news_link_owner.as_deref() == Some(user.username.as_str())
+                    && self.info_news_links.get(&article_id).map(String::as_str)
+                        == bound_link.as_deref()
+            };
+            if bound_link.is_some() && !binding_is_authorized {
+                self.invalidate_info_news_links();
+                return Err(self.record_business_failure(
+                    "info",
+                    "info_detail",
+                    "info_news_account_changed",
+                ));
+            }
             let Some(adapter) = self.info_adapter.as_ref() else {
                 if let Some(payload) = stale_cache.take() {
                     self.last_error = None;
@@ -8194,19 +8223,6 @@ impl CampusRuntime {
                 }
                 return self.fail("INFO 服务会话未建立");
             };
-            if let Some(expected_link) = bound_link.as_deref() {
-                if self.info_news_link_owner.as_deref() != Some(user.username.as_str())
-                    || self.info_news_links.get(&article_id).map(String::as_str)
-                        != Some(expected_link)
-                {
-                    self.invalidate_info_news_links();
-                    return Err(self.record_business_failure(
-                        "info",
-                        "info_detail",
-                        "info_news_account_changed",
-                    ));
-                }
-            }
             let link = bound_link.clone().unwrap_or_else(|| article_id.clone());
             let replay_fence = self.identity.transport().replay_fence();
             let mut result =
@@ -23029,8 +23045,16 @@ mod tests {
 
     #[test]
     fn backend_repair_explicit_invalid_credentials_revoke_saved_metadata_locator() {
-        let mut runtime = CampusRuntime::new("2026-fall".to_owned(), false, String::new())
-            .expect("runtime config");
+        // This fixture only exercises in-memory revocation bookkeeping: it
+        // never writes a session, so it must not require a real application
+        // data directory to construct the Runtime.
+        let mut runtime = CampusRuntime::new_with_persistence(
+            "2026-fall".to_owned(),
+            false,
+            String::new(),
+            false,
+        )
+        .expect("runtime config");
         let username = format!("fixture-invalid-metadata-{}", Uuid::new_v4().simple());
         runtime.remember_credentials = true;
         runtime.credentials_persisted = true;

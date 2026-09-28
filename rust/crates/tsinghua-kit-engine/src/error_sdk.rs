@@ -95,6 +95,12 @@ pub enum ErrorCode {
     InvalidInput,
     /// The response did not match the expected verified structure.
     InvalidResponse,
+    /// The response tried to leave the mapped service route, so the read was
+    /// refused before any further request. This is a deliberate allowlist
+    /// refusal, not a parse failure: the response may have been perfectly
+    /// well-formed, and reporting "unconfirmed format" would hide that the
+    /// request was stopped on purpose.
+    RedirectRefused,
     /// A one-shot operation may have been consumed but its result is unknown.
     OutcomeUnconfirmed,
     /// A read returned values without proving complete coverage.
@@ -126,6 +132,7 @@ impl ErrorCode {
             Self::ServiceUnavailable => "service_unavailable",
             Self::InvalidInput => "invalid_input",
             Self::InvalidResponse => "invalid_response",
+            Self::RedirectRefused => "redirect_refused",
             Self::OutcomeUnconfirmed => "outcome_unconfirmed",
             Self::IncompleteResult => "incomplete_result",
             Self::CacheMiss => "cache_miss",

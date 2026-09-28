@@ -269,7 +269,9 @@ fn map_thos_error(error: ThosError) -> Error {
         ThosError::Session => ErrorCode::SessionExpired,
         ThosError::Network => ErrorCode::NetworkUnavailable,
         ThosError::Http | ThosError::Business => ErrorCode::ServiceUnavailable,
-        ThosError::Route => ErrorCode::ContextMismatch,
+        // A refused redirect may arrive as a well-formed response, so it must
+        // not be reported as an unconfirmed payload format.
+        ThosError::Route => ErrorCode::RedirectRefused,
         ThosError::Response => ErrorCode::InvalidResponse,
     };
     service_hall_error(code)
