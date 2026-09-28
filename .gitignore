@@ -30,3 +30,6 @@ build/
 
 # Rust build output
 /rust/target/
+
+# Local scratch space (test TMPDIR, ad-hoc artifacts).
+/.local/

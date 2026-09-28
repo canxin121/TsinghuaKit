@@ -263,6 +263,21 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   IdentityLoginResultDto dco_decode_identity_login_result_dto(dynamic raw);
 
   @protected
+  InvoiceDocumentDataDto dco_decode_invoice_document_data_dto(dynamic raw);
+
+  @protected
+  InvoiceDocumentResultDto dco_decode_invoice_document_result_dto(dynamic raw);
+
+  @protected
+  InvoiceListDataDto dco_decode_invoice_list_data_dto(dynamic raw);
+
+  @protected
+  InvoiceListResultDto dco_decode_invoice_list_result_dto(dynamic raw);
+
+  @protected
+  InvoiceRecordDto dco_decode_invoice_record_dto(dynamic raw);
+
+  @protected
   LearnAnnouncementDto dco_decode_learn_announcement_dto(dynamic raw);
 
   @protected
@@ -446,6 +461,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<ExamDto> dco_decode_list_exam_dto(dynamic raw);
+
+  @protected
+  List<InvoiceRecordDto> dco_decode_list_invoice_record_dto(dynamic raw);
 
   @protected
   List<LearnAnnouncementDto> dco_decode_list_learn_announcement_dto(
@@ -1100,6 +1118,25 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
       SseDeserializer deserializer);
 
   @protected
+  InvoiceDocumentDataDto sse_decode_invoice_document_data_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  InvoiceDocumentResultDto sse_decode_invoice_document_result_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  InvoiceListDataDto sse_decode_invoice_list_data_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  InvoiceListResultDto sse_decode_invoice_list_result_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  InvoiceRecordDto sse_decode_invoice_record_dto(SseDeserializer deserializer);
+
+  @protected
   LearnAnnouncementDto sse_decode_learn_announcement_dto(
       SseDeserializer deserializer);
 
@@ -1312,6 +1349,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<ExamDto> sse_decode_list_exam_dto(SseDeserializer deserializer);
+
+  @protected
+  List<InvoiceRecordDto> sse_decode_list_invoice_record_dto(
+      SseDeserializer deserializer);
 
   @protected
   List<LearnAnnouncementDto> sse_decode_list_learn_announcement_dto(
@@ -2039,6 +2080,26 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
       IdentityLoginResultDto self, SseSerializer serializer);
 
   @protected
+  void sse_encode_invoice_document_data_dto(
+      InvoiceDocumentDataDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_invoice_document_result_dto(
+      InvoiceDocumentResultDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_invoice_list_data_dto(
+      InvoiceListDataDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_invoice_list_result_dto(
+      InvoiceListResultDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_invoice_record_dto(
+      InvoiceRecordDto self, SseSerializer serializer);
+
+  @protected
   void sse_encode_learn_announcement_dto(
       LearnAnnouncementDto self, SseSerializer serializer);
 
@@ -2254,6 +2315,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_list_exam_dto(List<ExamDto> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_invoice_record_dto(
+      List<InvoiceRecordDto> self, SseSerializer serializer);
 
   @protected
   void sse_encode_list_learn_announcement_dto(

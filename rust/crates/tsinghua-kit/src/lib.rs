@@ -109,6 +109,17 @@ pub mod assessment {
     pub use tsinghua_kit_engine::assessment_read::{AssessmentItem, AssessmentList};
 }
 
+/// Issued e-invoices and their documents.  Each row carries an opaque document
+/// reference; the service's own record identifier and every payer-identifying
+/// field stay inside Rust.
+pub mod invoice {
+    pub use crate::client::InvoiceClient;
+    pub use tsinghua_kit_engine::invoice_read::{
+        INVOICE_PAGE_SIZE, InvoiceDocument, InvoicePage, InvoiceRecord, InvoiceRef,
+        MAX_INVOICE_PAGE,
+    };
+}
+
 pub mod learn {
     pub use crate::client::LearnClient;
     pub use chrono::{DateTime, Utc};

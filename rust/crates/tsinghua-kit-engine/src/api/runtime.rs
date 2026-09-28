@@ -64,6 +64,7 @@ use crate::{
         NewsChannelOption, NewsDetail, NewsItem, NewsPage, NewsSearchInput, NewsSourceOption,
     },
     info_session::{InfoSessionAdapter, InfoSessionError, InfoWebVpnConfig},
+    invoice_read::{InvoiceAdapter, InvoiceBusinessProof, InvoiceRef},
     learn_announcements::LearnAnnouncement,
     learn_client::{LearnClient, LearnClientConfig, LearnCourseRecord, LearnPageClassification},
     learn_todos::{LearnTodoConfig, LearnTodoSource},
@@ -102,6 +103,10 @@ const LEARN_WEBVPN_BASE_URL: &str = "https://webvpn.tsinghua.edu.cn/https/777264
 const REGISTRAR_WEBVPN_BASE_URL: &str = "https://webvpn.tsinghua.edu.cn/http/77726476706e69737468656265737421eaff4b8b69336153301c9aa596522b20bc86e6e559a9b290/";
 /// The teaching-evaluation application's own campus host and mapping.
 const ASSESSMENT_WEBVPN_BASE_URL: &str = "https://webvpn.tsinghua.edu.cn/http/77726476706e69737468656265737421faef469069336153301c9aa596522b20e33c1eb39606919f/";
+/// The e-invoice application's own campus host and mapping.  Its handoff is a
+/// ticket exchange rather than a plain roam, so only the proved mapping root is
+/// used to configure the read endpoints.
+const INVOICE_WEBVPN_BASE_URL: &str = "https://webvpn.tsinghua.edu.cn/https/77726476706e69737468656265737421f4ed519669247b59700f81b9991b2631aee63c51/";
 const WEBVPN_BASE_URL: &str = "https://webvpn.tsinghua.edu.cn/";
 const INFO_DIRECT_ORIGIN: &str = "https://info.tsinghua.edu.cn/";
 // Current THUInfo public clients perform one target-application identity roam
@@ -199,6 +204,10 @@ mod program_tests;
 #[cfg(test)]
 #[path = "runtime_assessment_tests.rs"]
 mod assessment_tests;
+
+#[cfg(test)]
+#[path = "runtime_invoice_tests.rs"]
+mod invoice_tests;
 
 #[cfg(test)]
 #[path = "runtime_library_cache_tests.rs"]
@@ -1296,6 +1305,60 @@ pub struct AssessmentListItemDto {
     pub name: String,
     pub evaluated: bool,
     pub reference: AssessmentRef,
+}
+
+/// Source-aware e-invoice page.
+///
+/// The page is read live on every request and never served from a cached copy:
+/// a retained page would present a superseded reimbursement state as the
+/// current one.  Each row carries an opaque document reference; the service's
+/// own record identifier never leaves Rust.
+#[derive(Debug, Clone, PartialEq)]
+pub struct InvoiceListResultDto {
+    pub records: Vec<InvoiceListItemDto>,
+    /// The service's total record count across all pages.
+    pub total: u64,
+    /// The one-based page this result came from, as the caller asked for it.
+    pub page: u32,
+    pub generated_at: String,
+    pub source: String,
+    pub status: String,
+    pub error: Option<String>,
+}
+
+/// One invoice row as exposed to the bridge.  It carries only the display
+/// fields and an opaque document reference; no payer-identifying field, no
+/// service route, and no record identifier crosses the boundary.
+#[derive(Debug, Clone, PartialEq)]
+pub struct InvoiceListItemDto {
+    pub business_no: String,
+    pub title: String,
+    pub issuer_department: String,
+    pub payment_item: String,
+    pub invoice_no: String,
+    pub issued_on: String,
+    pub note: String,
+    pub kind: String,
+    pub reimbursable: bool,
+    pub red_letter: bool,
+    pub bill_amount_cents: i64,
+    pub invoice_amount_cents: i64,
+    pub tax_amount_cents: i64,
+    pub reference: InvoiceRef,
+}
+
+/// Source-aware invoice document bytes.
+///
+/// The bytes are the service's own PDF, already checked for its magic number
+/// and bounded; an answer that was not that document is reported as a failure
+/// rather than returned here.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InvoiceDocumentResultDto {
+    pub bytes: Vec<u8>,
+    pub generated_at: String,
+    pub source: String,
+    pub status: String,
+    pub error: Option<String>,
 }
 
 /// Source-aware campus-card account. The account record contains only the
@@ -2551,6 +2614,11 @@ pub struct CampusRuntime {
     // Its route table holds the per-row form paths, which never leave Rust.
     assessment_adapter: Option<AssessmentAdapter>,
     assessment_proof: Option<AssessmentBusinessProof>,
+    // The e-invoice adapter is prepared per confirmed INFO session.  Its
+    // document identifiers stay in the adapter, so a superseded list read
+    // leaves no resolvable reference behind.
+    invoice_adapter: Option<InvoiceAdapter>,
+    invoice_proof: Option<InvoiceBusinessProof>,
     card_client: Option<CampusCardClient>,
     card_session: Option<CampusCardSession>,
     // One initial target-auth chain per explicit login. Retain after failure
@@ -2683,6 +2751,9 @@ pub struct CampusRuntime {
     // The evaluation service's closed-window answer is a business state, not a
     // transport failure, so it is kept as its own code for the SDK to map.
     last_assessment_failure_code: Option<&'static str>,
+    // The invoice service's explicit deployment/parse answer is likewise mapped
+    // by the SDK from a stable code instead of from message text.
+    last_invoice_failure_code: Option<&'static str>,
     // The WebVPN/OAuth/Identity origin graph is part of the Rust runtime's
     // authenticated transport boundary. Production uses the current THU
     // deployment; loopback fixtures may inject a fully validated graph so
@@ -3269,6 +3340,8 @@ impl CampusRuntime {
             program_proof: None,
             assessment_adapter: None,
             assessment_proof: None,
+            invoice_adapter: None,
+            invoice_proof: None,
             card_client: None,
             card_session: None,
             card_auth_attempted: false,
@@ -3341,6 +3414,7 @@ impl CampusRuntime {
             last_info_failure_code: None,
             last_usereg_failure_code: None,
             last_assessment_failure_code: None,
+            last_invoice_failure_code: None,
             webvpn_identity_config,
         };
 
@@ -14702,6 +14776,220 @@ impl CampusRuntime {
         .await
     }
 
+    /// Prepares the e-invoice adapter inside the already-confirmed INFO
+    /// session.  Like the other INFO-hosted readers it performs no business
+    /// read here: the list request that follows owns its own expiry
+    /// classification.  The handoff itself is a two-hop ticket exchange that
+    /// stays inside the invoice module, so this layer never sees a ticket.
+    async fn ensure_invoice_reader_session(&mut self, user: &UserIdentity) -> Result<(), String> {
+        if self.invoice_service_is_proven() {
+            return Ok(());
+        }
+        let context_exists = self.invoice_adapter.is_some()
+            || self.invoice_proof.is_some()
+            || self.info_session_context_exists();
+        if context_exists && !self.service_session_is_proven(ServiceId::Info) {
+            self.refresh_nonacademic_service_after_expiry(ServiceId::Info)
+                .await
+                .map_err(|error| self.record_error(format!("INFO 自动续接失败: {error}")))?;
+        }
+        self.prepare_invoice_adapter(user).await
+    }
+
+    async fn prepare_invoice_adapter(&mut self, user: &UserIdentity) -> Result<(), String> {
+        self.invalidate_invoice_session();
+        self.ensure_info_session(user).await?;
+
+        let transport = self.identity.transport().clone();
+        let handoff = match self.info_adapter.as_ref() {
+            Some(info) => {
+                info.additional_roaming(crate::invoice_read::INVOICE_WEBVPN_TARGET)
+                    .await
+            }
+            None => return Err(self.record_error("INFO 服务会话尚未建立")),
+        };
+        let roaming_url = handoff.map_err(|error| {
+            self.record_business_failure("invoice", "invoice_handoff", info_failure_code(&error))
+        })?;
+        let mut base_url = Url::parse(roaming_url.as_str())
+            .map_err(|_| self.record_error("invoice roaming URL is invalid"))?;
+        let expected = Url::parse(INVOICE_WEBVPN_BASE_URL).expect("static invoice mapping");
+        if !base_url.path().starts_with(expected.path()) {
+            return Err(self.record_business_failure(
+                "invoice",
+                "invoice_handoff",
+                "invoice_mapping_rejected",
+            ));
+        }
+        // The handoff query is consumed here.  Only the proved target mapping
+        // configures the read endpoints that follow.
+        base_url.set_path(expected.path());
+        base_url.set_query(None);
+        base_url.set_fragment(None);
+        let adapter = InvoiceAdapter::try_with_transport(base_url, transport)
+            .map_err(|error| self.record_error(format!("invoice adapter: {error}")))?;
+        self.invoice_adapter = Some(adapter);
+        Ok(())
+    }
+
+    /// Reads one page of e-invoice records.
+    ///
+    /// The page is read live every time and never served from a cached copy: a
+    /// retained page would present a superseded reimbursement state as the
+    /// current one.  The caller's page number is bounded by the adapter, and
+    /// the service's document identifier for each row stays inside Rust.
+    pub async fn load_invoice_list_result(
+        &mut self,
+        page: u32,
+    ) -> Result<InvoiceListResultDto, String> {
+        crate::telemetry::observe("invoice", "load_invoice_list_result", async {
+            self.allow_live_operation()?;
+            let user = self.ensure_identity_user_for_live_read().await?;
+            self.ensure_invoice_reader_session(&user).await?;
+
+            let mut result = {
+                let Some(adapter) = self.invoice_adapter.as_ref() else {
+                    return self.fail("发票服务会话未建立");
+                };
+                adapter.read_list_with_proof(page).await
+            };
+            if matches!(&result, Err(error) if error.is_session_expired()) {
+                self.invalidate_invoice_session();
+                if let Err(error) = self
+                    .refresh_nonacademic_service_after_expiry(ServiceId::Info)
+                    .await
+                {
+                    return Err(self.record_error(format!("发票自动续接失败: {error}")));
+                }
+                let user = self.ensure_identity_user_for_live_read().await?;
+                self.prepare_invoice_adapter(&user).await?;
+                let Some(adapter) = self.invoice_adapter.as_ref() else {
+                    return self.fail("发票自动续接后会话未建立");
+                };
+                result = adapter.read_list_with_proof(page).await;
+                if matches!(&result, Err(error) if error.is_session_expired()) {
+                    self.invalidate_invoice_session();
+                    return self.fail("发票自动续接后仍已过期，请重新建立");
+                }
+            }
+            match result {
+                Ok(read) => {
+                    self.invoice_proof = Some(read.proof);
+                    if !self.invoice_service_is_proven() {
+                        return self.fail("发票服务会话证明未确认，请重新建立服务会话");
+                    }
+                    self.last_error = None;
+                    self.last_invoice_failure_code = None;
+                    self.persist_resume_state_after_live_read(&user, "invoice_list");
+                    let records = read
+                        .value
+                        .records
+                        .into_iter()
+                        .map(|record| InvoiceListItemDto {
+                            business_no: record.business_no,
+                            title: record.title,
+                            issuer_department: record.issuer_department,
+                            payment_item: record.payment_item,
+                            invoice_no: record.invoice_no,
+                            issued_on: record.issued_on,
+                            note: record.note,
+                            kind: record.kind,
+                            reimbursable: record.reimbursable,
+                            red_letter: record.red_letter,
+                            bill_amount_cents: record.bill_amount_cents,
+                            invoice_amount_cents: record.invoice_amount_cents,
+                            tax_amount_cents: record.tax_amount_cents,
+                            reference: record.reference,
+                        })
+                        .collect();
+                    Ok(InvoiceListResultDto {
+                        records,
+                        total: read.value.total,
+                        page,
+                        generated_at: Utc::now().to_rfc3339(),
+                        source: "live".to_owned(),
+                        status: "ready".to_owned(),
+                        error: None,
+                    })
+                }
+                Err(error) => {
+                    let reason = error.diagnostic_code();
+                    self.last_invoice_failure_code = Some(reason);
+                    Err(self.record_business_failure("invoice", "invoice_list", reason))
+                }
+            }
+        })
+        .await
+    }
+
+    /// Reads one invoice document, addressed by a reference this runtime's
+    /// current list read produced.
+    ///
+    /// The response is a bounded binary read, so an answer that is not the
+    /// service's own PDF is reported as a deployment failure rather than
+    /// returned as a document.  A reference from a superseded list does not
+    /// resolve: the adapter that produced it has already been replaced.
+    pub async fn load_invoice_document_result(
+        &mut self,
+        reference: &crate::invoice_read::InvoiceRef,
+    ) -> Result<InvoiceDocumentResultDto, String> {
+        crate::telemetry::observe("invoice", "load_invoice_document_result", async {
+            self.allow_live_operation()?;
+            let user = self.ensure_identity_user_for_live_read().await?;
+            self.ensure_invoice_reader_session(&user).await?;
+
+            let mut result = {
+                let Some(adapter) = self.invoice_adapter.as_ref() else {
+                    return self.fail("发票服务会话未建立");
+                };
+                adapter.read_document_with_proof(reference).await
+            };
+            if matches!(&result, Err(error) if error.is_session_expired()) {
+                self.invalidate_invoice_session();
+                if let Err(error) = self
+                    .refresh_nonacademic_service_after_expiry(ServiceId::Info)
+                    .await
+                {
+                    return Err(self.record_error(format!("发票自动续接失败: {error}")));
+                }
+                let user = self.ensure_identity_user_for_live_read().await?;
+                self.prepare_invoice_adapter(&user).await?;
+                let Some(adapter) = self.invoice_adapter.as_ref() else {
+                    return self.fail("发票自动续接后会话未建立");
+                };
+                result = adapter.read_document_with_proof(reference).await;
+                if matches!(&result, Err(error) if error.is_session_expired()) {
+                    self.invalidate_invoice_session();
+                    return self.fail("发票自动续接后仍已过期，请重新建立");
+                }
+            }
+            match result {
+                Ok(read) => {
+                    self.invoice_proof = Some(read.proof);
+                    if !self.invoice_service_is_proven() {
+                        return self.fail("发票服务会话证明未确认，请重新建立服务会话");
+                    }
+                    self.last_error = None;
+                    self.last_invoice_failure_code = None;
+                    self.persist_resume_state_after_live_read(&user, "invoice_document");
+                    Ok(InvoiceDocumentResultDto {
+                        bytes: read.value.bytes,
+                        generated_at: Utc::now().to_rfc3339(),
+                        source: "live".to_owned(),
+                        status: "ready".to_owned(),
+                        error: None,
+                    })
+                }
+                Err(error) => {
+                    let reason = error.diagnostic_code();
+                    self.last_invoice_failure_code = Some(reason);
+                    Err(self.record_business_failure("invoice", "invoice_document", reason))
+                }
+            }
+        })
+        .await
+    }
+
     async fn ensure_campus_card_reader_session(&mut self) -> Result<(), String> {
         if self.service_session_is_proven(ServiceId::CampusCard) {
             return Ok(());
@@ -16011,6 +16299,7 @@ impl CampusRuntime {
                 self.invalidate_physical_exam_session();
                 self.invalidate_program_session();
                 self.invalidate_assessment_session();
+                self.invalidate_invoice_session();
             }
             ServiceId::Library => {
                 self.library_adapter = None;
@@ -16076,6 +16365,14 @@ impl CampusRuntime {
         self.assessment_proof = None;
     }
 
+    fn invalidate_invoice_session(&mut self) {
+        // Dropping the adapter also drops the document identifiers of the last
+        // list read, so a reference handed out earlier stops resolving instead
+        // of addressing a document in a session that no longer exists.
+        self.invoice_adapter = None;
+        self.invoice_proof = None;
+    }
+
     fn classroom_service_is_proven(&self) -> bool {
         self.service_session_is_proven(ServiceId::Info)
             && self.classroom_adapter.is_some()
@@ -16115,6 +16412,15 @@ impl CampusRuntime {
                 .assessment_adapter
                 .as_ref()
                 .zip(self.assessment_proof.as_ref())
+                .is_some_and(|(adapter, proof)| adapter.business_proof_matches(proof))
+    }
+
+    fn invoice_service_is_proven(&self) -> bool {
+        self.service_session_is_proven(ServiceId::Info)
+            && self
+                .invoice_adapter
+                .as_ref()
+                .zip(self.invoice_proof.as_ref())
                 .is_some_and(|(adapter, proof)| adapter.business_proof_matches(proof))
     }
 
@@ -16447,6 +16753,13 @@ impl CampusRuntime {
     /// inspecting any message text.
     pub(crate) fn last_assessment_failure_code(&self) -> Option<&'static str> {
         self.last_assessment_failure_code
+    }
+
+    /// The invoice service's own failure code from the last read.  It lets the
+    /// SDK distinguish an unauthenticated session from an unexpected
+    /// deployment without inspecting any message text.
+    pub(crate) fn last_invoice_failure_code(&self) -> Option<&'static str> {
+        self.last_invoice_failure_code
     }
 
     fn record_error(&mut self, error: impl std::fmt::Display) -> String {
@@ -16875,6 +17188,8 @@ impl CampusRuntime {
         self.program_proof = None;
         self.assessment_adapter = None;
         self.assessment_proof = None;
+        self.invoice_adapter = None;
+        self.invoice_proof = None;
         self.card_client = None;
         self.card_session = None;
         self.card_auth_attempted = false;

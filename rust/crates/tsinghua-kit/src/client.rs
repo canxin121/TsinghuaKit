@@ -21,15 +21,17 @@ use tsinghua_kit_engine::{
         CredentialStoragePolicy as EngineCredentialStoragePolicy,
         ElectricityClient as EngineElectricityClient, IdentityLoginOutcome, IdentityLoginRequest,
         IdentitySessionStoragePolicy as EngineIdentitySessionStoragePolicy,
-        LearnClient as EngineLearnClient, LibraryClient as EngineLibraryClient,
-        NetworkClient as EngineNetworkClient, NetworkProfilesClient as EngineNetworkProfilesClient,
-        NewsClient as EngineNewsClient, PhysicalExamClient as EnginePhysicalExamClient,
-        ProgramClient as EngineProgramClient, RegistrarClient as EngineRegistrarClient,
-        SelfServiceCaptcha, SelfServiceClient as EngineSelfServiceClient, SelfServiceLoginOutcome,
+        InvoiceClient as EngineInvoiceClient, LearnClient as EngineLearnClient,
+        LibraryClient as EngineLibraryClient, NetworkClient as EngineNetworkClient,
+        NetworkProfilesClient as EngineNetworkProfilesClient, NewsClient as EngineNewsClient,
+        PhysicalExamClient as EnginePhysicalExamClient, ProgramClient as EngineProgramClient,
+        RegistrarClient as EngineRegistrarClient, SelfServiceCaptcha,
+        SelfServiceClient as EngineSelfServiceClient, SelfServiceLoginOutcome,
         ServiceHallClient as EngineServiceHallClient,
     },
     electricity_api::{ElectricityPaymentHistory, ElectricityRemainder},
     error::Error,
+    invoice_read::{InvoiceDocument, InvoicePage, InvoiceRef},
     learn_api::{
         CourseAnnouncements, CourseCatalog, CourseDiscussions, CourseFileCategories, CourseFileRef,
         CourseFiles, CourseRef, HomeworkDetail, HomeworkList, HomeworkRef, SavedCourseFile,
@@ -295,6 +297,13 @@ impl Client {
     pub fn assessment(&mut self) -> AssessmentClient<'_> {
         AssessmentClient {
             inner: self.inner.assessment(),
+        }
+    }
+
+    /// Borrows the read-only e-invoice list and document reads.
+    pub fn invoice(&mut self) -> InvoiceClient<'_> {
+        InvoiceClient {
+            inner: self.inner.invoice(),
         }
     }
 
@@ -713,6 +722,45 @@ impl AssessmentClient<'_> {
     /// state, never as a validated empty list.
     pub async fn list(&mut self) -> Result<ReadResult<EngineAssessmentList>, Error> {
         self.inner.list().await
+    }
+}
+
+/// Read-only e-invoice list and document reads.
+///
+/// The page is read live on every call and never served from a cached copy: a
+/// retained page would present a superseded reimbursement state as the current
+/// one.  A document reference only resolves against the list this client most
+/// recently read.
+pub struct InvoiceClient<'client> {
+    inner: EngineInvoiceClient<'client>,
+}
+
+impl InvoiceClient<'_> {
+    /// The one-based page range the service accepts through this client.
+    pub const MAX_PAGE: u32 = EngineInvoiceClient::MAX_PAGE;
+
+    /// The page size this client requests from the service.
+    pub const PAGE_SIZE: u32 = EngineInvoiceClient::PAGE_SIZE;
+
+    /// Reads one page of issued e-invoices.
+    ///
+    /// `page` is one-based and bounded by [`InvoiceClient::MAX_PAGE`]; a page
+    /// outside that range is refused before any request.
+    pub async fn list(&mut self, page: u32) -> Result<ReadResult<InvoicePage>, Error> {
+        self.inner.list(page).await
+    }
+
+    /// Reads one invoice's document.
+    ///
+    /// The reference must come from this client's most recent [`Self::list`]
+    /// result; a reference from an earlier page or a dropped session does not
+    /// resolve, and the service's own PDF bytes are returned only when the
+    /// answer really was that document.
+    pub async fn document(
+        &mut self,
+        reference: &InvoiceRef,
+    ) -> Result<ReadResult<InvoiceDocument>, Error> {
+        self.inner.document(reference).await
     }
 }
 

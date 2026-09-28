@@ -307,6 +307,12 @@ pub enum InfoSessionError {
     #[error("INFO handoff ended outside a safe mapped service path")]
     HandoffUnexpectedPath,
 
+    /// A one-time handoff ticket was submitted and the result does not
+    /// establish whether the service consumed it.  The exchange is never
+    /// replayed; the caller must start a new handoff.
+    #[error("INFO handoff did not report whether a one-time ticket was consumed")]
+    HandoffOutcomeUnconfirmed,
+
     #[error("INFO response came from an unexpected origin")]
     UnexpectedOrigin,
 
@@ -713,6 +719,26 @@ impl InfoSessionAdapter {
                 crate::thos::ThosError::Session => InfoSessionError::LoginRequired,
                 _ => InfoSessionError::HandoffUnexpectedPath,
             })?
+        } else if yyfwid == crate::invoice_read::INVOICE_WEBVPN_TARGET {
+            // The e-invoice application issues a one-time ticket on its roam
+            // page and only then creates the application session.  The exchange
+            // stays inside the invoice module, and an ambiguous exchange is
+            // reported as unconfirmed rather than replayed.
+            crate::invoice_read::follow_invoice_handoff(
+                &self.transport,
+                &self.config.webvpn_base_url,
+                mapped.as_str(),
+            )
+            .await
+            .map_err(|error| match error {
+                crate::invoice_read::InvoiceHandoffError::Session => {
+                    InfoSessionError::LoginRequired
+                }
+                crate::invoice_read::InvoiceHandoffError::Unconfirmed => {
+                    InfoSessionError::HandoffOutcomeUnconfirmed
+                }
+                _ => InfoSessionError::HandoffUnexpectedPath,
+            })?
         } else {
             self.probe_additional_roaming_page(mapped.as_str()).await?
         };
@@ -754,6 +780,19 @@ impl InfoSessionAdapter {
                 "77726476706e69737468656265737421faef469069336153301c9aa596522b20e33c1eb39606919f",
             ),
             crate::thos::ROAM_ID => ("thos.tsinghua.edu.cn", "https", crate::thos::MAPPING),
+            // The e-invoice application's original URL is `dzpj.tsinghua.edu.cn`
+            // — the reference derives that hostname from its own host table by
+            // taking the name before `.tsinghua.edu.cn`, and its roaming branch
+            // only fires when parsing that name produced this mapping.  The arm
+            // grants nothing on its own: the shared checks below still pin the
+            // scheme, port, userinfo and percent-encoding, and an input that
+            // arrives already mapped must sit inside this module's own mapping
+            // constant.
+            crate::invoice_read::INVOICE_WEBVPN_TARGET => (
+                "dzpj.tsinghua.edu.cn",
+                "https",
+                crate::invoice_read::INVOICE_MAPPING_TOKEN,
+            ),
             _ => {
                 if same_origin(&self.config.webvpn_base_url, &url) {
                     return Ok(target.clone());

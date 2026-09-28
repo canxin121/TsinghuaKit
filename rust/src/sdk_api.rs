@@ -31,6 +31,7 @@ use tsinghua_kit_sdk::{
         NetworkProfileStoragePolicy,
     },
     electricity::{ElectricityPaymentHistory, ElectricityRemainder},
+    invoice::{InvoiceDocument, InvoicePage, InvoiceRef},
     learn::{
         CourseAnnouncements, CourseCatalog, CourseDiscussions, CourseFileCategories, CourseFileRef,
         CourseFiles, CourseRef, HomeworkAttachmentKind, HomeworkDetail, HomeworkList, HomeworkRef,
@@ -1182,6 +1183,60 @@ fn assessment_list_result(value: ReadResult<AssessmentList>) -> AssessmentListRe
         .collect();
     AssessmentListResultDto {
         data: AssessmentListDataDto { items },
+        metadata: ReadMetadataDto::from(&metadata),
+    }
+}
+
+/// Flattens one invoice page into bridge-safe rows.  Each row carries only the
+/// display amounts and an opaque document reference id; the service's own
+/// record identifier never crosses the bridge.
+fn invoice_page_result(
+    value: ReadResult<InvoicePage>,
+    references: &mut HashMap<String, InvoiceRef>,
+) -> InvoiceListResultDto {
+    let (page, metadata) = value.into_parts();
+    let mut next_references = HashMap::new();
+    let records = page
+        .records
+        .iter()
+        .map(|record| {
+            let reference_id = uuid::Uuid::new_v4().to_string();
+            next_references.insert(reference_id.clone(), record.reference.clone());
+            InvoiceRecordDto {
+                business_no: record.business_no.clone(),
+                title: record.title.clone(),
+                issuer_department: record.issuer_department.clone(),
+                payment_item: record.payment_item.clone(),
+                invoice_no: record.invoice_no.clone(),
+                issued_on: record.issued_on.clone(),
+                note: record.note.clone(),
+                kind: record.kind.clone(),
+                reimbursable: record.reimbursable,
+                red_letter: record.red_letter,
+                bill_amount_cents: record.bill_amount_cents,
+                invoice_amount_cents: record.invoice_amount_cents,
+                tax_amount_cents: record.tax_amount_cents,
+                reference_id: Some(reference_id),
+            }
+        })
+        .collect();
+    *references = next_references;
+    InvoiceListResultDto {
+        data: InvoiceListDataDto {
+            records,
+            total: page.total,
+        },
+        metadata: ReadMetadataDto::from(&metadata),
+    }
+}
+
+/// Flattens one invoice document read into its bounded byte payload.
+fn invoice_document_result(value: ReadResult<InvoiceDocument>) -> InvoiceDocumentResultDto {
+    let (document, metadata) = value.into_parts();
+    InvoiceDocumentResultDto {
+        data: InvoiceDocumentDataDto {
+            bytes: document.bytes,
+        },
         metadata: ReadMetadataDto::from(&metadata),
     }
 }
@@ -2384,6 +2439,76 @@ impl fmt::Debug for AssessmentListDataDto {
 #[derive(Debug, Clone, PartialEq)]
 pub struct AssessmentListResultDto {
     pub data: AssessmentListDataDto,
+    pub metadata: ReadMetadataDto,
+}
+
+/// One issued e-invoice as it crosses the bridge.
+///
+/// It carries only the display fields and an opaque document reference index.
+/// The service's own record identifier and every payer-identifying field stay
+/// inside Rust.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InvoiceRecordDto {
+    pub business_no: String,
+    pub title: String,
+    pub issuer_department: String,
+    pub payment_item: String,
+    pub invoice_no: String,
+    pub issued_on: String,
+    pub note: String,
+    pub kind: String,
+    pub reimbursable: bool,
+    pub red_letter: bool,
+    pub bill_amount_cents: i64,
+    pub invoice_amount_cents: i64,
+    pub tax_amount_cents: i64,
+    /// Opaque handle for this row's document, valid only for the latest
+    /// invoice page read on the same handle.
+    pub reference_id: Option<String>,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct InvoiceListDataDto {
+    pub records: Vec<InvoiceRecordDto>,
+    /// The service's total record count across all pages.
+    pub total: u64,
+}
+
+impl fmt::Debug for InvoiceListDataDto {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("InvoiceListDataDto")
+            .field("record_count", &self.records.len())
+            .field("total", &self.total)
+            .finish()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InvoiceListResultDto {
+    pub data: InvoiceListDataDto,
+    pub metadata: ReadMetadataDto,
+}
+
+/// One invoice document as it crosses the bridge.  The bytes are the service's
+/// own bounded PDF; they were checked before this value was built.
+#[derive(Clone, PartialEq, Eq)]
+pub struct InvoiceDocumentDataDto {
+    pub bytes: Vec<u8>,
+}
+
+impl fmt::Debug for InvoiceDocumentDataDto {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("InvoiceDocumentDataDto")
+            .field("byte_len", &self.bytes.len())
+            .finish()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InvoiceDocumentResultDto {
+    pub data: InvoiceDocumentDataDto,
     pub metadata: ReadMetadataDto,
 }
 
@@ -3861,6 +3986,7 @@ pub struct ClientHandle {
     learn_homework_references: HashMap<String, HomeworkRef>,
     learn_course_file_references: HashMap<String, CourseFileRef>,
     library_references: HashMap<String, LibraryRef>,
+    invoice_references: HashMap<String, InvoiceRef>,
     library_floor_references: HashMap<String, FloorRef>,
     library_section_references: HashMap<String, SectionRef>,
     library_window_references: HashMap<String, SeatWindowRef>,
@@ -3954,6 +4080,7 @@ impl ClientHandle {
             learn_homework_references: HashMap::new(),
             learn_course_file_references: HashMap::new(),
             library_references: HashMap::new(),
+            invoice_references: HashMap::new(),
             library_floor_references: HashMap::new(),
             library_section_references: HashMap::new(),
             library_window_references: HashMap::new(),
@@ -4631,6 +4758,37 @@ impl ClientHandle {
         Ok(assessment_list_result(result))
     }
 
+    /// Reads one live page of issued e-invoices.
+    ///
+    /// `page` is one-based and bounded by [`InvoiceClient::MAX_PAGE`].  The
+    /// page is read live on every call; a retained page would present a
+    /// superseded reimbursement state as the current one.
+    pub async fn invoice_list_result(
+        &mut self,
+        page: u32,
+    ) -> Result<InvoiceListResultDto, SdkErrorDto> {
+        let result = self.inner.invoice().list(page).await?;
+        Ok(invoice_page_result(result, &mut self.invoice_references))
+    }
+
+    /// Reads one invoice document from the most recent invoice page.
+    ///
+    /// The `reference_id` comes from an [`InvoiceRecordDto`] of the latest
+    /// [`ClientHandle::invoice_list_result`] call on this handle.  A reference
+    /// from an earlier page or from a dropped session is refused, and the
+    /// service's own PDF bytes are returned only when the answer really was
+    /// that document.
+    pub async fn invoice_document_result(
+        &mut self,
+        reference_id: String,
+    ) -> Result<InvoiceDocumentResultDto, SdkErrorDto> {
+        let Some(reference) = self.invoice_references.get(&reference_id).cloned() else {
+            return Err(context_mismatch("invoice"));
+        };
+        let result = self.inner.invoice().document(&reference).await?;
+        Ok(invoice_document_result(result))
+    }
+
     /// Reads only the TUNet portal's registration state for the current local
     /// IPv4. This does not identify system-managed Wi-Fi such as Tsinghua Secure.
     pub async fn network_portal_observation(
@@ -4751,6 +4909,7 @@ impl ClientHandle {
         self.learn_course_file_references.clear();
         self.library_references.clear();
         self.clear_library_descendants();
+        self.invoice_references.clear();
         self.classroom_building_references.clear();
     }
 

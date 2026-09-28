@@ -30,6 +30,7 @@ pub mod info;
 pub mod info_client;
 pub mod info_news;
 pub mod info_session;
+pub mod invoice_read;
 pub mod learn;
 pub mod learn_announcements;
 pub mod learn_api;
@@ -182,6 +183,14 @@ pub use info_news::{
     NewsSearchInput, parse_news_detail, parse_news_list, parse_news_page, parse_news_search,
 };
 pub use info_session::{InfoSessionAdapter, InfoSessionError, InfoSessionResult, InfoWebVpnConfig};
+pub use invoice_read::{
+    INVOICE_DOCUMENT_PATH, INVOICE_LIST_PATH, INVOICE_PAGE_SIZE, INVOICE_ROAM_AUTH_PATH,
+    INVOICE_WEBVPN_TARGET, InvoiceAdapter, InvoiceAdapterConfig, InvoiceAdapterError,
+    InvoiceBusinessProof, InvoiceDocument, InvoiceDocumentRead, InvoiceListRows, InvoiceMethod,
+    InvoiceOperation, InvoicePage, InvoicePageRead, InvoiceParseError, InvoiceProfile,
+    InvoiceRecord, InvoiceRef, InvoiceRequestPlan, InvoiceRow, InvoiceSessionPrerequisite,
+    MAX_INVOICE_PAGE, handoff_ticket, parse_invoice_list_json,
+};
 pub use learn::{
     DEFAULT_ROAMING_ENTRY_PATH, LearnCourseRequest, LearnError, LearnProfile, LearnRoamingRequest,
 };
@@ -307,6 +316,9 @@ mod program_tests;
 
 #[cfg(test)]
 mod physical_exam_tests;
+
+#[cfg(test)]
+mod invoice_tests;
 
 #[cfg(test)]
 mod reference_test_support;

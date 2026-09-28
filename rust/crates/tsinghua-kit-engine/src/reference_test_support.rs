@@ -66,6 +66,12 @@ impl FixtureServer {
             while !done.load(Ordering::SeqCst) {
                 match listener.accept() {
                     Ok((mut stream, _)) => {
+                        // On BSD-derived platforms an accepted socket inherits
+                        // the listener's non-blocking flag, which would make the
+                        // read below fail with `WouldBlock` before the client's
+                        // bytes arrive and answer a half-written request. Clear
+                        // it so the read timeout is what bounds the read.
+                        stream.set_nonblocking(false).unwrap();
                         stream
                             .set_read_timeout(Some(Duration::from_secs(1)))
                             .unwrap();

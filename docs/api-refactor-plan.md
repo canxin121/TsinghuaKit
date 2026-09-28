@@ -1120,3 +1120,54 @@ test/public_entrypoints_test.dart | 1 +
 **验证**
 
 `cargo test -p tsinghua_kit_engine --lib assessment` 20 项通过（`assessment_tests` 15 项 + `api::runtime::assessment_tests` 5 项）：位置读取与结构锚点、空列表是失败、窗口未开是独立类别、登录页/超时页是会话失败、无内联动作的行被拒、越界路由被拒、过短行被拒、缺 `tbody` 被拒、adapter 走 cookie-aware transport、引用只在产生它的 adapter 内可解、被取代的列表引用不再可解、窗口未开以 `assessment_not_open` 到达调用方且 `route_generation() == 0`、解析失败上报 `assessment_list_empty`、非 HTML 响应上报 `assessment_content_type`、adapter `Debug` 不含路由或映射 token。Runtime 4 项 fixture 断言读取请求落在映射根内且不含 handoff 的 `ticket`。`cargo check --workspace --all-targets` 退出 0；严格 `RUSTDOCFLAGS="-D warnings" cargo doc -p tsinghua_kit` 通过；`flutter analyze lib test` 无问题；`flutter test test/public_entrypoints_test.dart` 通过并覆盖新入口。`docs/api-surface-baseline.json` 已按本节源码与重新渲染的 Rustdoc 刷新。**未执行任何真实账号登录或学校服务请求**；本域的线上可用性仍未验证。
+
+## 55. 2026-09-29 零新认证生活域：发票列表与报销凭证 PDF
+
+本轮补上 `thu_reference` 已实现、TsinghuaKit 缺失的**电子发票列表与文档**（`dzpj.tsinghua.edu.cn`）。它与 §54 的教学评估域一样不属于原有 zhjw 映射，因此本轮**又新增了一个 selector 允许名单条目**，其余一切沿用已有 INFO/WebVPN 会话、已有 transport 与 request gate。
+
+**新增引擎模块 `invoice_read.rs`**
+
+- 路径常量只保存 path：`INVOICE_LIST_PATH = /invoiceSys/getList.do`、`INVOICE_DOCUMENT_PATH = /invoice/showInvPdf.do`、`INVOICE_ROAM_AUTH_PATH = /roam/roamAuth.do`。`INVOICE_WEBVPN_TARGET = 625B81A7A9D148B01DA59185CC4074E1` 是参考实现的 roam selector，映射 id 为 `77726476706e69737468656265737421f4ed519669247b59700f81b9991b2631aee63c51`（host `dzpj.tsinghua.edu.cn`，scheme `https`）。`InfoSessionAdapter::map_additional_roaming` 新增该 selector → `(host, "https", mapping)` 三元组。
+- `InvoiceAdapter` 与 `program_read`/`physical_exam_read`/`assessment_read` 同构：`InvoiceRequestPlan` + `InvoiceProfile` 常量、`AtomicU64` binding 计数器绑定的 `InvoiceBusinessProof`、`try_with_transport(base_url, transport)` 共享 identity Cookie jar、`execute()` 在解析之前先分类 login/expiry/origin/path/content-type、无 body 的 `InvoiceAdapterError`（带 `diagnostic_code()` 与 `is_session_expired()`）。`InvoiceProfile` 只会发出 GET 与一个固定表单体的 POST，写路由无法被夹带进来。
+- 列表表单固定为 `page`、`limit=20`、`columnName=inv_date`、`sort=desc`；分页上界由 `MAX_INVOICE_PAGE = 1000` 在**发请求之前**判定，越界直接 `PageOutOfRange`。
+
+**本域唯一需要判断的语义：两跳一次性 ticket handoff**
+
+发票应用的 handoff 不是普通的 roam 跳转，而是**两次交换**：先 GET roam 目标页，从内联脚本 `("ticket").value = '…'` 里取出一次性 ticket，再把它 POST 回 `/roam/roamAuth.do`，只有第二跳的最终 URL 才算拿到了可用的映射根。因此：
+
+- ticket 的提取要求锚点、赋值号与两侧引号**按序出现**，并带长度上下界（8–512），所以被改写或截断的赋值只会被报成"没有 ticket"，而不会从无关文本里切出一段冒充 ticket。
+- 两跳都只接受**同一 origin 且仍在同一映射前缀内**的 URL，带 `%`、`\`、用户名、密码或 fragment 都拒绝。
+- ticket 在 POST 之后即被丢弃；它**不成为适配器 base URL**，也不会出现在任何后续请求或 DTO 里。`prepare_invoice_adapter` 只把 handoff 结果用于**校验**是否落在 `INVOICE_WEBVPN_BASE_URL` 映射根内（否则 `invoice_mapping_rejected`），随后把 path 收敛到映射根、清空 query 与 fragment。
+- 第二跳的**结果不明确**（传输失败、body 读不成）是独立的 `InvoiceHandoffError::Unconfirmed`，它**不会**触发重放：一次性 ticket 已经被消费，重放一个语义不明的 ticket 交换正是 AGENTS.md 禁止的那类自动重试。
+
+**金额用精确整数分，不用浮点**
+
+服务返回的是两位小数字符串。`exact_cents` 只在 token 真的是整体十进制（允许前导 `+`/`-`、最多两位小数、无指数、无多余字符）时换算成 `i64` 分，任何有损表示都报 `InvalidAmount`，因此调用方拿到的分与服务的分逐位相等，不会出现 `0.1 + 0.2` 式的漂移。
+
+**服务自己的记录标识不离开 Rust**
+
+`InvoiceRef`（adapter binding + generation + index）间接持有文档标识，标识表放在 adapter 内的私有状态里。`generation` 只在**一次成功解析之后**才前进，所以一次被拒绝的读取不会作废先前已发出的引用；`document_id()` 会拒绝外来 binding 与过期 generation。adapter 被丢弃（INFO 会话失效、登出）时标识表随之消失。`InvoiceRef` 的 `Debug` 只打印 index。
+
+**响应类型必须自证，不能"大概像"**
+
+文档读取只接受**真的**是那份 PDF 的响应：`%PDF-` magic 与 `MAX_DOCUMENT_BYTES = 12 MiB` 双重约束。一个 200 但内容不是 PDF 的响应（典型的是又一个登录页或错误页）报 `invoice_template`，而不是把 HTML 字节当成凭证交给调用方。列表同理：解析失败（非 JSON、缺 `data`、缺 `count`、行字段缺失、行数超 `MAX_ROWS`）一律是**失败**，不会被塌缩成"这个账号没有发票"的空页——空页只有在响应确实带着一个格式良好的记录数组时才产生。
+
+**Runtime 接线**
+
+`ensure_invoice_reader_session` / `prepare_invoice_adapter` 要求 INFO 已证明后才发起 handoff。`load_invoice_list_result` / `load_invoice_document_result` 各带一次性过期恢复，失败时把 `diagnostic_code()` 记进 `last_invoice_failure_code`（供 SDK 层做稳定错误分类）再 `record_business_failure("invoice", "invoice_list"|"invoice_document", …)`；成功时清空该记录。`invoice_service_is_proven()` 同时要求 INFO 已证明且证明与当前 adapter 实例匹配；`ServiceId::Info` 失效与 `logout` 都会清除 adapter 与 proof。两个域都不落缓存：报销状态是可变财务状态，一份陈旧副本会被渲染成当前状态。
+
+**FFI / Dart**
+
+`sdk_api.rs` 新增 `InvoiceListResultDto` / `InvoiceListDataDto` / `InvoiceRecordDto` / `InvoiceDocumentResultDto` / `InvoiceDocumentDataDto`，`Debug` 脱敏为记录数、总数与字节数。文档引用沿用 `LibraryRef` 的既有做法：`ClientHandle` 持一个 `HashMap<String, InvoiceRef>`，对每行发出一个新的 UUID 作为 `reference_id`，引擎的 `InvoiceRef::index` **不出现在公开 surface 上**；未知 id 报 `context_mismatch("invoice")`。FRB 2.13.0 重新生成，生成物未手工编辑。Dart 侧新增 `lib/src/invoice.dart` part 文件与 `lib/invoice.dart` 入口，金额与总数的 `PlatformInt64` 经既有 `_platformInt64ToBigInt` 转换，因此 Dart 侧是 `BigInt` 而不是可能丢精度的 `int`。
+
+**验证**
+
+`cargo test -p tsinghua_kit_engine --lib invoice` 40 项通过（`invoice_tests` 23 项 + `api::runtime::invoice_tests` 8 项，其余为过滤统计）：两跳 handoff 的 URL 与映射约束、缺 ticket 的 roam 页被拒、登录页是会话失败、ticket 不出现在后续请求、列表按精确响应形状解析、空数组是合法空页而解析失败不是空页、越界页在任何列表请求之前被拒、文档读取有界且可解引用、非 PDF 的 200 响应报 `invoice_template`、过期页是会话失败、账号未证明时零请求、引用不跨会话存活、adapter `Debug` 不含标识或映射 token。相邻域同轮复跑：`assessment` 20 项、`program_tests` 17 项、`physical_exam` 16 项通过。`cargo check --workspace --all-targets` 退出 0；严格 `RUSTDOCFLAGS="-D warnings" cargo doc -p tsinghua_kit` 通过；`cargo fmt --all -- --check` 与 `git diff --check` 干净；`flutter analyze lib` 无问题；`flutter test test/public_entrypoints_test.dart` 通过并覆盖 `InvoiceClient`/`InvoicePage`/`InvoiceRecord`/`InvoiceDocument` 与 `maxPage == 1000`、`pageSize == 20`。`docs/api-surface-baseline.json` 已按本节源码与重新渲染的 Rustdoc 刷新。
+
+**顺带修掉的测试基础设施缺陷**
+
+本轮新增的 fixture 测试暴露出 loopback 夹具一个**既有**的间歇性失败（约 1/7–1/10）：`reference_test_support::FixtureServer` 的 `accept()` 在 BSD 系平台上会继承 listener 的非阻塞标志，于是 `read_request` 在客户端字节到达前就返回 `WouldBlock`，夹具于是对半读的请求作答，调用方看到 `TransportError::Request(..)` 与 `received unexpected message from connection`。已在 accept 之后显式 `set_nonblocking(false)`，让读超时而不是非阻塞标志来约束这次读取。修复后发票 40 项、评估 20 项连续复跑全绿（此前评估的 `a_closed_window_reaches_the_caller_as_not_open` 在同样条件下会偶发失败）。这是夹具的修复，不是对被测代码的放宽。
+
+**边界**
+
+本轮**未执行任何真实账号登录或学校服务请求**；本域的线上可用性仍未验证，需另行真实只读验收。发票域只读，不含任何报销或支付动作；`thu_reference` 侧的相关实现仅作为路径/字段/选择器/可观察行为的证据使用，未复制其源码、夹具或资源。

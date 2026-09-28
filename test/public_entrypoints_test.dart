@@ -5,6 +5,7 @@ import 'package:tsinghua_kit/campus_card.dart' as campus_card;
 import 'package:tsinghua_kit/classrooms.dart' as classrooms;
 import 'package:tsinghua_kit/core.dart' as core;
 import 'package:tsinghua_kit/electricity.dart' as electricity;
+import 'package:tsinghua_kit/invoice.dart' as invoice;
 import 'package:tsinghua_kit/learn.dart' as learn;
 import 'package:tsinghua_kit/library.dart' as library_api;
 import 'package:tsinghua_kit/network.dart' as network;
@@ -89,5 +90,11 @@ void main() {
     expect(_publicType<assessment.AssessmentClient>(), isNull);
     expect(_publicType<assessment.AssessmentList>(), isNull);
     expect(_publicType<assessment.AssessmentItem>(), isNull);
+    expect(_publicType<invoice.InvoiceClient>(), isNull);
+    expect(_publicType<invoice.InvoicePage>(), isNull);
+    expect(_publicType<invoice.InvoiceRecord>(), isNull);
+    expect(_publicType<invoice.InvoiceDocument>(), isNull);
+    expect(invoice.InvoiceClient.maxPage, 1000);
+    expect(invoice.InvoiceClient.pageSize, 20);
   });
 }

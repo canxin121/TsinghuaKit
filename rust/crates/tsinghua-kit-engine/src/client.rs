@@ -41,6 +41,10 @@ use crate::{
     },
     electricity_api::{ElectricityPaymentHistory, ElectricityRemainder},
     error::{Error, ErrorCode, Service},
+    invoice_read::{
+        INVOICE_PAGE_SIZE, InvoiceDocument, InvoicePage, InvoiceRecord, InvoiceRef,
+        MAX_INVOICE_PAGE,
+    },
     learn_api::{
         Course, CourseAnnouncement, CourseAnnouncements, CourseCatalog, CourseDiscussion,
         CourseDiscussions, CourseFile, CourseFileCategories, CourseFileCategory, CourseFileRef,
@@ -938,6 +942,13 @@ impl Client {
         }
     }
 
+    /// Borrows the read-only e-invoice list and document reads.
+    pub fn invoice(&mut self) -> InvoiceClient<'_> {
+        InvoiceClient {
+            runtime: &mut self.runtime,
+        }
+    }
+
     /// Borrows school-wide and academic-term calendar reads.
     pub fn calendar(&mut self) -> CalendarClient<'_> {
         CalendarClient {
@@ -1294,6 +1305,99 @@ impl AssessmentClient<'_> {
     }
 }
 
+/// Read-only e-invoice list and document reads.
+///
+/// The page is read live on every call and never served from a cached copy: a
+/// retained page would present a superseded reimbursement state as the current
+/// one.  A document reference is only resolvable against the list this client
+/// most recently read through the same runtime.
+pub struct InvoiceClient<'client> {
+    runtime: &'client mut CampusRuntime,
+}
+
+impl InvoiceClient<'_> {
+    /// The one-based page range the service accepts through this client.
+    pub const MAX_PAGE: u32 = MAX_INVOICE_PAGE;
+
+    /// The page size this client requests from the service.
+    pub const PAGE_SIZE: u32 = INVOICE_PAGE_SIZE;
+
+    /// Reads one page of issued e-invoices.
+    ///
+    /// `page` is one-based and bounded by [`InvoiceClient::MAX_PAGE`]; a page
+    /// outside that range is refused before any request.
+    pub async fn list(&mut self, page: u32) -> Result<ReadResult<InvoicePage>, Error> {
+        let dto = self
+            .runtime
+            .load_invoice_list_result(page)
+            .await
+            .map_err(|_| invoice_failure(self.runtime))?;
+        let metadata = cached_read_metadata(
+            Service::Invoice,
+            &dto.generated_at,
+            &dto.source,
+            &dto.status,
+            dto.error.is_some(),
+            ReadSource::Live,
+        )?;
+        let records = dto
+            .records
+            .into_iter()
+            .map(|record| InvoiceRecord {
+                business_no: record.business_no,
+                title: record.title,
+                issuer_department: record.issuer_department,
+                payment_item: record.payment_item,
+                invoice_no: record.invoice_no,
+                issued_on: record.issued_on,
+                note: record.note,
+                kind: record.kind,
+                reimbursable: record.reimbursable,
+                red_letter: record.red_letter,
+                bill_amount_cents: record.bill_amount_cents,
+                invoice_amount_cents: record.invoice_amount_cents,
+                tax_amount_cents: record.tax_amount_cents,
+                reference: record.reference,
+            })
+            .collect();
+        Ok(ReadResult::new(
+            InvoicePage {
+                records,
+                total: dto.total,
+            },
+            metadata,
+        ))
+    }
+
+    /// Reads one invoice's document.
+    ///
+    /// The reference must come from this client's most recent [`Self::list`]
+    /// result; a reference from an earlier page or from a dropped session does
+    /// not resolve.
+    pub async fn document(
+        &mut self,
+        reference: &InvoiceRef,
+    ) -> Result<ReadResult<InvoiceDocument>, Error> {
+        let dto = self
+            .runtime
+            .load_invoice_document_result(reference)
+            .await
+            .map_err(|_| invoice_failure(self.runtime))?;
+        let metadata = cached_read_metadata(
+            Service::Invoice,
+            &dto.generated_at,
+            &dto.source,
+            &dto.status,
+            dto.error.is_some(),
+            ReadSource::Live,
+        )?;
+        Ok(ReadResult::new(
+            InvoiceDocument { bytes: dto.bytes },
+            metadata,
+        ))
+    }
+}
+
 /// Read-only campus-card reads and its explicit one-shot SSO password step.
 /// The card password is a target-service interaction, not an Auth account.
 pub struct CampusCardClient<'client> {
@@ -1536,6 +1640,38 @@ fn assessment_failure(runtime: &CampusRuntime) -> Error {
         AccountAuthState::Authenticated => ErrorCode::ServiceUnavailable,
     };
     Error::new(Service::Assessment, code)
+}
+
+/// Maps one e-invoice failure to its stable code.
+///
+/// The adapter's own diagnostic is checked first, because it distinguishes an
+/// unauthenticated session from a deployment whose page shape changed; both can
+/// happen to a proven account, and neither is a generic read failure.
+/// Everything else falls back to the account state.
+fn invoice_failure(runtime: &CampusRuntime) -> Error {
+    if let Some(diagnostic) = runtime.last_invoice_failure_code() {
+        let code = match diagnostic {
+            "invoice_auth_required" => ErrorCode::SessionExpired,
+            "invoice_config" => ErrorCode::InvalidInput,
+            "invoice_network" => ErrorCode::NetworkUnavailable,
+            "invoice_origin" | "invoice_path" => ErrorCode::RedirectRefused,
+            "invoice_http" => ErrorCode::ServiceUnavailable,
+            "invoice_reference" => ErrorCode::NotAvailable,
+            "invoice_size" => ErrorCode::NotAvailable,
+            _ => ErrorCode::InvalidResponse,
+        };
+        return Error::new(Service::Invoice, code);
+    }
+    let code = match runtime.auth_status().identity().state() {
+        AccountAuthState::SignedOut | AccountAuthState::RestoredUnverified => {
+            ErrorCode::SessionRequired
+        }
+        AccountAuthState::Expired => ErrorCode::SessionExpired,
+        AccountAuthState::NeedsInteraction => ErrorCode::InteractionRequired,
+        AccountAuthState::Authenticating => ErrorCode::InteractionInProgress,
+        AccountAuthState::Authenticated => ErrorCode::ServiceUnavailable,
+    };
+    Error::new(Service::Invoice, code)
 }
 
 fn classrooms_failure(runtime: &CampusRuntime) -> Error {
