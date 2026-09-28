@@ -24,6 +24,7 @@ part 'src/campus_card.dart';
 part 'src/electricity.dart';
 part 'src/physical_exam.dart';
 part 'src/program.dart';
+part 'src/assessment.dart';
 part 'src/learn.dart';
 part 'src/registrar_calendar.dart';
 part 'src/news.dart';
@@ -318,6 +319,7 @@ class TsinghuaKitClient {
         electricity = ElectricityClient._(handle),
         physicalExam = PhysicalExamClient._(handle),
         program = ProgramClient._(handle),
+        assessment = AssessmentClient._(handle),
         learn = LearnClient._(handle),
         news = NewsClient._(handle),
         serviceHall = ServiceHallClient._(handle),
@@ -357,6 +359,9 @@ class TsinghuaKitClient {
 
   /// Degree-program completion.
   final ProgramClient program;
+
+  /// Course teaching-evaluation questionnaires.
+  final AssessmentClient assessment;
 
   /// Learn courses, announcements, assignments, files, and discussions.
   final LearnClient learn;

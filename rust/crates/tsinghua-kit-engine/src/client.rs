@@ -24,6 +24,7 @@ use crate::{
         },
         thos::{ThosPhaseStepsDto, ThosServicesDto, ThosTaskListDto},
     },
+    assessment_read::{AssessmentItem, AssessmentList},
     auth::{
         AccountAuthState, AccountAuthStatus, AuthDomain, AuthStatus, SecondFactorMethod,
         SelfServiceLoginPhase,
@@ -930,6 +931,13 @@ impl Client {
         }
     }
 
+    /// Borrows the read-only teaching-evaluation questionnaire list.
+    pub fn assessment(&mut self) -> AssessmentClient<'_> {
+        AssessmentClient {
+            runtime: &mut self.runtime,
+        }
+    }
+
     /// Borrows school-wide and academic-term calendar reads.
     pub fn calendar(&mut self) -> CalendarClient<'_> {
         CalendarClient {
@@ -1248,6 +1256,44 @@ impl ProgramClient<'_> {
     }
 }
 
+/// Read-only teaching-evaluation questionnaire list.
+///
+/// The list is read live on every call and never served from a cached copy: it
+/// is only rendered while the questionnaire window is open, so a retained list
+/// would present a closed window as outstanding work.
+pub struct AssessmentClient<'client> {
+    runtime: &'client mut CampusRuntime,
+}
+
+impl AssessmentClient<'_> {
+    /// Reads the courses awaiting a teaching evaluation.
+    pub async fn list(&mut self) -> Result<ReadResult<AssessmentList>, Error> {
+        let dto = self
+            .runtime
+            .load_assessment_list_result()
+            .await
+            .map_err(|_| assessment_failure(self.runtime))?;
+        let metadata = cached_read_metadata(
+            Service::Assessment,
+            &dto.generated_at,
+            &dto.source,
+            &dto.status,
+            dto.error.is_some(),
+            ReadSource::Live,
+        )?;
+        let items = dto
+            .items
+            .into_iter()
+            .map(|item| AssessmentItem {
+                name: item.name,
+                evaluated: item.evaluated,
+                reference: item.reference,
+            })
+            .collect();
+        Ok(ReadResult::new(AssessmentList { items }, metadata))
+    }
+}
+
 /// Read-only campus-card reads and its explicit one-shot SSO password step.
 /// The card password is a target-service interaction, not an Auth account.
 pub struct CampusCardClient<'client> {
@@ -1459,6 +1505,37 @@ fn program_failure(runtime: &CampusRuntime) -> Error {
         AccountAuthState::Authenticated => ErrorCode::ServiceUnavailable,
     };
     Error::new(Service::Program, code)
+}
+
+/// Maps one teaching-evaluation failure to its stable code.
+///
+/// The evaluation service's own business states are checked first, because
+/// they are more specific than the account state: a proven account can still
+/// be told that the questionnaire window is closed, and that is not a read
+/// failure.  Everything else falls back to the account state, so an expired
+/// session is never reported as a changed page.
+fn assessment_failure(runtime: &CampusRuntime) -> Error {
+    if let Some(diagnostic) = runtime.last_assessment_failure_code() {
+        let code = match diagnostic {
+            "assessment_not_open" => ErrorCode::NotAvailable,
+            "assessment_auth_required" => ErrorCode::SessionExpired,
+            "assessment_network" => ErrorCode::NetworkUnavailable,
+            "assessment_origin" | "assessment_path" => ErrorCode::RedirectRefused,
+            "assessment_http" => ErrorCode::ServiceUnavailable,
+            _ => ErrorCode::InvalidResponse,
+        };
+        return Error::new(Service::Assessment, code);
+    }
+    let code = match runtime.auth_status().identity().state() {
+        AccountAuthState::SignedOut | AccountAuthState::RestoredUnverified => {
+            ErrorCode::SessionRequired
+        }
+        AccountAuthState::Expired => ErrorCode::SessionExpired,
+        AccountAuthState::NeedsInteraction => ErrorCode::InteractionRequired,
+        AccountAuthState::Authenticating => ErrorCode::InteractionInProgress,
+        AccountAuthState::Authenticated => ErrorCode::ServiceUnavailable,
+    };
+    Error::new(Service::Assessment, code)
 }
 
 fn classrooms_failure(runtime: &CampusRuntime) -> Error {

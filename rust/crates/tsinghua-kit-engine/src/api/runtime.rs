@@ -30,6 +30,7 @@ use super::{
     service_catalog::ServiceCatalogDto,
 };
 use crate::{
+    assessment_read::{AssessmentAdapter, AssessmentBusinessProof, AssessmentRef},
     cache::{JsonCacheEnvelope, JsonFileCache, read_untyped_json_envelope},
     campus_card_adapter::{
         CAMPUS_CARD_SSO_TARGET, CampusCardAdapterConfig, CampusCardClient, CampusCardSession,
@@ -99,6 +100,8 @@ const IDENTITY_APP_ID: &str = "bb5df85216504820be7bba2b0ae1535b";
 const LEARN_DIRECT_ORIGIN: &str = "https://learn.tsinghua.edu.cn/";
 const LEARN_WEBVPN_BASE_URL: &str = "https://webvpn.tsinghua.edu.cn/https/77726476706e69737468656265737421fcf2408e297e7c4377068ea48d546d30ca8cc97bcc/";
 const REGISTRAR_WEBVPN_BASE_URL: &str = "https://webvpn.tsinghua.edu.cn/http/77726476706e69737468656265737421eaff4b8b69336153301c9aa596522b20bc86e6e559a9b290/";
+/// The teaching-evaluation application's own campus host and mapping.
+const ASSESSMENT_WEBVPN_BASE_URL: &str = "https://webvpn.tsinghua.edu.cn/http/77726476706e69737468656265737421faef469069336153301c9aa596522b20e33c1eb39606919f/";
 const WEBVPN_BASE_URL: &str = "https://webvpn.tsinghua.edu.cn/";
 const INFO_DIRECT_ORIGIN: &str = "https://info.tsinghua.edu.cn/";
 // Current THUInfo public clients perform one target-application identity roam
@@ -192,6 +195,10 @@ mod info_cache_tests;
 #[cfg(test)]
 #[path = "runtime_program_tests.rs"]
 mod program_tests;
+
+#[cfg(test)]
+#[path = "runtime_assessment_tests.rs"]
+mod assessment_tests;
 
 #[cfg(test)]
 #[path = "runtime_library_cache_tests.rs"]
@@ -1266,6 +1273,29 @@ pub struct ProgramCompletionResultDto {
     pub source: String,
     pub status: String,
     pub error: Option<String>,
+}
+
+/// Source-aware teaching-evaluation questionnaire list.
+///
+/// The list is read live on every request: it is only rendered while the
+/// questionnaire window is open, so a retained copy would present a closed
+/// window as a list that still has work left in it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AssessmentListResultDto {
+    pub items: Vec<AssessmentListItemDto>,
+    pub generated_at: String,
+    pub source: String,
+    pub status: String,
+    pub error: Option<String>,
+}
+
+/// One evaluation row.  The form route stays in Rust: the opaque reference is
+/// what a later stage resolves, so a caller never receives a service path.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AssessmentListItemDto {
+    pub name: String,
+    pub evaluated: bool,
+    pub reference: AssessmentRef,
 }
 
 /// Source-aware campus-card account. The account record contains only the
@@ -2517,6 +2547,10 @@ pub struct CampusRuntime {
     // completion report itself is re-read live on every request.
     program_adapter: Option<ProgramAdapter>,
     program_proof: Option<ProgramBusinessProof>,
+    // The evaluation adapter is likewise prepared per confirmed INFO session.
+    // Its route table holds the per-row form paths, which never leave Rust.
+    assessment_adapter: Option<AssessmentAdapter>,
+    assessment_proof: Option<AssessmentBusinessProof>,
     card_client: Option<CampusCardClient>,
     card_session: Option<CampusCardSession>,
     // One initial target-auth chain per explicit login. Retain after failure
@@ -2646,6 +2680,9 @@ pub struct CampusRuntime {
     // Keep the source-owned fixed diagnostic for the public SDK adapter; the
     // legacy bridge still receives only its compatibility error string.
     last_usereg_failure_code: Option<&'static str>,
+    // The evaluation service's closed-window answer is a business state, not a
+    // transport failure, so it is kept as its own code for the SDK to map.
+    last_assessment_failure_code: Option<&'static str>,
     // The WebVPN/OAuth/Identity origin graph is part of the Rust runtime's
     // authenticated transport boundary. Production uses the current THU
     // deployment; loopback fixtures may inject a fully validated graph so
@@ -2746,6 +2783,7 @@ fn thos_compat_error(error: crate::error::Error) -> String {
             "网上服务大厅会话续接未确认，请重新建立登录会话"
         }
         crate::error::ErrorCode::CacheMiss => "网上服务大厅尚无可用缓存",
+        crate::error::ErrorCode::NotAvailable => "网上服务大厅当前未开放该功能",
         crate::error::ErrorCode::ServiceUnavailable
         | crate::error::ErrorCode::RateLimited
         | crate::error::ErrorCode::InvalidInput
@@ -3229,6 +3267,8 @@ impl CampusRuntime {
             physical_exam_proof: None,
             program_adapter: None,
             program_proof: None,
+            assessment_adapter: None,
+            assessment_proof: None,
             card_client: None,
             card_session: None,
             card_auth_attempted: false,
@@ -3300,6 +3340,7 @@ impl CampusRuntime {
             last_error: None,
             last_info_failure_code: None,
             last_usereg_failure_code: None,
+            last_assessment_failure_code: None,
             webvpn_identity_config,
         };
 
@@ -14525,6 +14566,142 @@ impl CampusRuntime {
         .await
     }
 
+    /// Prepares the teaching-evaluation adapter inside the already-confirmed
+    /// INFO session.  Like the program reader it performs no business read:
+    /// the list request that follows owns its own expiry classification.
+    async fn ensure_assessment_reader_session(
+        &mut self,
+        user: &UserIdentity,
+    ) -> Result<(), String> {
+        if self.assessment_service_is_proven() {
+            return Ok(());
+        }
+        let context_exists = self.assessment_adapter.is_some()
+            || self.assessment_proof.is_some()
+            || self.info_session_context_exists();
+        if context_exists && !self.service_session_is_proven(ServiceId::Info) {
+            self.refresh_nonacademic_service_after_expiry(ServiceId::Info)
+                .await
+                .map_err(|error| self.record_error(format!("INFO 自动续接失败: {error}")))?;
+        }
+        self.prepare_assessment_adapter(user).await
+    }
+
+    async fn prepare_assessment_adapter(&mut self, user: &UserIdentity) -> Result<(), String> {
+        self.invalidate_assessment_session();
+        self.ensure_info_session(user).await?;
+
+        let transport = self.identity.transport().clone();
+        let handoff = match self.info_adapter.as_ref() {
+            Some(info) => {
+                info.additional_roaming(crate::assessment_read::ASSESSMENT_WEBVPN_TARGET)
+                    .await
+            }
+            None => return Err(self.record_error("INFO 服务会话尚未建立")),
+        };
+        let roaming_url = handoff.map_err(|error| {
+            self.record_business_failure(
+                "assessment",
+                "assessment_handoff",
+                info_failure_code(&error),
+            )
+        })?;
+        let mut base_url = Url::parse(roaming_url.as_str())
+            .map_err(|_| self.record_error("assessment roaming URL is invalid"))?;
+        let expected = Url::parse(ASSESSMENT_WEBVPN_BASE_URL).expect("static assessment mapping");
+        if !base_url.path().starts_with(expected.path()) {
+            return Err(self.record_business_failure(
+                "assessment",
+                "assessment_handoff",
+                "assessment_mapping_rejected",
+            ));
+        }
+        // The handoff query is consumed here. Only the proved target mapping
+        // configures the read endpoints that follow.
+        base_url.set_path(expected.path());
+        base_url.set_query(None);
+        base_url.set_fragment(None);
+        let adapter = AssessmentAdapter::try_with_transport(base_url, transport)
+            .map_err(|error| self.record_error(format!("assessment adapter: {error}")))?;
+        self.assessment_adapter = Some(adapter);
+        Ok(())
+    }
+
+    /// Reads the teaching-evaluation questionnaire list.
+    ///
+    /// The list is read live every time and never served from a cached copy:
+    /// the page only exists while the questionnaire window is open, so a
+    /// retained list would present a closed window as outstanding work.  The
+    /// service's explicit closed-window answer is reported as that state, and
+    /// an empty list is reported as a failure rather than as "nothing to do".
+    pub async fn load_assessment_list_result(&mut self) -> Result<AssessmentListResultDto, String> {
+        crate::telemetry::observe("assessment", "load_assessment_list_result", async {
+            self.allow_live_operation()?;
+            let user = self.ensure_identity_user_for_live_read().await?;
+            self.ensure_assessment_reader_session(&user).await?;
+
+            let mut result = {
+                let Some(adapter) = self.assessment_adapter.as_ref() else {
+                    return self.fail("教学评估服务会话未建立");
+                };
+                adapter.read_list_with_proof().await
+            };
+            if matches!(&result, Err(error) if error.is_session_expired()) {
+                self.invalidate_assessment_session();
+                if let Err(error) = self
+                    .refresh_nonacademic_service_after_expiry(ServiceId::Info)
+                    .await
+                {
+                    return Err(self.record_error(format!("教学评估自动续接失败: {error}")));
+                }
+                let user = self.ensure_identity_user_for_live_read().await?;
+                self.prepare_assessment_adapter(&user).await?;
+                let Some(adapter) = self.assessment_adapter.as_ref() else {
+                    return self.fail("教学评估自动续接后会话未建立");
+                };
+                result = adapter.read_list_with_proof().await;
+                if matches!(&result, Err(error) if error.is_session_expired()) {
+                    self.invalidate_assessment_session();
+                    return self.fail("教学评估自动续接后仍已过期，请重新建立");
+                }
+            }
+            match result {
+                Ok(read) => {
+                    self.assessment_proof = Some(read.proof);
+                    if !self.assessment_service_is_proven() {
+                        return self.fail("教学评估服务会话证明未确认，请重新建立服务会话");
+                    }
+                    self.last_error = None;
+                    self.last_assessment_failure_code = None;
+                    self.persist_resume_state_after_live_read(&user, "assessment_list");
+                    let items = read
+                        .value
+                        .items
+                        .into_iter()
+                        .map(|item| AssessmentListItemDto {
+                            name: item.name,
+                            evaluated: item.evaluated,
+                            reference: item.reference,
+                        })
+                        .collect();
+                    Ok(AssessmentListResultDto {
+                        items,
+                        generated_at: Utc::now().to_rfc3339(),
+                        source: "live".to_owned(),
+                        status: "ready".to_owned(),
+                        error: None,
+                    })
+                }
+                Err(error) => {
+                    let reason = error.diagnostic_code();
+                    self.last_assessment_failure_code = Some(reason);
+                    Err(self.record_business_failure("assessment", "assessment_list", reason))
+                }
+            }
+        })
+        .await
+    }
+
     async fn ensure_campus_card_reader_session(&mut self) -> Result<(), String> {
         if self.service_session_is_proven(ServiceId::CampusCard) {
             return Ok(());
@@ -15833,6 +16010,7 @@ impl CampusRuntime {
                 self.invalidate_electricity_session();
                 self.invalidate_physical_exam_session();
                 self.invalidate_program_session();
+                self.invalidate_assessment_session();
             }
             ServiceId::Library => {
                 self.library_adapter = None;
@@ -15891,6 +16069,13 @@ impl CampusRuntime {
         self.program_proof = None;
     }
 
+    fn invalidate_assessment_session(&mut self) {
+        // Dropping the adapter also drops its route table, so every reference
+        // handed out by the previous list read stops resolving.
+        self.assessment_adapter = None;
+        self.assessment_proof = None;
+    }
+
     fn classroom_service_is_proven(&self) -> bool {
         self.service_session_is_proven(ServiceId::Info)
             && self.classroom_adapter.is_some()
@@ -15921,6 +16106,15 @@ impl CampusRuntime {
                 .program_adapter
                 .as_ref()
                 .zip(self.program_proof.as_ref())
+                .is_some_and(|(adapter, proof)| adapter.business_proof_matches(proof))
+    }
+
+    fn assessment_service_is_proven(&self) -> bool {
+        self.service_session_is_proven(ServiceId::Info)
+            && self
+                .assessment_adapter
+                .as_ref()
+                .zip(self.assessment_proof.as_ref())
                 .is_some_and(|(adapter, proof)| adapter.business_proof_matches(proof))
     }
 
@@ -16245,6 +16439,14 @@ impl CampusRuntime {
     #[cfg_attr(feature = "ffi-bridge", frb(ignore))]
     pub(crate) fn last_usereg_failure_code(&self) -> Option<&'static str> {
         self.last_usereg_failure_code
+    }
+
+    /// The evaluation service's own business state from the last list read.
+    /// It is kept separately from [`CampusRuntime::last_error`] so the SDK can
+    /// distinguish "the window is closed" from "the read failed" without
+    /// inspecting any message text.
+    pub(crate) fn last_assessment_failure_code(&self) -> Option<&'static str> {
+        self.last_assessment_failure_code
     }
 
     fn record_error(&mut self, error: impl std::fmt::Display) -> String {
@@ -16671,6 +16873,8 @@ impl CampusRuntime {
         self.physical_exam_proof = None;
         self.program_adapter = None;
         self.program_proof = None;
+        self.assessment_adapter = None;
+        self.assessment_proof = None;
         self.card_client = None;
         self.card_session = None;
         self.card_auth_attempted = false;

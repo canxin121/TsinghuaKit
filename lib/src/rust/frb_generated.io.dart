@@ -97,6 +97,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ArticleDetailResultDto dco_decode_article_detail_result_dto(dynamic raw);
 
   @protected
+  AssessmentListDataDto dco_decode_assessment_list_data_dto(dynamic raw);
+
+  @protected
+  AssessmentListItemDto dco_decode_assessment_list_item_dto(dynamic raw);
+
+  @protected
+  AssessmentListResultDto dco_decode_assessment_list_result_dto(dynamic raw);
+
+  @protected
   AuthStatusDto dco_decode_auth_status_dto(dynamic raw);
 
   @protected
@@ -407,6 +416,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<AcademicTermDto> dco_decode_list_academic_term_dto(dynamic raw);
+
+  @protected
+  List<AssessmentListItemDto> dco_decode_list_assessment_list_item_dto(
+      dynamic raw);
 
   @protected
   List<CampusCardTransactionDto> dco_decode_list_campus_card_transaction_dto(
@@ -899,6 +912,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
       SseDeserializer deserializer);
 
   @protected
+  AssessmentListDataDto sse_decode_assessment_list_data_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  AssessmentListItemDto sse_decode_assessment_list_item_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  AssessmentListResultDto sse_decode_assessment_list_result_dto(
+      SseDeserializer deserializer);
+
+  @protected
   AuthStatusDto sse_decode_auth_status_dto(SseDeserializer deserializer);
 
   @protected
@@ -1252,6 +1277,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<AcademicTermDto> sse_decode_list_academic_term_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  List<AssessmentListItemDto> sse_decode_list_assessment_list_item_dto(
       SseDeserializer deserializer);
 
   @protected
@@ -1818,6 +1847,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
       ArticleDetailResultDto self, SseSerializer serializer);
 
   @protected
+  void sse_encode_assessment_list_data_dto(
+      AssessmentListDataDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_assessment_list_item_dto(
+      AssessmentListItemDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_assessment_list_result_dto(
+      AssessmentListResultDto self, SseSerializer serializer);
+
+  @protected
   void sse_encode_auth_status_dto(AuthStatusDto self, SseSerializer serializer);
 
   @protected
@@ -2180,6 +2221,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_academic_term_dto(
       List<AcademicTermDto> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_assessment_list_item_dto(
+      List<AssessmentListItemDto> self, SseSerializer serializer);
 
   @protected
   void sse_encode_list_campus_card_transaction_dto(

@@ -101,6 +101,14 @@ pub mod program {
     };
 }
 
+/// Teaching-evaluation questionnaires the account may currently fill in.
+/// Each item carries an opaque reference; no service route or form value is
+/// exposed to the caller.
+pub mod assessment {
+    pub use crate::client::AssessmentClient;
+    pub use tsinghua_kit_engine::assessment_read::{AssessmentItem, AssessmentList};
+}
+
 pub mod learn {
     pub use crate::client::LearnClient;
     pub use chrono::{DateTime, Utc};

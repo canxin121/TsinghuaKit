@@ -6,6 +6,7 @@
 #![recursion_limit = "256"]
 
 pub mod api;
+pub mod assessment_read;
 pub mod auth;
 pub mod cache;
 pub mod calendar_api;
@@ -103,6 +104,13 @@ pub use api::runtime::{
 pub use api::service_catalog::{
     ServiceCapabilityMetadataDto, ServiceCatalogDto, ServiceCatalogEntryDto,
     ServicePresentationDto, list_service_catalog,
+};
+pub use assessment_read::{
+    ASSESSMENT_LIST_PATH, ASSESSMENT_NOT_OPEN_MARKER, ASSESSMENT_WEBVPN_TARGET, AssessmentAdapter,
+    AssessmentAdapterConfig, AssessmentAdapterError, AssessmentBusinessProof, AssessmentItem,
+    AssessmentList, AssessmentListRows, AssessmentMethod, AssessmentOperation,
+    AssessmentParseError, AssessmentProfile, AssessmentRead, AssessmentRef, AssessmentRequestPlan,
+    AssessmentRow, AssessmentSessionPrerequisite, parse_assessment_list_html,
 };
 pub use cache::{CacheError, JsonCacheEnvelope, JsonFileCache};
 pub use campus_card_adapter::{
@@ -290,6 +298,9 @@ pub use usereg_client::{
 pub use webvpn_identity::{
     WebVpnIdentityBootstrap, WebVpnIdentityBootstrapper, WebVpnIdentityConfig, WebVpnIdentityError,
 };
+
+#[cfg(test)]
+mod assessment_tests;
 
 #[cfg(test)]
 mod program_tests;

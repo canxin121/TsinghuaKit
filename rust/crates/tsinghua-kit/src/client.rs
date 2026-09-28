@@ -3,6 +3,7 @@
 use std::{fmt, path::PathBuf};
 
 use tsinghua_kit_engine::{
+    assessment_read::AssessmentList as EngineAssessmentList,
     auth::{AccountAuthStatus, AuthStatus, SecondFactorMethod, SelfServiceLoginPhase},
     calendar_api::{LearnTermCalendar, SchoolCalendarImage, SchoolCalendarQuery},
     campus_card_api::{
@@ -13,9 +14,10 @@ use tsinghua_kit_engine::{
         BuildingRef, ClassroomAvailability, ClassroomBuildings, ClassroomWeekSelection,
     },
     client::{
-        CalendarClient as EngineCalendarClient, CampusCardClient as EngineCampusCardClient,
-        ClassroomsClient as EngineClassroomsClient, Client as EngineClient,
-        ClientBuilder as EngineClientBuilder, ClientCachePolicy as EngineCachePolicy,
+        AssessmentClient as EngineAssessmentClient, CalendarClient as EngineCalendarClient,
+        CampusCardClient as EngineCampusCardClient, ClassroomsClient as EngineClassroomsClient,
+        Client as EngineClient, ClientBuilder as EngineClientBuilder,
+        ClientCachePolicy as EngineCachePolicy,
         CredentialStoragePolicy as EngineCredentialStoragePolicy,
         ElectricityClient as EngineElectricityClient, IdentityLoginOutcome, IdentityLoginRequest,
         IdentitySessionStoragePolicy as EngineIdentitySessionStoragePolicy,
@@ -286,6 +288,13 @@ impl Client {
     pub fn program(&mut self) -> ProgramClient<'_> {
         ProgramClient {
             inner: self.inner.program(),
+        }
+    }
+
+    /// Borrows the read-only teaching-evaluation questionnaire list.
+    pub fn assessment(&mut self) -> AssessmentClient<'_> {
+        AssessmentClient {
+            inner: self.inner.assessment(),
         }
     }
 
@@ -687,6 +696,23 @@ impl ProgramClient<'_> {
     /// Reads the plan-wide completion report.
     pub async fn completion(&mut self) -> Result<ReadResult<ProgramCompletion>, Error> {
         self.inner.completion().await
+    }
+}
+
+/// Read-only teaching-evaluation questionnaire list through this Client's
+/// shared runtime. Each item carries an opaque reference; the questionnaire
+/// itself is never assembled or returned to the caller.
+pub struct AssessmentClient<'client> {
+    inner: EngineAssessmentClient<'client>,
+}
+
+impl AssessmentClient<'_> {
+    /// Reads the questionnaires the account may currently fill in.
+    ///
+    /// A closed window is reported as the service's own "not available"
+    /// state, never as a validated empty list.
+    pub async fn list(&mut self) -> Result<ReadResult<EngineAssessmentList>, Error> {
+        self.inner.list().await
     }
 }
 

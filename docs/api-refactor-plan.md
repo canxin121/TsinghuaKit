@@ -1086,3 +1086,37 @@ test/public_entrypoints_test.dart | 1 +
 **验证**
 
 `cargo test -p tsinghua_kit_engine --lib program_tests` 14 项通过（另有 `api::runtime::program_tests` 3 项通过：handoff 后的读取落在映射根、handoff 的 ticket 不出现在后续请求、失效页返回失败而不是旧报告、账号未证明时零请求）；体测定向 `physical_exam_tests` 16 项通过。`cargo check --workspace --all-targets` 退出 0；严格 `RUSTDOCFLAGS="-D warnings" cargo doc -p tsinghua_kit` 通过；`cargo fmt --all -- --check` 与 `flutter analyze lib test` 无问题；`flutter test test/public_entrypoints_test.dart` 通过并覆盖两个新入口。`docs/api-surface-baseline.json` 已按本节源码与重新渲染的 Rustdoc 刷新（`source_revision`、模块列表、根 `pub use` 计数、DTO/方法清单、`direct_state_field_count`）。**未执行任何真实账号登录或学校服务请求**；这两个域的线上可用性仍未验证。
+
+## 54. 2026-09-29 零新认证教务域：教学评估问卷列表
+
+本轮补上 `thu_reference` 已实现、TsinghuaKit 缺失的**教学评估问卷列表**（`jxgl.cic.tsinghua.edu.cn`）。它不属于原有 zhjw（registrar）映射，因此本轮**新增了一个 selector 允许名单条目**——这是本轮唯一新增的映射。
+
+**新增引擎模块 `assessment_read.rs`**
+
+- 路径 `/jxpg/f/jxpg/wj/xs/pgkcList`，module 常量只保存 path，不保存 URL；`ASSESSMENT_WEBVPN_TARGET = 0D8B99BA23FD2BA22428D9C8AA0AB508` 是参考实现的 roam selector，映射 id 为 `77726476706e69737468656265737421faef469069336153301c9aa596522b20e33c1eb39606919f`（host `jxgl.cic.tsinghua.edu.cn`，scheme `http`）。`InfoSessionAdapter::map_additional_roaming` 新增该 selector → `(host, "http", mapping)` 三元组，是所有新域的唯一扩展点；未登记的 selector 一律 `UnexpectedOrigin`/`HandoffUnexpectedPath`，因此本域仍然只经由既有 transport、request gate 与账号绑定，没有第二套请求路径。
+- `AssessmentAdapter` 与既有 `program_read`/`physical_exam_read` 同构：`*_RequestPlan` + `*Profile` 常量、`AtomicU64` binding 计数器绑定的 `AssessmentBusinessProof`、`try_with_transport(base_url, transport)` 共享同一个 identity Cookie jar、`execute()` 在解析之前先分类 login/expiry/origin/path/content-type、无 body 的 `AssessmentAdapterError`（带 `diagnostic_code()` 与 `is_session_expired()`）。
+
+**本域唯一需要判断的语义：位置索引 vs. 结构锚点**
+
+参考实现按列号取值（第 5 列课程名、第 9 列是否已评、第 11 列 `onclick` 里的表单路由）。引擎的 `campus_html` 刻意**不提供**位置索引能力，所以 `assessment_read.rs` 自己承担这个决定并为之付出代价：**每一行都必须同时携带内联的 `Body('…')` 调用，并且该路由必须能作为同一映射下的合法相对路径通过校验**。列序一旦漂移，行为 `UnrecognizedRow`/`MissingAction`/`InvalidRoute` 失败，而不会把某一列的文本当成另一列的语义上报。因此解析器接受的行是"结构上可锚定的行"，不是"列数够多的行"。
+
+**两种不同的非正常态被显式区分，而不是塌缩成空结果**
+
+- 问卷窗口未开：服务返回 200 加自己的提示 `对不起，现在不是填写问卷时间` ⇒ `AssessmentParseError::NotOpen` ⇒ `AssessmentAdapterError::NotOpen` ⇒ 上桥后 `diagnostic_code() == "assessment_not_open"` ⇒ SDK 层映射到**本轮新增的 `ErrorCode::NotAvailable`**（`as_str() == "not_available"`）。`NotAvailable` 与 `ServiceUnavailable`（服务坏了）、`CacheMiss`（本地没有副本）是三个不同的稳定状态，调用方不需要读任何文案就能区分"现在没得做"和"这次没读成"。
+- 列表为空：`EmptyList` 是**失败**，不是"校验通过的空列表"。一个 200 + 空表格既可能是窗口刚关，也可能是权限变更，引擎不替它选一个。
+
+**表单路由不离开 Rust**
+
+每行的表单路由由 `AssessmentRef`（adapter binding + generation + index）间接持有，路由表放在 adapter 内的 `Mutex<AssessmentRoutes>`。`generation` 只在**一次成功解析之后**才前进，因此一次被拒绝的读取不会作废先前已发出的引用；而 `form_path()` 会拒绝外来 binding 与过期 generation。adapter 被丢弃（INFO 会话失效、登出）时路由表随之消失，早先发出的引用不再可解，且 `AssessmentRef` 的 `Debug` 只打印 index。
+
+**Runtime 接线**
+
+`ensure_assessment_reader_session` / `prepare_assessment_adapter` 要求 INFO 已证明后才发起 handoff；handoff 返回的 URL 只用于**校验**是否落在新的 `ASSESSMENT_WEBVPN_BASE_URL` 映射根内（否则 `assessment_mapping_rejected`），随后把 path 收敛到映射根、清空 query 与 fragment —— handoff 自带的 `ticket` 永远不成为适配器 base URL。`load_assessment_list_result` 带一次性过期恢复，失败时把 `diagnostic_code()` 记进 `last_assessment_failure_code`（供 SDK 层做稳定错误分类）再 `record_business_failure("assessment", "assessment_list", …)`；成功时清空该记录。`assessment_service_is_proven()` 同时要求 INFO 已证明且证明与当前 adapter 实例匹配；`ServiceId::Info` 失效与 `logout` 都会清除 adapter 与 proof。
+
+**FFI / Dart**
+
+`sdk_api.rs` 新增 `AssessmentListResultDto` / `AssessmentListDataDto` / `AssessmentListItemDto`，`Debug` 脱敏为条目数 + 已评数；`reference_index` 是 Rust 会话内的索引，不是服务路由。`ClientHandle::assessment_list_result` 是唯一新入口。FRB 2.13.0 重新生成，生成物未手工编辑。Dart 侧新增 `lib/src/assessment.dart` part 文件与 `lib/assessment.dart` 入口；`AssessmentItem.referenceIndex` 的文档明确规定它不可伪造、且随会话失效而失效。
+
+**验证**
+
+`cargo test -p tsinghua_kit_engine --lib assessment` 20 项通过（`assessment_tests` 15 项 + `api::runtime::assessment_tests` 5 项）：位置读取与结构锚点、空列表是失败、窗口未开是独立类别、登录页/超时页是会话失败、无内联动作的行被拒、越界路由被拒、过短行被拒、缺 `tbody` 被拒、adapter 走 cookie-aware transport、引用只在产生它的 adapter 内可解、被取代的列表引用不再可解、窗口未开以 `assessment_not_open` 到达调用方且 `route_generation() == 0`、解析失败上报 `assessment_list_empty`、非 HTML 响应上报 `assessment_content_type`、adapter `Debug` 不含路由或映射 token。Runtime 4 项 fixture 断言读取请求落在映射根内且不含 handoff 的 `ticket`。`cargo check --workspace --all-targets` 退出 0；严格 `RUSTDOCFLAGS="-D warnings" cargo doc -p tsinghua_kit` 通过；`flutter analyze lib test` 无问题；`flutter test test/public_entrypoints_test.dart` 通过并覆盖新入口。`docs/api-surface-baseline.json` 已按本节源码与重新渲染的 Rustdoc 刷新。**未执行任何真实账号登录或学校服务请求**；本域的线上可用性仍未验证。

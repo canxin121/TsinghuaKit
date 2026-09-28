@@ -137,6 +137,16 @@ pub enum ErrorCode {
     IncompleteResult,
     /// The requested cache-only read has no eligible cached value.
     CacheMiss,
+    /// The service is reachable and answered, but this capability is closed
+    /// for the current account or period.
+    ///
+    /// This is the service's own explicit statement — a questionnaire window
+    /// that has not opened, for example — so it is deliberately distinct from
+    /// [`Self::ServiceUnavailable`], which means the service failed, and from
+    /// [`Self::CacheMiss`], which means only that no local copy exists. A
+    /// caller can therefore tell "there is nothing to do yet" from "the read
+    /// did not work" without inspecting any message text.
+    NotAvailable,
     /// The requested operation is unsupported by this service or host.
     Unsupported,
     /// The local storage boundary is unavailable or could not be verified.
@@ -166,6 +176,7 @@ impl ErrorCode {
             Self::OutcomeUnconfirmed => "outcome_unconfirmed",
             Self::IncompleteResult => "incomplete_result",
             Self::CacheMiss => "cache_miss",
+            Self::NotAvailable => "not_available",
             Self::Unsupported => "unsupported",
             Self::StorageUnavailable => "storage_unavailable",
             Self::Cancelled => "cancelled",

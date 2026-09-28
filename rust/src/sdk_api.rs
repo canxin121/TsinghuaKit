@@ -8,6 +8,7 @@ use std::{collections::HashMap, fmt, path::PathBuf};
 
 use tsinghua_kit_sdk::{
     Client as SdkClient, ClientBuilder, Error as SdkError,
+    assessment::AssessmentList,
     auth::{
         AccountAuthState, AccountAuthStatus, AuthStatus, IdentityLoginOutcome,
         IdentityLoginRequest, LoginStage, SecondFactorMethod, SelfServiceLoginOutcome,
@@ -1161,6 +1162,26 @@ fn program_completion_result(value: ReadResult<ProgramCompletion>) -> ProgramCom
             excluded_credit: report.excluded_credit,
             course_sets,
         },
+        metadata: ReadMetadataDto::from(&metadata),
+    }
+}
+
+/// Flattens the questionnaire list into bridge-safe rows.  Each row carries
+/// the questionnaire's name, whether it was already filled in, and an opaque
+/// reference index; the service's own route never crosses the bridge.
+fn assessment_list_result(value: ReadResult<AssessmentList>) -> AssessmentListResultDto {
+    let (list, metadata) = value.into_parts();
+    let items = list
+        .items
+        .iter()
+        .map(|item| AssessmentListItemDto {
+            name: item.name.clone(),
+            evaluated: item.evaluated,
+            reference_index: item.reference.index(),
+        })
+        .collect();
+    AssessmentListResultDto {
+        data: AssessmentListDataDto { items },
         metadata: ReadMetadataDto::from(&metadata),
     }
 }
@@ -2331,6 +2352,38 @@ impl fmt::Debug for ProgramCompletionDataDto {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ProgramCompletionResultDto {
     pub data: ProgramCompletionDataDto,
+    pub metadata: ReadMetadataDto,
+}
+
+/// One questionnaire row.  `reference_index` addresses the form inside the
+/// Rust session that produced this list; it is not a service route.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AssessmentListItemDto {
+    pub name: String,
+    pub evaluated: bool,
+    pub reference_index: u32,
+}
+
+/// The questionnaires the account may currently fill in.
+#[derive(Clone, PartialEq)]
+pub struct AssessmentListDataDto {
+    pub items: Vec<AssessmentListItemDto>,
+}
+
+impl fmt::Debug for AssessmentListDataDto {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let evaluated = self.items.iter().filter(|item| item.evaluated).count();
+        formatter
+            .debug_struct("AssessmentListDataDto")
+            .field("item_count", &self.items.len())
+            .field("evaluated_count", &evaluated)
+            .finish()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AssessmentListResultDto {
+    pub data: AssessmentListDataDto,
     pub metadata: ReadMetadataDto,
 }
 
@@ -4568,6 +4621,14 @@ impl ClientHandle {
     ) -> Result<ProgramCompletionResultDto, SdkErrorDto> {
         let result = self.inner.program().completion().await?;
         Ok(program_completion_result(result))
+    }
+
+    /// Reads the teaching-evaluation questionnaires the account may fill in.
+    /// A closed questionnaire window is the service's own "not available"
+    /// state, never a validated empty list.
+    pub async fn assessment_list_result(&mut self) -> Result<AssessmentListResultDto, SdkErrorDto> {
+        let result = self.inner.assessment().list().await?;
+        Ok(assessment_list_result(result))
     }
 
     /// Reads only the TUNet portal's registration state for the current local

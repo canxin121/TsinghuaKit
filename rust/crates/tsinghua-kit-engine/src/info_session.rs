@@ -746,6 +746,13 @@ impl InfoSessionAdapter {
                 "https",
                 "77726476706e69737468656265737421fcf2408e297e7c4377068ea48d546d30ca8cc97bcc",
             ),
+            // The teaching-evaluation application has its own campus host and
+            // WebVPN mapping; it is not part of the registrar target.
+            crate::assessment_read::ASSESSMENT_WEBVPN_TARGET => (
+                "jxgl.cic.tsinghua.edu.cn",
+                "http",
+                "77726476706e69737468656265737421faef469069336153301c9aa596522b20e33c1eb39606919f",
+            ),
             crate::thos::ROAM_ID => ("thos.tsinghua.edu.cn", "https", crate::thos::MAPPING),
             _ => {
                 if same_origin(&self.config.webvpn_base_url, &url) {

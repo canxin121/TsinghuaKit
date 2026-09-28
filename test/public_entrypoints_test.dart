@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tsinghua_kit/assessment.dart' as assessment;
 import 'package:tsinghua_kit/auth.dart' as auth;
 import 'package:tsinghua_kit/campus_card.dart' as campus_card;
 import 'package:tsinghua_kit/classrooms.dart' as classrooms;
@@ -85,5 +86,8 @@ void main() {
     expect(_publicType<program.ProgramCompletion>(), isNull);
     expect(program.ProgramCourseState.completed.name, 'completed');
     expect(program.ProgramCourseSetKind.excluded.name, 'excluded');
+    expect(_publicType<assessment.AssessmentClient>(), isNull);
+    expect(_publicType<assessment.AssessmentList>(), isNull);
+    expect(_publicType<assessment.AssessmentItem>(), isNull);
   });
 }
