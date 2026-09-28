@@ -1055,4 +1055,4 @@ test/public_entrypoints_test.dart | 1 +
 
 验证：`flutter pub get` 将锁文件解析到 `7d28a58`（版本仍为 `0.2.0-alpha.1`）；`flutter analyze lib test` 无问题；`flutter test test/tsinghua_kit_thos_controller_test.dart test/tsinghua_kit_failure_test.dart` 13 项通过。SDK 侧 `flutter analyze lib test` 无问题，`flutter test test/public_entrypoints_test.dart test/auth_status_test.dart test/second_factor_method_test.dart` 5 项通过，`cargo check --workspace --all-targets` 退出 0。App 侧 `flutter build macos --debug --no-pub` 退出 0（产物 `build/macos/Build/Products/Debug/thyou.app`；仅剩 `tsinghua_kit` 插件尚未支持 Swift Package Manager 的工具级提示）。未执行真实账号登录或学校服务请求。
 
-仍待完成：`23aefda`（`ErrorCode::RedirectRefused`）与 `10c4ea8` 尚未发布到 `origin/main`，App 侧 `lib/data/tsinghua_kit_failure.dart` 已预先补上 `('service_hall','redirect_refused')` 的中文文案（未覆盖的组合本就落到 `_sharedCodeMessage`，不会崩）；生产路由切换仍未开始。
+已发布：`23aefda`（`ErrorCode::RedirectRefused`）与 `10c4ea8` 已随本次提交一起推到 `origin/main`（`7d28a58..e70a9e5`），App 侧 `lib/data/tsinghua_kit_failure.dart` 的 `('service_hall','redirect_refused')` 中文文案现在有对应引擎代码与线上提交；生产路由切换仍未开始，`FrbCampusRuntimeGateway`/`lib/src/rust` 仍是唯一执行真实请求的路径。
