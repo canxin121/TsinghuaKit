@@ -52,6 +52,21 @@ impl CampusRuntime {
         self.credential_store_root = root;
     }
 
+    /// Moves the whole private persistence boundary to `root`.
+    ///
+    /// Session snapshots, account metadata and the opt-in credential records
+    /// are one recovery boundary: a host or fixture that redirects one of them
+    /// must move the other with it, or an explicitly saved credential becomes
+    /// unreachable from the account metadata that locates it. Production
+    /// installs the credential root separately through
+    /// [`Self::set_credential_store_root`] because the public SDK lets the
+    /// host choose it.
+    #[cfg(test)]
+    pub(crate) fn set_persistence_root(&mut self, root: std::path::PathBuf) {
+        self.credential_store_root = root.clone();
+        self.persistence_root = root;
+    }
+
     pub(super) fn load_credential_for_current_authority(
         &self,
         username: &str,

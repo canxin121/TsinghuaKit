@@ -1275,7 +1275,7 @@ async fn backend_repair_proven_portal_releases_private_credential_guard_for_next
         Reply::json(r#"{"object":{"ryh":"fixture-user"}}"#),
     ]);
     let mut runtime = runtime(&identity);
-    runtime.persistence_root = root.clone();
+    runtime.set_persistence_root(root.clone());
     runtime.fingerprint = device;
     runtime.remember_credentials = true;
     runtime.credentials_persisted = true;
@@ -1512,7 +1512,7 @@ async fn backend_repair_expired_identity_cookie_first_skips_private_vault() {
         Reply::json(r#"{"object":{"ryh":"fixture-user"}}"#),
     ]);
     let mut r = runtime(&identity);
-    r.persistence_root = root.clone();
+    r.set_persistence_root(root.clone());
     r.fingerprint = current_resume_device(&root);
     r.remember_credentials = true;
     r.credentials_persisted = true;
@@ -1782,7 +1782,7 @@ async fn backend_repair_expired_identity_reads_private_vault_only_after_login_bo
         body: "login required".into(),
     }]);
     let mut r = runtime(&identity);
-    r.persistence_root = root.clone();
+    r.set_persistence_root(root.clone());
     r.fingerprint = current_resume_device(&root);
     r.remember_credentials = true;
     r.credentials_persisted = true;
@@ -1819,7 +1819,7 @@ async fn backend_repair_expired_identity_ambiguous_portal_failure_does_not_read_
     let identity = FixtureServer::new(vec![]);
     let portal = FixtureServer::new(vec![unavailable()]);
     let mut r = runtime(&identity);
-    r.persistence_root = root.clone();
+    r.set_persistence_root(root.clone());
     r.fingerprint = current_resume_device(&root);
     r.remember_credentials = true;
     r.credentials_persisted = true;
@@ -1940,7 +1940,7 @@ fn lifecycle_audit_runtime(
     oauth: &FixtureServer,
 ) -> CampusRuntime {
     let mut r = runtime(identity);
-    r.persistence_root = root.to_owned();
+    r.set_persistence_root(root.to_owned());
     r.cache_path = root.join("cache.json");
     r.primary_password = None;
     inject_webvpn_identity_config(

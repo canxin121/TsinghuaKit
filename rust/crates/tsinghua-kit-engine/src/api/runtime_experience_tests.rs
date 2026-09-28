@@ -77,7 +77,7 @@ fn backend_repair_autoload_catalog_keeps_account_stage_and_logout_boundaries() {
             .iter()
             .any(|capability| capability.key == "read_exams")
     );
-    fixture.runtime.persistence_root = fixture.root.clone();
+    fixture.runtime.set_persistence_root(fixture.root.clone());
     fixture.runtime.logout().unwrap();
     assert!(
         fixture
@@ -222,7 +222,7 @@ fn backend_repair_login_defaults_missing_credential_keeps_failure_without_checkb
 #[test]
 fn backend_repair_login_defaults_logout_disables_recovery_and_does_not_unlock_cached_account() {
     let mut fixture = Fixture::new("fixture-login-default-logout");
-    fixture.runtime.persistence_root = fixture.root.clone();
+    fixture.runtime.set_persistence_root(fixture.root.clone());
     fixture.runtime.remember_credentials = true;
     fixture.runtime.credentials_persisted = true;
     fixture.runtime.credential_username = Some(fixture.username.clone());
