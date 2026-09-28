@@ -1041,3 +1041,18 @@ Dart `IdentityAuthClient.login` 与 `SelfServiceAuthClient.startLogin` 已接受
 另外两处与本体无关的收尾：`identity_execution.rs` 的跳转续接循环把 `MAX_IDENTITY_REDIRECT_RETRIES = 0` 的常量改成显式单次发起（该比较被 `clippy::absurd_extreme_comparisons` 判为恒假，是基线已存在的编译错误）；`tsinghua-kit-check` 二进制要求的 `terminal-check` feature 此前只打开了 `rpassword`/`tokio`，没有转发到引擎的 `cli_validation` 模块，`--all-features` 下无法编译，已补 `tsinghua_kit_engine/terminal-check`。
 
 验证：全量串行引擎套件（排除两个基线同样挂起的用例）head 114 项失败，基线三轮并集 131 项；对差集逐项单独复跑后，**没有一项是仅 head 出现的稳定失败**。两个挂起用例 `backend_repair_registrar_only_calendar_reaches_display_dto_without_learn_requests` 与 `backend_repair_runtime_electricity_history_refreshes_business_proof` 在基线二进制上同样挂起，确认为既有缺陷、非本轮引入，仍待修。`cargo clippy --all-targets --all-features -- -D warnings` 由「无法编译」变为可编译并通过 `cargo clippy`（仍有 129 条 warning，未开启 `-D warnings` 作为本轮门禁）；`RUSTDOCFLAGS="-D warnings" cargo doc` 通过。四个 FFI contract 目标（classroom 3、info 4、learn 1、webvpn 2）失败项在基线工作树 `/private/tmp/base4` 上数量完全一致，确认全部为既有失败。未执行任何真实账号登录或学校服务请求。
+
+## 52. 2026-09-28 App 已切换到含 ServiceHallDirectory 导出的公共提交
+
+THYou 侧把 `tsinghua_kit` 的 git `ref` 从 `3eb896c`（`v0.1.1` 之后的一次提交，`lib/service_hall.dart` 尚未导出 `ServiceHallDirectory`）改为 `7d28a58`，即 `origin/main` 当前 HEAD。两者之间只有一项内容差异：
+
+```
+lib/service_hall.dart             | 1 +
+test/public_entrypoints_test.dart | 1 +
+```
+
+因此 App 侧不再需要那段“从 `package:tsinghua_kit/tsinghua_kit.dart` 取同一声明”的临时导入，`lib/data/tsinghua_kit_service_hall_read.dart` 与 `lib/state/tsinghua_kit_thos_controller.dart` 已删除该 workaround，并在 `service_hall.dart` 的别名下拼写 `sdk.ServiceHallDirectory`。
+
+验证：`flutter pub get` 将锁文件解析到 `7d28a58`（版本仍为 `0.2.0-alpha.1`）；`flutter analyze lib test` 无问题；`flutter test test/tsinghua_kit_thos_controller_test.dart test/tsinghua_kit_failure_test.dart` 13 项通过。SDK 侧 `flutter analyze lib test` 无问题，`flutter test test/public_entrypoints_test.dart test/auth_status_test.dart test/second_factor_method_test.dart` 5 项通过，`cargo check --workspace --all-targets` 退出 0。App 侧 `flutter build macos --debug --no-pub` 退出 0（产物 `build/macos/Build/Products/Debug/thyou.app`；仅剩 `tsinghua_kit` 插件尚未支持 Swift Package Manager 的工具级提示）。未执行真实账号登录或学校服务请求。
+
+仍待完成：`23aefda`（`ErrorCode::RedirectRefused`）与 `10c4ea8` 尚未发布到 `origin/main`，App 侧 `lib/data/tsinghua_kit_failure.dart` 已预先补上 `('service_hall','redirect_refused')` 的中文文案（未覆盖的组合本就落到 `_sharedCodeMessage`，不会崩）；生产路由切换仍未开始。
