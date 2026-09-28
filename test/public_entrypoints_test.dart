@@ -62,6 +62,7 @@ void main() {
     expect(network.PortalConnectionState.connected.name, 'connected');
     expect(_publicType<network.PortalConnectionResult>(), isNull);
     expect(service_hall.ServiceHallTaskView.phases.name, 'phases');
+    expect(_publicType<service_hall.ServiceHallDirectory>(), isNull);
     expect(news.NewsCatalogCoverage.complete.name, 'complete');
     expect(learn.LearnHomeworkState.pending.name, 'pending');
     expect(calendar.AcademicStage.undergraduate.name, 'undergraduate');

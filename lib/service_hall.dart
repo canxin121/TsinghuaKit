@@ -5,6 +5,7 @@ export 'tsinghua_kit.dart'
     show
         ReadResult,
         ServiceHallClient,
+        ServiceHallDirectory,
         ServiceHallPhaseDetails,
         ServiceHallPhaseItem,
         ServiceHallPhaseReference,
