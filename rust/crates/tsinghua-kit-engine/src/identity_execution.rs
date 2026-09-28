@@ -26,7 +26,10 @@ use crate::{
     transport::{CampusHttpTransport, TransportError},
 };
 
-const MAX_IDENTITY_REDIRECT_RETRIES: usize = 0; // Never replay one-time authentication continuations automatically.
+// A redirect continuation is issued once. There is deliberately no retry
+// budget constant: an allowance of zero expressed as a budget invites a later
+// edit to raise it, and every handoff callback may already have consumed a
+// one-time ticket.
 const MAX_IDENTITY_REDIRECT_HOPS: usize = 10;
 
 /// Errors raised while executing an identity request.
@@ -515,26 +518,18 @@ impl IdentityExecutionClient {
                 },
             ));
         }
-        for attempt in 0..=MAX_IDENTITY_REDIRECT_RETRIES {
-            let request = self
-                .transport
-                .client()
-                .request(Method::GET, url.clone())
-                .build()
-                .map_err(|_| IdentityExecutionError::RequestBuild)?;
-            match self.execute(request).await {
-                Ok(response) => return Ok(response),
-                Err(error)
-                    if attempt < MAX_IDENTITY_REDIRECT_RETRIES
-                        && retryable_identity_redirect_error(&error) =>
-                {
-                    continue;
-                }
-                Err(error) => return Err(error),
-            }
-        }
-
-        unreachable!("identity redirect retry loop must return on every attempt")
+        // A handoff callback may have consumed a service ticket even when the
+        // request failed, so it is issued once and never replayed: the retry
+        // budget is zero by rule, not by an incidental counter comparison.
+        // `retryable_identity_redirect_error` records which transport errors
+        // would otherwise be retried, and stays exercised by its own test.
+        let request = self
+            .transport
+            .client()
+            .request(Method::GET, url.clone())
+            .build()
+            .map_err(|_| IdentityExecutionError::RequestBuild)?;
+        self.execute(request).await
     }
 
     pub fn classify_response(

@@ -64,7 +64,12 @@ libc = "0.2.189"
 [features]
 default = ["ffi-bridge"]
 ffi-bridge = ["dep:flutter_rust_bridge", "tsinghua_kit_engine/ffi-bridge"]
-terminal-check = ["dep:rpassword", "tokio/signal", "tokio/macros"]
+terminal-check = [
+    "dep:rpassword",
+    "tokio/signal",
+    "tokio/macros",
+    "tsinghua_kit_engine/terminal-check",
+]
 
 [[bin]]
 name = "tsinghua-kit-check"
