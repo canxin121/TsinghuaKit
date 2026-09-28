@@ -1027,3 +1027,17 @@ Dart `IdentityAuthClient.login` 与 `SelfServiceAuthClient.startLogin` 已接受
 统一身份与网络自助仍是仅有的两个 Auth 域。校园网 Portal/Tsinghua Secure 账号可作为本机网络资料保存和显式填写，不参与 Auth 状态、会话快照或恢复链。密码、Cookie 和网络资料都按明文 JSON 处理，因此该功能必须保持显式 opt-in。读取失败、格式错误、权限不合规或旧加密格式均返回存储错误并保留原文件；不静默迁移、删除或伪装成空结果。用户决定清除后可通过明确清除操作删除旧记录；未实现自动解密旧格式。
 
 当前文件名为 Identity 会话快照 `campus-session-v3.json`、凭据记录 `credential-v2-<账号散列>.json`、网络资料 `profiles-v2.json`。App 提供根目录与 namespace，SDK 将各用途分别放置，互不混用。合成数据定向测试通过：凭据 8 项、网络资料 4 项、会话/元数据 15 项；SDK `client_api` 11 项、`public_api` 14 项。`cargo check -p tsinghua_kit_ffi --lib`、严格 Rustdoc、FRB codegen、`flutter analyze lib`、公开入口 Flutter 测试、Rust 格式和 `git diff --check` 均通过。文件明文可读、两个账号域隔离、无旁置密钥文件、旧格式/损坏记录保留并报错、有效但过期的会话快照清理均有覆盖。未执行真实账号登录或任何学校服务请求。
+
+## 51. 2026-09-28 引擎回归归因与三处修复
+
+本轮在 `rust/` 引擎库上做一次失败归因，不做 Flutter 页面迁移。方法是把 `a4db9fb` 基线单独构建（`/private/tmp/base4-target`），在相同环境（`THYOU_SESSION_DIR` 指向新建的绝对目录、`TMPDIR` 隔离、`RUST_MIN_STACK=16777216`）下对同一测试逐项对比，并对疑似新增失败单独串行复跑。**按名次差集的“新增失败”必须先单独复现才计入**：全量并行运行时存在跨测试的文件系统与环境竞争，未复现的差集项不计为回归。
+
+三处真实修复：
+
+1. `thos_compat_error` 把 `ErrorCode::SessionExpired` 重新映射为旧的“网上服务大厅会话已失效，请重新建立登录会话”。typed SDK 的 `SessionExpired` 与“账号会话未确认”的合并仍保留，仅兼容字符串恢复原状。
+2. 新增稳定错误码 `ErrorCode::RedirectRefused`（`redirect_refused`），与 `InvalidResponse` 明确区分：响应的跳转目标离开已映射的服务路由时，读取被允许名单拒绝，被测响应本身可能是完全合法的。`map_thos_error` 的 `ThosError::Route` 改映射到该码，兼容字符串恢复“网上服务大厅返回了未允许的地址，已停止读取”。上一轮把 `Route` 并入 `ContextMismatch` 会把“阶段性事项引用已失效”这类真正的上下文不匹配与路由拒绝混为一谈。该错误码为 `#[non_exhaustive]` 枚举的新增项；Flutter 侧 `TsinghuaKitFailure` 仅按 `service`/`code` 匹配，未覆盖的组合落到 `_sharedCodeMessage`，不会崩，后续 SDK 版本应在 `lib/data/tsinghua_kit_failure.dart` 补 `('service_hall','redirect_refused')` 文案。
+3. `backend_repair_explicit_invalid_credentials_revoke_saved_metadata_locator` 原用 `CampusRuntime::new` 构造；该构造自持持久化，要求真实应用数据目录存在，在隔离环境里必然以“应用私有数据目录不可用”失败。改为 `new_with_persistence(..., false)`，与基线一致，且该用例只验证内存中的撤销记账。
+
+另外两处与本体无关的收尾：`identity_execution.rs` 的跳转续接循环把 `MAX_IDENTITY_REDIRECT_RETRIES = 0` 的常量改成显式单次发起（该比较被 `clippy::absurd_extreme_comparisons` 判为恒假，是基线已存在的编译错误）；`tsinghua-kit-check` 二进制要求的 `terminal-check` feature 此前只打开了 `rpassword`/`tokio`，没有转发到引擎的 `cli_validation` 模块，`--all-features` 下无法编译，已补 `tsinghua_kit_engine/terminal-check`。
+
+验证：全量串行引擎套件（排除两个基线同样挂起的用例）head 114 项失败，基线三轮并集 131 项；对差集逐项单独复跑后，**没有一项是仅 head 出现的稳定失败**。两个挂起用例 `backend_repair_registrar_only_calendar_reaches_display_dto_without_learn_requests` 与 `backend_repair_runtime_electricity_history_refreshes_business_proof` 在基线二进制上同样挂起，确认为既有缺陷、非本轮引入，仍待修。`cargo clippy --all-targets --all-features -- -D warnings` 由「无法编译」变为可编译并通过 `cargo clippy`（仍有 129 条 warning，未开启 `-D warnings` 作为本轮门禁）；`RUSTDOCFLAGS="-D warnings" cargo doc` 通过。四个 FFI contract 目标（classroom 3、info 4、learn 1、webvpn 2）失败项在基线工作树 `/private/tmp/base4` 上数量完全一致，确认全部为既有失败。未执行任何真实账号登录或学校服务请求。
