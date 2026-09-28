@@ -502,10 +502,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<OverviewTodoDto> dco_decode_list_overview_todo_dto(dynamic raw);
 
   @protected
+  List<PhysicalExamItemDto> dco_decode_list_physical_exam_item_dto(dynamic raw);
+
+  @protected
   Uint32List dco_decode_list_prim_u_32_strict(dynamic raw);
 
   @protected
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
+
+  @protected
+  List<ProgramCourseDto> dco_decode_list_program_course_dto(dynamic raw);
+
+  @protected
+  List<ProgramCourseSetDto> dco_decode_list_program_course_set_dto(dynamic raw);
 
   @protected
   List<ScheduleEventDto> dco_decode_list_schedule_event_dto(dynamic raw);
@@ -641,6 +650,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   OverviewTodoDto dco_decode_overview_todo_dto(dynamic raw);
 
   @protected
+  PhysicalExamDataDto dco_decode_physical_exam_data_dto(dynamic raw);
+
+  @protected
+  PhysicalExamItemDto dco_decode_physical_exam_item_dto(dynamic raw);
+
+  @protected
+  PhysicalExamResultDto dco_decode_physical_exam_result_dto(dynamic raw);
+
+  @protected
   PortalAddressRegistrationDto dco_decode_portal_address_registration_dto(
       dynamic raw);
 
@@ -653,6 +671,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PortalObservationDto dco_decode_portal_observation_dto(dynamic raw);
+
+  @protected
+  ProgramCompletionDataDto dco_decode_program_completion_data_dto(dynamic raw);
+
+  @protected
+  ProgramCompletionResultDto dco_decode_program_completion_result_dto(
+      dynamic raw);
+
+  @protected
+  ProgramCourseDto dco_decode_program_course_dto(dynamic raw);
+
+  @protected
+  ProgramCourseSetDto dco_decode_program_course_set_dto(dynamic raw);
 
   @protected
   ReadCoverageDto dco_decode_read_coverage_dto(dynamic raw);
@@ -1338,10 +1369,22 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
       SseDeserializer deserializer);
 
   @protected
+  List<PhysicalExamItemDto> sse_decode_list_physical_exam_item_dto(
+      SseDeserializer deserializer);
+
+  @protected
   Uint32List sse_decode_list_prim_u_32_strict(SseDeserializer deserializer);
 
   @protected
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
+
+  @protected
+  List<ProgramCourseDto> sse_decode_list_program_course_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  List<ProgramCourseSetDto> sse_decode_list_program_course_set_dto(
+      SseDeserializer deserializer);
 
   @protected
   List<ScheduleEventDto> sse_decode_list_schedule_event_dto(
@@ -1494,6 +1537,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   OverviewTodoDto sse_decode_overview_todo_dto(SseDeserializer deserializer);
 
   @protected
+  PhysicalExamDataDto sse_decode_physical_exam_data_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  PhysicalExamItemDto sse_decode_physical_exam_item_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  PhysicalExamResultDto sse_decode_physical_exam_result_dto(
+      SseDeserializer deserializer);
+
+  @protected
   PortalAddressRegistrationDto sse_decode_portal_address_registration_dto(
       SseDeserializer deserializer);
 
@@ -1507,6 +1562,21 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PortalObservationDto sse_decode_portal_observation_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  ProgramCompletionDataDto sse_decode_program_completion_data_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  ProgramCompletionResultDto sse_decode_program_completion_result_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  ProgramCourseDto sse_decode_program_course_dto(SseDeserializer deserializer);
+
+  @protected
+  ProgramCourseSetDto sse_decode_program_course_set_dto(
       SseDeserializer deserializer);
 
   @protected
@@ -2223,12 +2293,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
       List<OverviewTodoDto> self, SseSerializer serializer);
 
   @protected
+  void sse_encode_list_physical_exam_item_dto(
+      List<PhysicalExamItemDto> self, SseSerializer serializer);
+
+  @protected
   void sse_encode_list_prim_u_32_strict(
       Uint32List self, SseSerializer serializer);
 
   @protected
   void sse_encode_list_prim_u_8_strict(
       Uint8List self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_program_course_dto(
+      List<ProgramCourseDto> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_program_course_set_dto(
+      List<ProgramCourseSetDto> self, SseSerializer serializer);
 
   @protected
   void sse_encode_list_schedule_event_dto(
@@ -2384,6 +2466,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
       OverviewTodoDto self, SseSerializer serializer);
 
   @protected
+  void sse_encode_physical_exam_data_dto(
+      PhysicalExamDataDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_physical_exam_item_dto(
+      PhysicalExamItemDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_physical_exam_result_dto(
+      PhysicalExamResultDto self, SseSerializer serializer);
+
+  @protected
   void sse_encode_portal_address_registration_dto(
       PortalAddressRegistrationDto self, SseSerializer serializer);
 
@@ -2398,6 +2492,22 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_portal_observation_dto(
       PortalObservationDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_program_completion_data_dto(
+      ProgramCompletionDataDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_program_completion_result_dto(
+      ProgramCompletionResultDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_program_course_dto(
+      ProgramCourseDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_program_course_set_dto(
+      ProgramCourseSetDto self, SseSerializer serializer);
 
   @protected
   void sse_encode_read_coverage_dto(

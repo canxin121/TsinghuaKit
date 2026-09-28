@@ -22,6 +22,8 @@ part 'src/library.dart';
 part 'src/classrooms.dart';
 part 'src/campus_card.dart';
 part 'src/electricity.dart';
+part 'src/physical_exam.dart';
+part 'src/program.dart';
 part 'src/learn.dart';
 part 'src/registrar_calendar.dart';
 part 'src/news.dart';
@@ -314,6 +316,8 @@ class TsinghuaKitClient {
         classrooms = ClassroomsClient._(handle),
         campusCard = CampusCardClient._(handle),
         electricity = ElectricityClient._(handle),
+        physicalExam = PhysicalExamClient._(handle),
+        program = ProgramClient._(handle),
         learn = LearnClient._(handle),
         news = NewsClient._(handle),
         serviceHall = ServiceHallClient._(handle),
@@ -347,6 +351,12 @@ class TsinghuaKitClient {
 
   /// Dorm-electricity remainder and payment history.
   final ElectricityClient electricity;
+
+  /// Physical-education test results.
+  final PhysicalExamClient physicalExam;
+
+  /// Degree-program completion.
+  final ProgramClient program;
 
   /// Learn courses, announcements, assignments, files, and discussions.
   final LearnClient learn;

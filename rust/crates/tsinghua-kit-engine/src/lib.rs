@@ -45,6 +45,8 @@ pub mod network;
 mod network_profile_store;
 pub mod news;
 pub mod overview_api;
+pub mod physical_exam_read;
+pub mod program_read;
 pub mod protocol;
 pub mod read;
 pub mod registrar;
@@ -67,6 +69,7 @@ pub mod usereg_adapter;
 pub mod usereg_client;
 pub mod webvpn_identity;
 
+mod campus_html;
 mod captcha_image;
 mod credential_store;
 mod error_legacy;
@@ -201,6 +204,23 @@ pub use library_read::{
     LibrarySocketStatusRecordDto, LibrarySocketStatuses, LibrarySocketStatusesDto, parse_area_tree,
     parse_day_segments, parse_seat_availability, parse_socket_status,
 };
+pub use physical_exam_read::{
+    PHYSICAL_EXAM_PATH, PHYSICAL_EXAM_QUERY, PHYSICAL_EXAM_WEBVPN_TARGET, PhysicalExamAdapter,
+    PhysicalExamAdapterConfig, PhysicalExamAdapterError, PhysicalExamBusinessProof,
+    PhysicalExamItem, PhysicalExamItems, PhysicalExamMethod, PhysicalExamOperation,
+    PhysicalExamParseError, PhysicalExamProfile, PhysicalExamRead, PhysicalExamReport,
+    PhysicalExamRequestPlan, PhysicalExamSessionPrerequisite, parse_physical_exam_json,
+};
+pub use program_read::{
+    CourseCompletion, CourseFull, CourseSetCompletion, CourseSetFull, CourseSetKind, CourseState,
+    FullProgram, FullProgramRead, PROGRAM_COMPLETION_PATH, PROGRAM_COMPLETION_QUERY,
+    PROGRAM_FULL_PATH, PROGRAM_FULL_QUERY_PREFIX, PROGRAM_LIST_PATH, PROGRAM_LIST_QUERY,
+    PROGRAM_WEBVPN_TARGET, ProgramAdapter, ProgramAdapterConfig, ProgramAdapterError,
+    ProgramBusinessProof, ProgramCompletion, ProgramCompletionRead, ProgramMethod,
+    ProgramOperation, ProgramParseError, ProgramPlanIdError, ProgramProfile, ProgramRequestPlan,
+    ProgramSessionPrerequisite, parse_full_program_html, parse_program_completion_html,
+    parse_program_plan_id_html,
+};
 pub use protocol::*;
 pub use registrar::{
     CalendarWindow, RegistrarCalendarRequest, RegistrarError, RegistrarProfile,
@@ -270,6 +290,12 @@ pub use usereg_client::{
 pub use webvpn_identity::{
     WebVpnIdentityBootstrap, WebVpnIdentityBootstrapper, WebVpnIdentityConfig, WebVpnIdentityError,
 };
+
+#[cfg(test)]
+mod program_tests;
+
+#[cfg(test)]
+mod physical_exam_tests;
 
 #[cfg(test)]
 mod reference_test_support;

@@ -50,6 +50,11 @@ use tsinghua_kit_sdk::{
         NewsFavorites, NewsPage, NewsQuery, NewsSourceRef, NewsSubscriptionRef, NewsSubscriptions,
     },
     overview::{DailyOverview, OverviewSchedule, OverviewScheduleKind, OverviewTodo},
+    physical_exam::{PhysicalExamItem, PhysicalExamItems, PhysicalExamReport},
+    program::{
+        CourseCompletion, CourseFull, CourseSetCompletion, CourseSetFull, CourseSetKind,
+        CourseState, ProgramCompletion,
+    },
     read::{
         CacheFreshness, IncompleteReason, ReadCoverage, ReadMetadata, ReadPolicy, ReadResult,
         ReadSource,
@@ -1066,6 +1071,95 @@ fn electricity_payment_history_result(
                     status: record.status().to_owned(),
                 })
                 .collect(),
+        },
+        metadata: ReadMetadataDto::from(&metadata),
+    }
+}
+
+/// Flattens the validated report into bridge-safe scalars.  The reference
+/// total keeps its label so a bridge consumer cannot present a local
+/// recomputation as a service score.
+fn physical_exam_result(value: ReadResult<PhysicalExamReport>) -> PhysicalExamResultDto {
+    let (report, metadata) = value.into_parts();
+    let items = report.items();
+    let mut item_dtos = Vec::new();
+    for (key, item) in items.reported() {
+        item_dtos.push(PhysicalExamItemDto {
+            key: key.to_owned(),
+            measurement: item.measurement.clone(),
+            score: item.score.clone(),
+        });
+    }
+    PhysicalExamResultDto {
+        data: PhysicalExamDataDto {
+            no_result: report.no_result(),
+            exemption: report.exemption().map(str::to_owned),
+            exemption_reason: report.exemption_reason().map(str::to_owned),
+            total: report.total().map(str::to_owned),
+            standard_score: report.standard_score().map(str::to_owned),
+            bonus_score: report.bonus_score().map(str::to_owned),
+            long_run_bonus_score: report.long_run_bonus_score().map(str::to_owned),
+            height: report.height().map(str::to_owned),
+            weight: report.weight().map(str::to_owned),
+            physical_education_grade: report.physical_education_grade().map(str::to_owned),
+            reference_total: report.reference_total(),
+            reference_total_label: PhysicalExamReport::REFERENCE_TOTAL_LABEL.to_owned(),
+            items: item_dtos,
+        },
+        metadata: ReadMetadataDto::from(&metadata),
+    }
+}
+
+/// Flattens the completion report into bridge-safe rows.  Course state and
+/// course-set kind are stringified so a bridge consumer never has to map a
+/// generated enum; the plan's own credit targets are passed through unchanged.
+fn program_completion_result(value: ReadResult<ProgramCompletion>) -> ProgramCompletionResultDto {
+    let (report, metadata) = value.into_parts();
+    let course_sets = report
+        .course_sets
+        .into_iter()
+        .map(|set| ProgramCourseSetDto {
+            name: set.name,
+            kind: match set.kind {
+                CourseSetKind::Compulsory => "compulsory",
+                CourseSetKind::Restricted => "restricted",
+                CourseSetKind::Elective => "elective",
+                CourseSetKind::Excluded => "excluded",
+            }
+            .to_owned(),
+            required_credit: set.required_credit,
+            completed_credit: set.completed_credit,
+            required_course_count: set.required_course_count,
+            completed_course_count: set.completed_course_count,
+            full_completed: set.full_completed,
+            courses: set
+                .courses
+                .into_iter()
+                .map(|course| ProgramCourseDto {
+                    course_id: course.course_id,
+                    name: course.name,
+                    credit: course.credit,
+                    point: course.point,
+                    grade: course.grade,
+                    state: match course.state {
+                        CourseState::Completed => "completed",
+                        CourseState::Elected => "elected",
+                        CourseState::NotCompleted => "not_completed",
+                    }
+                    .to_owned(),
+                })
+                .collect(),
+        })
+        .collect();
+    ProgramCompletionResultDto {
+        data: ProgramCompletionDataDto {
+            completed_credit: report.completed_credit,
+            compulsory_credit: report.compulsory_credit,
+            restricted_credit: report.restricted_credit,
+            elective_credit: report.elective_credit,
+            duplicated_courses: report.duplicated_courses,
+            excluded_credit: report.excluded_credit,
+            course_sets,
         },
         metadata: ReadMetadataDto::from(&metadata),
     }
@@ -2120,6 +2214,123 @@ impl fmt::Debug for ElectricityPaymentHistoryDto {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ElectricityPaymentHistoryResultDto {
     pub data: ElectricityPaymentHistoryDto,
+    pub metadata: ReadMetadataDto,
+}
+
+/// One physical-education test item, keyed by its stable English name.
+#[derive(Clone, PartialEq)]
+pub struct PhysicalExamItemDto {
+    pub key: String,
+    pub measurement: Option<String>,
+    pub score: Option<String>,
+}
+
+impl fmt::Debug for PhysicalExamItemDto {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("PhysicalExamItemDto")
+            .field("key", &self.key)
+            .field("has_measurement", &self.measurement.is_some())
+            .field("has_score", &self.score.is_some())
+            .finish()
+    }
+}
+
+/// The equipment-free measurements the service reports alongside the items.
+#[derive(Clone, PartialEq)]
+pub struct PhysicalExamDataDto {
+    pub no_result: bool,
+    pub exemption: Option<String>,
+    pub exemption_reason: Option<String>,
+    pub total: Option<String>,
+    pub standard_score: Option<String>,
+    pub bonus_score: Option<String>,
+    pub long_run_bonus_score: Option<String>,
+    pub height: Option<String>,
+    pub weight: Option<String>,
+    pub physical_education_grade: Option<String>,
+    /// A local recomputation, never the service's own score.  The label below
+    /// is required next to it wherever it is shown.
+    pub reference_total: Option<f64>,
+    pub reference_total_label: String,
+    pub items: Vec<PhysicalExamItemDto>,
+}
+
+impl fmt::Debug for PhysicalExamDataDto {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("PhysicalExamDataDto")
+            .field("no_result", &self.no_result)
+            .field("has_exemption", &self.exemption.is_some())
+            .field("has_total", &self.total.is_some())
+            .field("has_standard_score", &self.standard_score.is_some())
+            .field("has_reference_total", &self.reference_total.is_some())
+            .field("item_count", &self.items.len())
+            .finish()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PhysicalExamResultDto {
+    pub data: PhysicalExamDataDto,
+    pub metadata: ReadMetadataDto,
+}
+
+/// One completed course row.  `point` and `grade` are absent for courses that
+/// cannot carry a grade point or that are not finished yet.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProgramCourseDto {
+    pub course_id: String,
+    pub name: String,
+    pub credit: f64,
+    pub point: Option<f64>,
+    pub grade: Option<String>,
+    pub state: String,
+}
+
+/// One course-attribute group with its own credit and course-count targets.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProgramCourseSetDto {
+    pub name: String,
+    pub kind: String,
+    pub required_credit: Option<f64>,
+    pub completed_credit: Option<f64>,
+    pub required_course_count: Option<u32>,
+    pub completed_course_count: Option<u32>,
+    pub full_completed: bool,
+    pub courses: Vec<ProgramCourseDto>,
+}
+
+/// The plan-wide completion summary.  Course sets repeat the plan's own totals
+/// at the group level, so a caller never has to re-derive them.
+#[derive(Clone, PartialEq)]
+pub struct ProgramCompletionDataDto {
+    pub completed_credit: f64,
+    pub compulsory_credit: f64,
+    pub restricted_credit: f64,
+    pub elective_credit: f64,
+    pub duplicated_courses: Vec<String>,
+    pub excluded_credit: Option<f64>,
+    pub course_sets: Vec<ProgramCourseSetDto>,
+}
+
+impl fmt::Debug for ProgramCompletionDataDto {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let total_courses: usize = self.course_sets.iter().map(|set| set.courses.len()).sum();
+        formatter
+            .debug_struct("ProgramCompletionDataDto")
+            .field("completed_credit", &self.completed_credit)
+            .field("course_set_count", &self.course_sets.len())
+            .field("course_count", &total_courses)
+            .field("duplicated_count", &self.duplicated_courses.len())
+            .field("has_excluded_credit", &self.excluded_credit.is_some())
+            .finish()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProgramCompletionResultDto {
+    pub data: ProgramCompletionDataDto,
     pub metadata: ReadMetadataDto,
 }
 
@@ -4341,6 +4552,22 @@ impl ClientHandle {
     ) -> Result<ElectricityPaymentHistoryResultDto, SdkErrorDto> {
         let result = self.inner.electricity().payment_history().await?;
         Ok(electricity_payment_history_result(result))
+    }
+
+    /// Reads the validated physical-education test report.  The service's own
+    /// "no result" answer is reported as `no_result`, not as an error.
+    pub async fn physical_exam_result(&mut self) -> Result<PhysicalExamResultDto, SdkErrorDto> {
+        let result = self.inner.physical_exam().result().await?;
+        Ok(physical_exam_result(result))
+    }
+
+    /// Reads the degree-program completion report.  The report is read live on
+    /// every call; there is no cached fallback to mistake for a current one.
+    pub async fn program_completion_result(
+        &mut self,
+    ) -> Result<ProgramCompletionResultDto, SdkErrorDto> {
+        let result = self.inner.program().completion().await?;
+        Ok(program_completion_result(result))
     }
 
     /// Reads only the TUNet portal's registration state for the current local

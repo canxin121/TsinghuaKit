@@ -40,7 +40,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -690782467;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1401290493;
 
 // Section: executor
 
@@ -2984,6 +2984,64 @@ fn wire__crate__sdk_api__ClientHandle_overview_day_impl(
         },
     )
 }
+fn wire__crate__sdk_api__ClientHandle_physical_exam_result_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "ClientHandle_physical_exam_result",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<ClientHandle>,
+            >>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, crate::sdk_api::SdkErrorDto>(
+                    (move || async move {
+                        let mut api_that_guard = None;
+                        let decode_indices_ =
+                            flutter_rust_bridge::for_generated::lockable_compute_decode_order(
+                                vec![flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                    &api_that, 0, true,
+                                )],
+                            );
+                        for i in decode_indices_ {
+                            match i {
+                                0 => {
+                                    api_that_guard =
+                                        Some(api_that.lockable_decode_async_ref_mut().await)
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
+                        let mut api_that_guard = api_that_guard.unwrap();
+                        let output_ok = crate::sdk_api::ClientHandle::physical_exam_result(
+                            &mut *api_that_guard,
+                        )
+                        .await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
 fn wire__crate__sdk_api__ClientHandle_prepare_network_profile_fill_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -3033,6 +3091,64 @@ fn wire__crate__sdk_api__ClientHandle_prepare_network_profile_fill_impl(
                     )?;
                     std::result::Result::Ok(output_ok)
                 })())
+            }
+        },
+    )
+}
+fn wire__crate__sdk_api__ClientHandle_program_completion_result_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "ClientHandle_program_completion_result",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<ClientHandle>,
+            >>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, crate::sdk_api::SdkErrorDto>(
+                    (move || async move {
+                        let mut api_that_guard = None;
+                        let decode_indices_ =
+                            flutter_rust_bridge::for_generated::lockable_compute_decode_order(
+                                vec![flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                    &api_that, 0, true,
+                                )],
+                            );
+                        for i in decode_indices_ {
+                            match i {
+                                0 => {
+                                    api_that_guard =
+                                        Some(api_that.lockable_decode_async_ref_mut().await)
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
+                        let mut api_that_guard = api_that_guard.unwrap();
+                        let output_ok = crate::sdk_api::ClientHandle::program_completion_result(
+                            &mut *api_that_guard,
+                        )
+                        .await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
             }
         },
     )
@@ -6085,6 +6201,20 @@ impl SseDecode for Vec<crate::sdk_api::OverviewTodoDto> {
     }
 }
 
+impl SseDecode for Vec<crate::sdk_api::PhysicalExamItemDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::sdk_api::PhysicalExamItemDto>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<u32> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -6104,6 +6234,32 @@ impl SseDecode for Vec<u8> {
         let mut ans_ = Vec::with_capacity(len_ as usize);
         for idx_ in 0..len_ {
             ans_.push(<u8>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::sdk_api::ProgramCourseDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::sdk_api::ProgramCourseDto>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::sdk_api::ProgramCourseSetDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::sdk_api::ProgramCourseSetDto>::sse_decode(
+                deserializer,
+            ));
         }
         return ans_;
     }
@@ -6640,6 +6796,66 @@ impl SseDecode for crate::sdk_api::OverviewTodoDto {
     }
 }
 
+impl SseDecode for crate::sdk_api::PhysicalExamDataDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_noResult = <bool>::sse_decode(deserializer);
+        let mut var_exemption = <Option<String>>::sse_decode(deserializer);
+        let mut var_exemptionReason = <Option<String>>::sse_decode(deserializer);
+        let mut var_total = <Option<String>>::sse_decode(deserializer);
+        let mut var_standardScore = <Option<String>>::sse_decode(deserializer);
+        let mut var_bonusScore = <Option<String>>::sse_decode(deserializer);
+        let mut var_longRunBonusScore = <Option<String>>::sse_decode(deserializer);
+        let mut var_height = <Option<String>>::sse_decode(deserializer);
+        let mut var_weight = <Option<String>>::sse_decode(deserializer);
+        let mut var_physicalEducationGrade = <Option<String>>::sse_decode(deserializer);
+        let mut var_referenceTotal = <Option<f64>>::sse_decode(deserializer);
+        let mut var_referenceTotalLabel = <String>::sse_decode(deserializer);
+        let mut var_items = <Vec<crate::sdk_api::PhysicalExamItemDto>>::sse_decode(deserializer);
+        return crate::sdk_api::PhysicalExamDataDto {
+            no_result: var_noResult,
+            exemption: var_exemption,
+            exemption_reason: var_exemptionReason,
+            total: var_total,
+            standard_score: var_standardScore,
+            bonus_score: var_bonusScore,
+            long_run_bonus_score: var_longRunBonusScore,
+            height: var_height,
+            weight: var_weight,
+            physical_education_grade: var_physicalEducationGrade,
+            reference_total: var_referenceTotal,
+            reference_total_label: var_referenceTotalLabel,
+            items: var_items,
+        };
+    }
+}
+
+impl SseDecode for crate::sdk_api::PhysicalExamItemDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_key = <String>::sse_decode(deserializer);
+        let mut var_measurement = <Option<String>>::sse_decode(deserializer);
+        let mut var_score = <Option<String>>::sse_decode(deserializer);
+        return crate::sdk_api::PhysicalExamItemDto {
+            key: var_key,
+            measurement: var_measurement,
+            score: var_score,
+        };
+    }
+}
+
+impl SseDecode for crate::sdk_api::PhysicalExamResultDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_data = <crate::sdk_api::PhysicalExamDataDto>::sse_decode(deserializer);
+        let mut var_metadata = <crate::sdk_api::ReadMetadataDto>::sse_decode(deserializer);
+        return crate::sdk_api::PhysicalExamResultDto {
+            data: var_data,
+            metadata: var_metadata,
+        };
+    }
+}
+
 impl SseDecode for crate::sdk_api::PortalAddressRegistrationDto {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -6690,6 +6906,85 @@ impl SseDecode for crate::sdk_api::PortalObservationDto {
         return crate::sdk_api::PortalObservationDto {
             registration: var_registration,
             observed_at_utc: var_observedAtUtc,
+        };
+    }
+}
+
+impl SseDecode for crate::sdk_api::ProgramCompletionDataDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_completedCredit = <f64>::sse_decode(deserializer);
+        let mut var_compulsoryCredit = <f64>::sse_decode(deserializer);
+        let mut var_restrictedCredit = <f64>::sse_decode(deserializer);
+        let mut var_electiveCredit = <f64>::sse_decode(deserializer);
+        let mut var_duplicatedCourses = <Vec<String>>::sse_decode(deserializer);
+        let mut var_excludedCredit = <Option<f64>>::sse_decode(deserializer);
+        let mut var_courseSets =
+            <Vec<crate::sdk_api::ProgramCourseSetDto>>::sse_decode(deserializer);
+        return crate::sdk_api::ProgramCompletionDataDto {
+            completed_credit: var_completedCredit,
+            compulsory_credit: var_compulsoryCredit,
+            restricted_credit: var_restrictedCredit,
+            elective_credit: var_electiveCredit,
+            duplicated_courses: var_duplicatedCourses,
+            excluded_credit: var_excludedCredit,
+            course_sets: var_courseSets,
+        };
+    }
+}
+
+impl SseDecode for crate::sdk_api::ProgramCompletionResultDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_data = <crate::sdk_api::ProgramCompletionDataDto>::sse_decode(deserializer);
+        let mut var_metadata = <crate::sdk_api::ReadMetadataDto>::sse_decode(deserializer);
+        return crate::sdk_api::ProgramCompletionResultDto {
+            data: var_data,
+            metadata: var_metadata,
+        };
+    }
+}
+
+impl SseDecode for crate::sdk_api::ProgramCourseDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_courseId = <String>::sse_decode(deserializer);
+        let mut var_name = <String>::sse_decode(deserializer);
+        let mut var_credit = <f64>::sse_decode(deserializer);
+        let mut var_point = <Option<f64>>::sse_decode(deserializer);
+        let mut var_grade = <Option<String>>::sse_decode(deserializer);
+        let mut var_state = <String>::sse_decode(deserializer);
+        return crate::sdk_api::ProgramCourseDto {
+            course_id: var_courseId,
+            name: var_name,
+            credit: var_credit,
+            point: var_point,
+            grade: var_grade,
+            state: var_state,
+        };
+    }
+}
+
+impl SseDecode for crate::sdk_api::ProgramCourseSetDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_name = <String>::sse_decode(deserializer);
+        let mut var_kind = <String>::sse_decode(deserializer);
+        let mut var_requiredCredit = <Option<f64>>::sse_decode(deserializer);
+        let mut var_completedCredit = <Option<f64>>::sse_decode(deserializer);
+        let mut var_requiredCourseCount = <Option<u32>>::sse_decode(deserializer);
+        let mut var_completedCourseCount = <Option<u32>>::sse_decode(deserializer);
+        let mut var_fullCompleted = <bool>::sse_decode(deserializer);
+        let mut var_courses = <Vec<crate::sdk_api::ProgramCourseDto>>::sse_decode(deserializer);
+        return crate::sdk_api::ProgramCourseSetDto {
+            name: var_name,
+            kind: var_kind,
+            required_credit: var_requiredCredit,
+            completed_credit: var_completedCredit,
+            required_course_count: var_requiredCourseCount,
+            completed_course_count: var_completedCourseCount,
+            full_completed: var_fullCompleted,
+            courses: var_courses,
         };
     }
 }
@@ -7581,145 +7876,157 @@ fn pde_ffi_dispatcher_primary_impl(
         50 => {
             wire__crate__sdk_api__ClientHandle_overview_day_impl(port, ptr, rust_vec_len, data_len)
         }
-        51 => wire__crate__sdk_api__ClientHandle_prepare_network_profile_fill_impl(
+        51 => wire__crate__sdk_api__ClientHandle_physical_exam_result_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        52 => wire__crate__sdk_api__ClientHandle_refresh_self_service_captcha_impl(
+        52 => wire__crate__sdk_api__ClientHandle_prepare_network_profile_fill_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        53 => wire__crate__sdk_api__ClientHandle_registrar_exams_impl(
+        53 => wire__crate__sdk_api__ClientHandle_program_completion_result_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        54 => wire__crate__sdk_api__ClientHandle_registrar_grades_impl(
+        54 => wire__crate__sdk_api__ClientHandle_refresh_self_service_captcha_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        55 => wire__crate__sdk_api__ClientHandle_registrar_semester_schedule_impl(
+        55 => wire__crate__sdk_api__ClientHandle_registrar_exams_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        56 => wire__crate__sdk_api__ClientHandle_save_network_profile_impl(
+        56 => wire__crate__sdk_api__ClientHandle_registrar_grades_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        57 => wire__crate__sdk_api__ClientHandle_self_service_account_impl(
+        57 => wire__crate__sdk_api__ClientHandle_registrar_semester_schedule_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        58 => wire__crate__sdk_api__ClientHandle_self_service_disconnect_device_impl(
+        58 => wire__crate__sdk_api__ClientHandle_save_network_profile_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        59 => wire__crate__sdk_api__ClientHandle_self_service_login_phase_impl(
+        59 => wire__crate__sdk_api__ClientHandle_self_service_account_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        60 => wire__crate__sdk_api__ClientHandle_self_service_online_devices_impl(
+        60 => wire__crate__sdk_api__ClientHandle_self_service_disconnect_device_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        61 => wire__crate__sdk_api__ClientHandle_self_service_usage_impl(
+        61 => wire__crate__sdk_api__ClientHandle_self_service_login_phase_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        62 => wire__crate__sdk_api__ClientHandle_send_identity_code_impl(
+        62 => wire__crate__sdk_api__ClientHandle_self_service_online_devices_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        63 => wire__crate__sdk_api__ClientHandle_service_hall_pending_impl(
+        63 => wire__crate__sdk_api__ClientHandle_self_service_usage_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        64 => wire__crate__sdk_api__ClientHandle_service_hall_phase_details_impl(
+        64 => wire__crate__sdk_api__ClientHandle_send_identity_code_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        65 => wire__crate__sdk_api__ClientHandle_service_hall_services_impl(
+        65 => wire__crate__sdk_api__ClientHandle_service_hall_pending_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        66 => wire__crate__sdk_api__ClientHandle_service_hall_tasks_impl(
+        66 => wire__crate__sdk_api__ClientHandle_service_hall_phase_details_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        67 => wire__crate__sdk_api__ClientHandle_start_saved_self_service_login_impl(
+        67 => wire__crate__sdk_api__ClientHandle_service_hall_services_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        68 => wire__crate__sdk_api__ClientHandle_start_self_service_login_impl(
+        68 => wire__crate__sdk_api__ClientHandle_service_hall_tasks_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        69 => wire__crate__sdk_api__ClientHandle_submit_identity_code_impl(
+        69 => wire__crate__sdk_api__ClientHandle_start_saved_self_service_login_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        70 => wire__crate__sdk_api__ClientHandle_submit_self_service_captcha_impl(
+        70 => wire__crate__sdk_api__ClientHandle_start_self_service_login_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        71 => wire__crate__sdk_api__ClientHandle_update_network_profile_impl(
+        71 => wire__crate__sdk_api__ClientHandle_submit_identity_code_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        72 => wire__crate__sdk_api__NetworkProfilePasswordHandle_expose_for_form_impl(
+        72 => wire__crate__sdk_api__ClientHandle_submit_self_service_captcha_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        73 => wire__crate__sdk_api__PreparedNetworkProfile_form_fields_impl(
+        73 => wire__crate__sdk_api__ClientHandle_update_network_profile_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        74 => wire__crate__sdk_api__suggest_identity_login_stage_impl(
+        74 => wire__crate__sdk_api__NetworkProfilePasswordHandle_expose_for_form_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        75 => wire__crate__sdk_api__PreparedNetworkProfile_form_fields_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        76 => wire__crate__sdk_api__suggest_identity_login_stage_impl(
             port,
             ptr,
             rust_vec_len,
@@ -10106,6 +10413,81 @@ impl flutter_rust_bridge::IntoIntoDart<crate::sdk_api::OverviewTodoDto>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::sdk_api::PhysicalExamDataDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.no_result.into_into_dart().into_dart(),
+            self.exemption.into_into_dart().into_dart(),
+            self.exemption_reason.into_into_dart().into_dart(),
+            self.total.into_into_dart().into_dart(),
+            self.standard_score.into_into_dart().into_dart(),
+            self.bonus_score.into_into_dart().into_dart(),
+            self.long_run_bonus_score.into_into_dart().into_dart(),
+            self.height.into_into_dart().into_dart(),
+            self.weight.into_into_dart().into_dart(),
+            self.physical_education_grade.into_into_dart().into_dart(),
+            self.reference_total.into_into_dart().into_dart(),
+            self.reference_total_label.into_into_dart().into_dart(),
+            self.items.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::sdk_api::PhysicalExamDataDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::sdk_api::PhysicalExamDataDto>
+    for crate::sdk_api::PhysicalExamDataDto
+{
+    fn into_into_dart(self) -> crate::sdk_api::PhysicalExamDataDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::sdk_api::PhysicalExamItemDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.key.into_into_dart().into_dart(),
+            self.measurement.into_into_dart().into_dart(),
+            self.score.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::sdk_api::PhysicalExamItemDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::sdk_api::PhysicalExamItemDto>
+    for crate::sdk_api::PhysicalExamItemDto
+{
+    fn into_into_dart(self) -> crate::sdk_api::PhysicalExamItemDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::sdk_api::PhysicalExamResultDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.data.into_into_dart().into_dart(),
+            self.metadata.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::sdk_api::PhysicalExamResultDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::sdk_api::PhysicalExamResultDto>
+    for crate::sdk_api::PhysicalExamResultDto
+{
+    fn into_into_dart(self) -> crate::sdk_api::PhysicalExamResultDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::sdk_api::PortalAddressRegistrationDto {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         match self {
@@ -10188,6 +10570,105 @@ impl flutter_rust_bridge::IntoIntoDart<crate::sdk_api::PortalObservationDto>
     for crate::sdk_api::PortalObservationDto
 {
     fn into_into_dart(self) -> crate::sdk_api::PortalObservationDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::sdk_api::ProgramCompletionDataDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.completed_credit.into_into_dart().into_dart(),
+            self.compulsory_credit.into_into_dart().into_dart(),
+            self.restricted_credit.into_into_dart().into_dart(),
+            self.elective_credit.into_into_dart().into_dart(),
+            self.duplicated_courses.into_into_dart().into_dart(),
+            self.excluded_credit.into_into_dart().into_dart(),
+            self.course_sets.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::sdk_api::ProgramCompletionDataDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::sdk_api::ProgramCompletionDataDto>
+    for crate::sdk_api::ProgramCompletionDataDto
+{
+    fn into_into_dart(self) -> crate::sdk_api::ProgramCompletionDataDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::sdk_api::ProgramCompletionResultDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.data.into_into_dart().into_dart(),
+            self.metadata.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::sdk_api::ProgramCompletionResultDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::sdk_api::ProgramCompletionResultDto>
+    for crate::sdk_api::ProgramCompletionResultDto
+{
+    fn into_into_dart(self) -> crate::sdk_api::ProgramCompletionResultDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::sdk_api::ProgramCourseDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.course_id.into_into_dart().into_dart(),
+            self.name.into_into_dart().into_dart(),
+            self.credit.into_into_dart().into_dart(),
+            self.point.into_into_dart().into_dart(),
+            self.grade.into_into_dart().into_dart(),
+            self.state.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::sdk_api::ProgramCourseDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::sdk_api::ProgramCourseDto>
+    for crate::sdk_api::ProgramCourseDto
+{
+    fn into_into_dart(self) -> crate::sdk_api::ProgramCourseDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::sdk_api::ProgramCourseSetDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.name.into_into_dart().into_dart(),
+            self.kind.into_into_dart().into_dart(),
+            self.required_credit.into_into_dart().into_dart(),
+            self.completed_credit.into_into_dart().into_dart(),
+            self.required_course_count.into_into_dart().into_dart(),
+            self.completed_course_count.into_into_dart().into_dart(),
+            self.full_completed.into_into_dart().into_dart(),
+            self.courses.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::sdk_api::ProgramCourseSetDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::sdk_api::ProgramCourseSetDto>
+    for crate::sdk_api::ProgramCourseSetDto
+{
+    fn into_into_dart(self) -> crate::sdk_api::ProgramCourseSetDto {
         self
     }
 }
@@ -12348,6 +12829,16 @@ impl SseEncode for Vec<crate::sdk_api::OverviewTodoDto> {
     }
 }
 
+impl SseEncode for Vec<crate::sdk_api::PhysicalExamItemDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::sdk_api::PhysicalExamItemDto>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<u32> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -12364,6 +12855,26 @@ impl SseEncode for Vec<u8> {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <u8>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::sdk_api::ProgramCourseDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::sdk_api::ProgramCourseDto>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::sdk_api::ProgramCourseSetDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::sdk_api::ProgramCourseSetDto>::sse_encode(item, serializer);
         }
     }
 }
@@ -12782,6 +13293,42 @@ impl SseEncode for crate::sdk_api::OverviewTodoDto {
     }
 }
 
+impl SseEncode for crate::sdk_api::PhysicalExamDataDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.no_result, serializer);
+        <Option<String>>::sse_encode(self.exemption, serializer);
+        <Option<String>>::sse_encode(self.exemption_reason, serializer);
+        <Option<String>>::sse_encode(self.total, serializer);
+        <Option<String>>::sse_encode(self.standard_score, serializer);
+        <Option<String>>::sse_encode(self.bonus_score, serializer);
+        <Option<String>>::sse_encode(self.long_run_bonus_score, serializer);
+        <Option<String>>::sse_encode(self.height, serializer);
+        <Option<String>>::sse_encode(self.weight, serializer);
+        <Option<String>>::sse_encode(self.physical_education_grade, serializer);
+        <Option<f64>>::sse_encode(self.reference_total, serializer);
+        <String>::sse_encode(self.reference_total_label, serializer);
+        <Vec<crate::sdk_api::PhysicalExamItemDto>>::sse_encode(self.items, serializer);
+    }
+}
+
+impl SseEncode for crate::sdk_api::PhysicalExamItemDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.key, serializer);
+        <Option<String>>::sse_encode(self.measurement, serializer);
+        <Option<String>>::sse_encode(self.score, serializer);
+    }
+}
+
+impl SseEncode for crate::sdk_api::PhysicalExamResultDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <crate::sdk_api::PhysicalExamDataDto>::sse_encode(self.data, serializer);
+        <crate::sdk_api::ReadMetadataDto>::sse_encode(self.metadata, serializer);
+    }
+}
+
 impl SseEncode for crate::sdk_api::PortalAddressRegistrationDto {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -12829,6 +13376,53 @@ impl SseEncode for crate::sdk_api::PortalObservationDto {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <crate::sdk_api::PortalAddressRegistrationDto>::sse_encode(self.registration, serializer);
         <String>::sse_encode(self.observed_at_utc, serializer);
+    }
+}
+
+impl SseEncode for crate::sdk_api::ProgramCompletionDataDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <f64>::sse_encode(self.completed_credit, serializer);
+        <f64>::sse_encode(self.compulsory_credit, serializer);
+        <f64>::sse_encode(self.restricted_credit, serializer);
+        <f64>::sse_encode(self.elective_credit, serializer);
+        <Vec<String>>::sse_encode(self.duplicated_courses, serializer);
+        <Option<f64>>::sse_encode(self.excluded_credit, serializer);
+        <Vec<crate::sdk_api::ProgramCourseSetDto>>::sse_encode(self.course_sets, serializer);
+    }
+}
+
+impl SseEncode for crate::sdk_api::ProgramCompletionResultDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <crate::sdk_api::ProgramCompletionDataDto>::sse_encode(self.data, serializer);
+        <crate::sdk_api::ReadMetadataDto>::sse_encode(self.metadata, serializer);
+    }
+}
+
+impl SseEncode for crate::sdk_api::ProgramCourseDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.course_id, serializer);
+        <String>::sse_encode(self.name, serializer);
+        <f64>::sse_encode(self.credit, serializer);
+        <Option<f64>>::sse_encode(self.point, serializer);
+        <Option<String>>::sse_encode(self.grade, serializer);
+        <String>::sse_encode(self.state, serializer);
+    }
+}
+
+impl SseEncode for crate::sdk_api::ProgramCourseSetDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.name, serializer);
+        <String>::sse_encode(self.kind, serializer);
+        <Option<f64>>::sse_encode(self.required_credit, serializer);
+        <Option<f64>>::sse_encode(self.completed_credit, serializer);
+        <Option<u32>>::sse_encode(self.required_course_count, serializer);
+        <Option<u32>>::sse_encode(self.completed_course_count, serializer);
+        <bool>::sse_encode(self.full_completed, serializer);
+        <Vec<crate::sdk_api::ProgramCourseDto>>::sse_encode(self.courses, serializer);
     }
 }
 

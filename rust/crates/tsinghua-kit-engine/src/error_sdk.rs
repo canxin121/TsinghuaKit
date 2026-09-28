@@ -34,6 +34,26 @@ pub enum Service {
     CampusCard,
     /// Dormitory electricity data.
     Electricity,
+    /// Dormitory building data other than electricity.
+    Dorm,
+    /// Degree-program completion and full program plans.
+    Program,
+    /// Physical-education test results.
+    PhysicalExam,
+    /// Course teaching-evaluation questionnaires.
+    Assessment,
+    /// Issued invoice records and their documents.
+    Invoice,
+    /// Bank payroll disbursement records.
+    BankPayment,
+    /// Graduate-student income records.
+    GraduateIncome,
+    /// Independent CAB study-room booking service.
+    LibraryRoom,
+    /// Course-reserve textbook catalogue search.
+    Reserves,
+    /// Sports-venue resources and reservations.
+    Sports,
     /// Local campus-network observation and connection operations.
     Network,
     /// Local SDK storage or client lifecycle.
@@ -57,6 +77,16 @@ impl Service {
             Self::Classrooms => "classrooms",
             Self::CampusCard => "campus_card",
             Self::Electricity => "electricity",
+            Self::Dorm => "dorm",
+            Self::Program => "program",
+            Self::PhysicalExam => "physical_exam",
+            Self::Assessment => "assessment",
+            Self::Invoice => "invoice",
+            Self::BankPayment => "bank_payment",
+            Self::GraduateIncome => "graduate_income",
+            Self::LibraryRoom => "library_room",
+            Self::Reserves => "reserves",
+            Self::Sports => "sports",
             Self::Network => "network",
             Self::Local => "local",
         }

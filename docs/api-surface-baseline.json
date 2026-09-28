@@ -1,18 +1,24 @@
 {
   "schema_version": 1,
-  "source_revision": "a4db9fbe1c1480bcbaa3bab203d1bd9e37556621",
-  "source_date": "2026-09-24",
-  "scope": "Current source and existing default-feature Rustdoc; not an exhaustive semver API report or live validation result.",
+  "source_revision": "6801f3e1785f0a95cc08ee7e277754ac0bb267c3",
+  "source_date": "2026-09-29",
+  "scope": "Current source and the existing Rustdoc rendered from it; not an exhaustive semver API report or a live-validation result. The 2026-09-29 refresh adds the degree-program completion and physical-education read slices; no live campus request was made for it.",
   "methodology": "Public module/method/DTO declarations are counted from source. Rustdoc item links are deduplicated by class and href on the rendered crate root. Counts include deprecated or compatibility items; source line counts include inline tests.",
   "root_public_modules": [
     "api",
+    "auth",
     "cache",
+    "calendar_api",
     "campus_card_adapter",
+    "campus_card_api",
     "campus_card_read",
     "campus_live",
     "classroom_read",
+    "classrooms_api",
+    "client",
     "domain",
     "dorm_electricity_read",
+    "electricity_api",
     "error",
     "identity",
     "identity_client",
@@ -25,16 +31,27 @@
     "info_session",
     "learn",
     "learn_announcements",
+    "learn_api",
     "learn_client",
     "learn_session",
     "learn_todos",
+    "library_api",
     "library_read",
+    "network",
+    "news",
+    "overview_api",
+    "physical_exam_read",
+    "program_read",
     "protocol",
+    "read",
     "registrar",
     "registrar_academic",
+    "registrar_api",
     "registrar_client",
     "registrar_session",
+    "self_service",
     "service_catalog",
+    "service_hall",
     "services",
     "session",
     "telemetry",
@@ -47,20 +64,19 @@
     "usereg_client",
     "webvpn_identity"
   ],
-  "root_pub_use_statement_count": 43,
+  "root_pub_use_statement_count": 47,
   "rendered_crate_root_item_counts": {
-    "constant": 16,
-    "enum": 102,
-    "fn": 40,
-    "mod": 41,
-    "struct": 219,
+    "constant": 26,
+    "enum": 122,
+    "fn": 44,
+    "struct": 246,
     "trait": 2,
     "type": 5
   },
   "runtime": {
     "path": "rust/src/api/runtime.rs",
-    "line_count": 25251,
-    "direct_state_field_count": 85,
+    "line_count": 26599,
+    "direct_state_field_count": 96,
     "dto_structs": [
       "CampusRuntimeStatusDto",
       "UseregCaptchaDto",
@@ -110,7 +126,9 @@
       "ClassroomStateResultDto",
       "ElectricityRemainderDto",
       "ElectricityPaymentRecordDto",
-      "ElectricityPaymentHistoryDto"
+      "ElectricityPaymentHistoryDto",
+      "PhysicalExamResultDto",
+      "ProgramCompletionResultDto"
     ],
     "public_methods": [
       {
@@ -492,6 +510,46 @@
         "name": "logout",
         "line": 11851,
         "signature": "pub fn logout(&mut self) -> Result<CampusRuntimeStatusDto, String>"
+      },
+      {
+        "name": "auth_status",
+        "line": 3510,
+        "signature": "pub fn auth_status(&self) -> crate::auth::AuthStatus"
+      },
+      {
+        "name": "logout_self_service",
+        "line": 3571,
+        "signature": "pub fn logout_self_service(&mut self) -> crate::auth::AuthStatus"
+      },
+      {
+        "name": "logout_identity",
+        "line": 3580,
+        "signature": "pub fn logout_identity(&mut self) -> Result<crate::auth::AuthStatus, String>"
+      },
+      {
+        "name": "read_thos_pending",
+        "line": 4555,
+        "signature": "pub async fn read_thos_pending(\n        &mut self,\n        force_refresh: bool,\n    ) -> Result<crate::read::ReadResult<crate::service_hall::PendingTasks>, crate::error::Error>"
+      },
+      {
+        "name": "load_physical_exam_result",
+        "line": 9436,
+        "signature": "pub async fn load_physical_exam_result(&mut self) -> Result<PhysicalExamResultDto, String>"
+      },
+      {
+        "name": "start_usereg_login_with_options",
+        "line": 10860,
+        "signature": "pub async fn start_usereg_login_with_options(\n        &mut self,\n        username: String,\n        password: String,\n        remember_credentials: bool,\n    ) -> Result<UseregCaptchaDto, String>"
+      },
+      {
+        "name": "complete_usereg_login_with_result",
+        "line": 11006,
+        "signature": "pub async fn complete_usereg_login_with_result(\n        &mut self,\n        verify_code: String,\n        sms_code: Option<String>,\n    ) -> Result<(CampusRuntimeStatusDto, bool), String>"
+      },
+      {
+        "name": "load_program_completion_result",
+        "line": 14469,
+        "signature": "pub async fn load_program_completion_result(\n        &mut self,\n    ) -> Result<ProgramCompletionResultDto, String>"
       }
     ],
     "public_free_functions": [

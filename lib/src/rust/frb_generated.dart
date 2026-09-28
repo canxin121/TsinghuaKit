@@ -68,7 +68,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0';
 
   @override
-  int get rustContentHash => -690782467;
+  int get rustContentHash => 1401290493;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -283,9 +283,16 @@ abstract class RustLibApi extends BaseApi {
       required String date,
       required ReadPolicyDto policy});
 
+  Future<PhysicalExamResultDto> crateSdkApiClientHandlePhysicalExamResult(
+      {required ClientHandle that});
+
   Future<PreparedNetworkProfile>
       crateSdkApiClientHandlePrepareNetworkProfileFill(
           {required ClientHandle that, required String id});
+
+  Future<ProgramCompletionResultDto>
+      crateSdkApiClientHandleProgramCompletionResult(
+          {required ClientHandle that});
 
   Future<SelfServiceCaptchaDto>
       crateSdkApiClientHandleRefreshSelfServiceCaptcha(
@@ -1946,6 +1953,33 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  Future<PhysicalExamResultDto> crateSdkApiClientHandlePhysicalExamResult(
+      {required ClientHandle that}) {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
+            that, serializer);
+        pdeCallFfi(generalizedFrbRustBinding, serializer,
+            funcId: 51, port: port_);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_physical_exam_result_dto,
+        decodeErrorData: sse_decode_sdk_error_dto,
+      ),
+      constMeta: kCrateSdkApiClientHandlePhysicalExamResultConstMeta,
+      argValues: [that],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateSdkApiClientHandlePhysicalExamResultConstMeta =>
+      const TaskConstMeta(
+        debugName: "ClientHandle_physical_exam_result",
+        argNames: ["that"],
+      );
+
+  @override
   Future<PreparedNetworkProfile>
       crateSdkApiClientHandlePrepareNetworkProfileFill(
           {required ClientHandle that, required String id}) {
@@ -1956,7 +1990,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             that, serializer);
         sse_encode_String(id, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 51, port: port_);
+            funcId: 52, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData:
@@ -1977,6 +2011,34 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           );
 
   @override
+  Future<ProgramCompletionResultDto>
+      crateSdkApiClientHandleProgramCompletionResult(
+          {required ClientHandle that}) {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
+            that, serializer);
+        pdeCallFfi(generalizedFrbRustBinding, serializer,
+            funcId: 53, port: port_);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_program_completion_result_dto,
+        decodeErrorData: sse_decode_sdk_error_dto,
+      ),
+      constMeta: kCrateSdkApiClientHandleProgramCompletionResultConstMeta,
+      argValues: [that],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateSdkApiClientHandleProgramCompletionResultConstMeta =>
+      const TaskConstMeta(
+        debugName: "ClientHandle_program_completion_result",
+        argNames: ["that"],
+      );
+
+  @override
   Future<SelfServiceCaptchaDto>
       crateSdkApiClientHandleRefreshSelfServiceCaptcha(
           {required ClientHandle that}) {
@@ -1986,7 +2048,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
             that, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 52, port: port_);
+            funcId: 54, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_self_service_captcha_dto,
@@ -2014,7 +2076,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
             that, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 53, port: port_);
+            funcId: 55, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_exam_report_result_dto,
@@ -2041,7 +2103,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
             that, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 54, port: port_);
+            funcId: 56, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_grade_report_result_dto,
@@ -2069,7 +2131,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
             that, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 55, port: port_);
+            funcId: 57, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_semester_schedule_result_dto,
@@ -2105,7 +2167,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_network_access_method_dto(method, serializer);
         sse_encode_opt_String(password, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 56, port: port_);
+            funcId: 58, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_network_profile_dto,
@@ -2132,7 +2194,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
             that, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 57, port: port_);
+            funcId: 59, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_self_service_account_result_dto,
@@ -2160,7 +2222,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             that, serializer);
         sse_encode_String(referenceId, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 58, port: port_);
+            funcId: 60, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_unit,
@@ -2188,7 +2250,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
             that, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 59, port: port_);
+            funcId: 61, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_self_service_login_phase_dto,
@@ -2216,7 +2278,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
             that, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 60, port: port_);
+            funcId: 62, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_self_service_devices_result_dto,
@@ -2243,7 +2305,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
             that, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 61, port: port_);
+            funcId: 63, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_self_service_usage_result_dto,
@@ -2271,7 +2333,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             that, serializer);
         sse_encode_second_factor_method_dto(method, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 62, port: port_);
+            funcId: 64, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_identity_login_result_dto,
@@ -2299,7 +2361,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             that, serializer);
         sse_encode_service_hall_read_policy_dto(policy, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 63, port: port_);
+            funcId: 65, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_service_hall_pending_result_dto,
@@ -2331,7 +2393,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_String(referenceId, serializer);
         sse_encode_service_hall_read_policy_dto(policy, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 64, port: port_);
+            funcId: 66, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_service_hall_phase_details_result_dto,
@@ -2361,7 +2423,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             that, serializer);
         sse_encode_service_hall_read_policy_dto(policy, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 65, port: port_);
+            funcId: 67, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_service_hall_directory_result_dto,
@@ -2392,7 +2454,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_service_hall_task_view_dto(view, serializer);
         sse_encode_service_hall_read_policy_dto(policy, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 66, port: port_);
+            funcId: 68, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_service_hall_task_list_result_dto,
@@ -2421,7 +2483,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             that, serializer);
         sse_encode_String(username, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 67, port: port_);
+            funcId: 69, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_self_service_captcha_dto,
@@ -2455,7 +2517,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_String(password, serializer);
         sse_encode_bool(rememberCredentials, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 68, port: port_);
+            funcId: 70, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_self_service_captcha_dto,
@@ -2486,7 +2548,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_second_factor_method_dto(method, serializer);
         sse_encode_String(code, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 69, port: port_);
+            funcId: 71, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_identity_login_result_dto,
@@ -2518,7 +2580,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_String(answer, serializer);
         sse_encode_opt_String(smsCode, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 70, port: port_);
+            funcId: 72, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_self_service_login_result_dto,
@@ -2555,7 +2617,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_network_access_method_dto(method, serializer);
         sse_encode_opt_String(password, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 71, port: port_);
+            funcId: 73, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_network_profile_dto,
@@ -2582,7 +2644,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerNetworkProfilePasswordHandle(
             that, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 72, port: port_);
+            funcId: 74, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_String,
@@ -2610,7 +2672,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPreparedNetworkProfile(
             that, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 73, port: port_);
+            funcId: 75, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_network_profile_fill_dto,
@@ -2636,7 +2698,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         sse_encode_String(username, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 74, port: port_);
+            funcId: 76, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_opt_box_autoadd_login_stage_dto,
@@ -4110,6 +4172,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<PhysicalExamItemDto> dco_decode_list_physical_exam_item_dto(
+      dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>)
+        .map(dco_decode_physical_exam_item_dto)
+        .toList();
+  }
+
+  @protected
   Uint32List dco_decode_list_prim_u_32_strict(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as Uint32List;
@@ -4119,6 +4190,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as Uint8List;
+  }
+
+  @protected
+  List<ProgramCourseDto> dco_decode_list_program_course_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_program_course_dto).toList();
+  }
+
+  @protected
+  List<ProgramCourseSetDto> dco_decode_list_program_course_set_dto(
+      dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>)
+        .map(dco_decode_program_course_set_dto)
+        .toList();
   }
 
   @protected
@@ -4525,6 +4611,54 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  PhysicalExamDataDto dco_decode_physical_exam_data_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 13)
+      throw Exception('unexpected arr length: expect 13 but see ${arr.length}');
+    return PhysicalExamDataDto(
+      noResult: dco_decode_bool(arr[0]),
+      exemption: dco_decode_opt_String(arr[1]),
+      exemptionReason: dco_decode_opt_String(arr[2]),
+      total: dco_decode_opt_String(arr[3]),
+      standardScore: dco_decode_opt_String(arr[4]),
+      bonusScore: dco_decode_opt_String(arr[5]),
+      longRunBonusScore: dco_decode_opt_String(arr[6]),
+      height: dco_decode_opt_String(arr[7]),
+      weight: dco_decode_opt_String(arr[8]),
+      physicalEducationGrade: dco_decode_opt_String(arr[9]),
+      referenceTotal: dco_decode_opt_box_autoadd_f_64(arr[10]),
+      referenceTotalLabel: dco_decode_String(arr[11]),
+      items: dco_decode_list_physical_exam_item_dto(arr[12]),
+    );
+  }
+
+  @protected
+  PhysicalExamItemDto dco_decode_physical_exam_item_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return PhysicalExamItemDto(
+      key: dco_decode_String(arr[0]),
+      measurement: dco_decode_opt_String(arr[1]),
+      score: dco_decode_opt_String(arr[2]),
+    );
+  }
+
+  @protected
+  PhysicalExamResultDto dco_decode_physical_exam_result_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return PhysicalExamResultDto(
+      data: dco_decode_physical_exam_data_dto(arr[0]),
+      metadata: dco_decode_read_metadata_dto(arr[1]),
+    );
+  }
+
+  @protected
   PortalAddressRegistrationDto dco_decode_portal_address_registration_dto(
       dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
@@ -4559,6 +4693,70 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     return PortalObservationDto(
       registration: dco_decode_portal_address_registration_dto(arr[0]),
       observedAtUtc: dco_decode_String(arr[1]),
+    );
+  }
+
+  @protected
+  ProgramCompletionDataDto dco_decode_program_completion_data_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 7)
+      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
+    return ProgramCompletionDataDto(
+      completedCredit: dco_decode_f_64(arr[0]),
+      compulsoryCredit: dco_decode_f_64(arr[1]),
+      restrictedCredit: dco_decode_f_64(arr[2]),
+      electiveCredit: dco_decode_f_64(arr[3]),
+      duplicatedCourses: dco_decode_list_String(arr[4]),
+      excludedCredit: dco_decode_opt_box_autoadd_f_64(arr[5]),
+      courseSets: dco_decode_list_program_course_set_dto(arr[6]),
+    );
+  }
+
+  @protected
+  ProgramCompletionResultDto dco_decode_program_completion_result_dto(
+      dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return ProgramCompletionResultDto(
+      data: dco_decode_program_completion_data_dto(arr[0]),
+      metadata: dco_decode_read_metadata_dto(arr[1]),
+    );
+  }
+
+  @protected
+  ProgramCourseDto dco_decode_program_course_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+    return ProgramCourseDto(
+      courseId: dco_decode_String(arr[0]),
+      name: dco_decode_String(arr[1]),
+      credit: dco_decode_f_64(arr[2]),
+      point: dco_decode_opt_box_autoadd_f_64(arr[3]),
+      grade: dco_decode_opt_String(arr[4]),
+      state: dco_decode_String(arr[5]),
+    );
+  }
+
+  @protected
+  ProgramCourseSetDto dco_decode_program_course_set_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 8)
+      throw Exception('unexpected arr length: expect 8 but see ${arr.length}');
+    return ProgramCourseSetDto(
+      name: dco_decode_String(arr[0]),
+      kind: dco_decode_String(arr[1]),
+      requiredCredit: dco_decode_opt_box_autoadd_f_64(arr[2]),
+      completedCredit: dco_decode_opt_box_autoadd_f_64(arr[3]),
+      requiredCourseCount: dco_decode_opt_box_autoadd_u_32(arr[4]),
+      completedCourseCount: dco_decode_opt_box_autoadd_u_32(arr[5]),
+      fullCompleted: dco_decode_bool(arr[6]),
+      courses: dco_decode_list_program_course_dto(arr[7]),
     );
   }
 
@@ -6592,6 +6790,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<PhysicalExamItemDto> sse_decode_list_physical_exam_item_dto(
+      SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <PhysicalExamItemDto>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_physical_exam_item_dto(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
   Uint32List sse_decode_list_prim_u_32_strict(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var len_ = sse_decode_i_32(deserializer);
@@ -6603,6 +6814,32 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var len_ = sse_decode_i_32(deserializer);
     return deserializer.buffer.getUint8List(len_);
+  }
+
+  @protected
+  List<ProgramCourseDto> sse_decode_list_program_course_dto(
+      SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <ProgramCourseDto>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_program_course_dto(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<ProgramCourseSetDto> sse_decode_list_program_course_set_dto(
+      SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <ProgramCourseSetDto>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_program_course_set_dto(deserializer));
+    }
+    return ans_;
   }
 
   @protected
@@ -7070,6 +7307,59 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  PhysicalExamDataDto sse_decode_physical_exam_data_dto(
+      SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_noResult = sse_decode_bool(deserializer);
+    var var_exemption = sse_decode_opt_String(deserializer);
+    var var_exemptionReason = sse_decode_opt_String(deserializer);
+    var var_total = sse_decode_opt_String(deserializer);
+    var var_standardScore = sse_decode_opt_String(deserializer);
+    var var_bonusScore = sse_decode_opt_String(deserializer);
+    var var_longRunBonusScore = sse_decode_opt_String(deserializer);
+    var var_height = sse_decode_opt_String(deserializer);
+    var var_weight = sse_decode_opt_String(deserializer);
+    var var_physicalEducationGrade = sse_decode_opt_String(deserializer);
+    var var_referenceTotal = sse_decode_opt_box_autoadd_f_64(deserializer);
+    var var_referenceTotalLabel = sse_decode_String(deserializer);
+    var var_items = sse_decode_list_physical_exam_item_dto(deserializer);
+    return PhysicalExamDataDto(
+        noResult: var_noResult,
+        exemption: var_exemption,
+        exemptionReason: var_exemptionReason,
+        total: var_total,
+        standardScore: var_standardScore,
+        bonusScore: var_bonusScore,
+        longRunBonusScore: var_longRunBonusScore,
+        height: var_height,
+        weight: var_weight,
+        physicalEducationGrade: var_physicalEducationGrade,
+        referenceTotal: var_referenceTotal,
+        referenceTotalLabel: var_referenceTotalLabel,
+        items: var_items);
+  }
+
+  @protected
+  PhysicalExamItemDto sse_decode_physical_exam_item_dto(
+      SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_key = sse_decode_String(deserializer);
+    var var_measurement = sse_decode_opt_String(deserializer);
+    var var_score = sse_decode_opt_String(deserializer);
+    return PhysicalExamItemDto(
+        key: var_key, measurement: var_measurement, score: var_score);
+  }
+
+  @protected
+  PhysicalExamResultDto sse_decode_physical_exam_result_dto(
+      SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_data = sse_decode_physical_exam_data_dto(deserializer);
+    var var_metadata = sse_decode_read_metadata_dto(deserializer);
+    return PhysicalExamResultDto(data: var_data, metadata: var_metadata);
+  }
+
+  @protected
   PortalAddressRegistrationDto sse_decode_portal_address_registration_dto(
       SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
@@ -7104,6 +7394,78 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_observedAtUtc = sse_decode_String(deserializer);
     return PortalObservationDto(
         registration: var_registration, observedAtUtc: var_observedAtUtc);
+  }
+
+  @protected
+  ProgramCompletionDataDto sse_decode_program_completion_data_dto(
+      SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_completedCredit = sse_decode_f_64(deserializer);
+    var var_compulsoryCredit = sse_decode_f_64(deserializer);
+    var var_restrictedCredit = sse_decode_f_64(deserializer);
+    var var_electiveCredit = sse_decode_f_64(deserializer);
+    var var_duplicatedCourses = sse_decode_list_String(deserializer);
+    var var_excludedCredit = sse_decode_opt_box_autoadd_f_64(deserializer);
+    var var_courseSets = sse_decode_list_program_course_set_dto(deserializer);
+    return ProgramCompletionDataDto(
+        completedCredit: var_completedCredit,
+        compulsoryCredit: var_compulsoryCredit,
+        restrictedCredit: var_restrictedCredit,
+        electiveCredit: var_electiveCredit,
+        duplicatedCourses: var_duplicatedCourses,
+        excludedCredit: var_excludedCredit,
+        courseSets: var_courseSets);
+  }
+
+  @protected
+  ProgramCompletionResultDto sse_decode_program_completion_result_dto(
+      SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_data = sse_decode_program_completion_data_dto(deserializer);
+    var var_metadata = sse_decode_read_metadata_dto(deserializer);
+    return ProgramCompletionResultDto(data: var_data, metadata: var_metadata);
+  }
+
+  @protected
+  ProgramCourseDto sse_decode_program_course_dto(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_courseId = sse_decode_String(deserializer);
+    var var_name = sse_decode_String(deserializer);
+    var var_credit = sse_decode_f_64(deserializer);
+    var var_point = sse_decode_opt_box_autoadd_f_64(deserializer);
+    var var_grade = sse_decode_opt_String(deserializer);
+    var var_state = sse_decode_String(deserializer);
+    return ProgramCourseDto(
+        courseId: var_courseId,
+        name: var_name,
+        credit: var_credit,
+        point: var_point,
+        grade: var_grade,
+        state: var_state);
+  }
+
+  @protected
+  ProgramCourseSetDto sse_decode_program_course_set_dto(
+      SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_name = sse_decode_String(deserializer);
+    var var_kind = sse_decode_String(deserializer);
+    var var_requiredCredit = sse_decode_opt_box_autoadd_f_64(deserializer);
+    var var_completedCredit = sse_decode_opt_box_autoadd_f_64(deserializer);
+    var var_requiredCourseCount = sse_decode_opt_box_autoadd_u_32(deserializer);
+    var var_completedCourseCount =
+        sse_decode_opt_box_autoadd_u_32(deserializer);
+    var var_fullCompleted = sse_decode_bool(deserializer);
+    var var_courses = sse_decode_list_program_course_dto(deserializer);
+    return ProgramCourseSetDto(
+        name: var_name,
+        kind: var_kind,
+        requiredCredit: var_requiredCredit,
+        completedCredit: var_completedCredit,
+        requiredCourseCount: var_requiredCourseCount,
+        completedCourseCount: var_completedCourseCount,
+        fullCompleted: var_fullCompleted,
+        courses: var_courses);
   }
 
   @protected
@@ -8830,6 +9192,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_list_physical_exam_item_dto(
+      List<PhysicalExamItemDto> self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_physical_exam_item_dto(item, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_list_prim_u_32_strict(
       Uint32List self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
@@ -8843,6 +9215,26 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.length, serializer);
     serializer.buffer.putUint8List(self);
+  }
+
+  @protected
+  void sse_encode_list_program_course_dto(
+      List<ProgramCourseDto> self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_program_course_dto(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_program_course_set_dto(
+      List<ProgramCourseSetDto> self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_program_course_set_dto(item, serializer);
+    }
   }
 
   @protected
@@ -9224,6 +9616,42 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_physical_exam_data_dto(
+      PhysicalExamDataDto self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_bool(self.noResult, serializer);
+    sse_encode_opt_String(self.exemption, serializer);
+    sse_encode_opt_String(self.exemptionReason, serializer);
+    sse_encode_opt_String(self.total, serializer);
+    sse_encode_opt_String(self.standardScore, serializer);
+    sse_encode_opt_String(self.bonusScore, serializer);
+    sse_encode_opt_String(self.longRunBonusScore, serializer);
+    sse_encode_opt_String(self.height, serializer);
+    sse_encode_opt_String(self.weight, serializer);
+    sse_encode_opt_String(self.physicalEducationGrade, serializer);
+    sse_encode_opt_box_autoadd_f_64(self.referenceTotal, serializer);
+    sse_encode_String(self.referenceTotalLabel, serializer);
+    sse_encode_list_physical_exam_item_dto(self.items, serializer);
+  }
+
+  @protected
+  void sse_encode_physical_exam_item_dto(
+      PhysicalExamItemDto self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.key, serializer);
+    sse_encode_opt_String(self.measurement, serializer);
+    sse_encode_opt_String(self.score, serializer);
+  }
+
+  @protected
+  void sse_encode_physical_exam_result_dto(
+      PhysicalExamResultDto self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_physical_exam_data_dto(self.data, serializer);
+    sse_encode_read_metadata_dto(self.metadata, serializer);
+  }
+
+  @protected
   void sse_encode_portal_address_registration_dto(
       PortalAddressRegistrationDto self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
@@ -9251,6 +9679,53 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_portal_address_registration_dto(self.registration, serializer);
     sse_encode_String(self.observedAtUtc, serializer);
+  }
+
+  @protected
+  void sse_encode_program_completion_data_dto(
+      ProgramCompletionDataDto self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_f_64(self.completedCredit, serializer);
+    sse_encode_f_64(self.compulsoryCredit, serializer);
+    sse_encode_f_64(self.restrictedCredit, serializer);
+    sse_encode_f_64(self.electiveCredit, serializer);
+    sse_encode_list_String(self.duplicatedCourses, serializer);
+    sse_encode_opt_box_autoadd_f_64(self.excludedCredit, serializer);
+    sse_encode_list_program_course_set_dto(self.courseSets, serializer);
+  }
+
+  @protected
+  void sse_encode_program_completion_result_dto(
+      ProgramCompletionResultDto self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_program_completion_data_dto(self.data, serializer);
+    sse_encode_read_metadata_dto(self.metadata, serializer);
+  }
+
+  @protected
+  void sse_encode_program_course_dto(
+      ProgramCourseDto self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.courseId, serializer);
+    sse_encode_String(self.name, serializer);
+    sse_encode_f_64(self.credit, serializer);
+    sse_encode_opt_box_autoadd_f_64(self.point, serializer);
+    sse_encode_opt_String(self.grade, serializer);
+    sse_encode_String(self.state, serializer);
+  }
+
+  @protected
+  void sse_encode_program_course_set_dto(
+      ProgramCourseSetDto self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.name, serializer);
+    sse_encode_String(self.kind, serializer);
+    sse_encode_opt_box_autoadd_f_64(self.requiredCredit, serializer);
+    sse_encode_opt_box_autoadd_f_64(self.completedCredit, serializer);
+    sse_encode_opt_box_autoadd_u_32(self.requiredCourseCount, serializer);
+    sse_encode_opt_box_autoadd_u_32(self.completedCourseCount, serializer);
+    sse_encode_bool(self.fullCompleted, serializer);
+    sse_encode_list_program_course_dto(self.courses, serializer);
   }
 
   @protected
@@ -10004,11 +10479,25 @@ class ClientHandleImpl extends RustOpaque implements ClientHandle {
       RustLib.instance.api.crateSdkApiClientHandleOverviewDay(
           that: this, date: date, policy: policy);
 
+  /// Reads the validated physical-education test report.  The service's own
+  /// "no result" answer is reported as `no_result`, not as an error.
+  Future<PhysicalExamResultDto> physicalExamResult() =>
+      RustLib.instance.api.crateSdkApiClientHandlePhysicalExamResult(
+        that: this,
+      );
+
   /// Prepares non-secret form fields and a Client/version-bound handle.
   Future<PreparedNetworkProfile> prepareNetworkProfileFill(
           {required String id}) =>
       RustLib.instance.api
           .crateSdkApiClientHandlePrepareNetworkProfileFill(that: this, id: id);
+
+  /// Reads the degree-program completion report.  The report is read live on
+  /// every call; there is no cached fallback to mistake for a current one.
+  Future<ProgramCompletionResultDto> programCompletionResult() =>
+      RustLib.instance.api.crateSdkApiClientHandleProgramCompletionResult(
+        that: this,
+      );
 
   /// Explicitly refreshes the current SelfService image challenge.
   Future<SelfServiceCaptchaDto> refreshSelfServiceCaptcha() =>

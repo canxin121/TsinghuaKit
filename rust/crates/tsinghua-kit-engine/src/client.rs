@@ -66,6 +66,8 @@ use crate::{
         NewsSourceRef, NewsSubscription, NewsSubscriptionRef, NewsSubscriptions,
     },
     overview_api::OverviewClient,
+    physical_exam_read::PhysicalExamReport,
+    program_read::ProgramCompletion,
     read::{CacheFreshness, IncompleteReason, ReadCoverage, ReadMetadata, ReadResult, ReadSource},
     registrar_api::{
         AcademicStage, CourseGrade, Exam, ExamReport, ExamWeekday, GradeReport, GradeReportKind,
@@ -914,6 +916,20 @@ impl Client {
         }
     }
 
+    /// Borrows the read-only physical-education test report.
+    pub fn physical_exam(&mut self) -> PhysicalExamClient<'_> {
+        PhysicalExamClient {
+            runtime: &mut self.runtime,
+        }
+    }
+
+    /// Borrows the read-only degree-program completion report.
+    pub fn program(&mut self) -> ProgramClient<'_> {
+        ProgramClient {
+            runtime: &mut self.runtime,
+        }
+    }
+
     /// Borrows school-wide and academic-term calendar reads.
     pub fn calendar(&mut self) -> CalendarClient<'_> {
         CalendarClient {
@@ -1175,6 +1191,63 @@ impl ClassroomsClient<'_> {
     }
 }
 
+/// Read-only physical-education test results.
+///
+/// The service's own "no result" answer is a successful read, so an empty
+/// report is reported as data rather than as an error.
+pub struct PhysicalExamClient<'client> {
+    runtime: &'client mut CampusRuntime,
+}
+
+impl PhysicalExamClient<'_> {
+    /// Reads the validated physical-education report.
+    pub async fn result(&mut self) -> Result<ReadResult<PhysicalExamReport>, Error> {
+        let dto = self
+            .runtime
+            .load_physical_exam_result()
+            .await
+            .map_err(|_| physical_exam_failure(self.runtime))?;
+        let metadata = cached_read_metadata(
+            Service::PhysicalExam,
+            &dto.generated_at,
+            &dto.source,
+            &dto.status,
+            dto.error.is_some(),
+            ReadSource::Live,
+        )?;
+        Ok(ReadResult::new(dto.report, metadata))
+    }
+}
+
+/// Read-only degree-program completion report.
+///
+/// The report is read live on every call and never served from a cached copy,
+/// so a failed live read is reported as a failure rather than as a stale
+/// report.
+pub struct ProgramClient<'client> {
+    runtime: &'client mut CampusRuntime,
+}
+
+impl ProgramClient<'_> {
+    /// Reads the plan-wide completion report.
+    pub async fn completion(&mut self) -> Result<ReadResult<ProgramCompletion>, Error> {
+        let dto = self
+            .runtime
+            .load_program_completion_result()
+            .await
+            .map_err(|_| program_failure(self.runtime))?;
+        let metadata = cached_read_metadata(
+            Service::Program,
+            &dto.generated_at,
+            &dto.source,
+            &dto.status,
+            dto.error.is_some(),
+            ReadSource::Live,
+        )?;
+        Ok(ReadResult::new(dto.report, metadata))
+    }
+}
+
 /// Read-only campus-card reads and its explicit one-shot SSO password step.
 /// The card password is a target-service interaction, not an Auth account.
 pub struct CampusCardClient<'client> {
@@ -1360,6 +1433,32 @@ fn electricity_failure(runtime: &CampusRuntime) -> Error {
         AccountAuthState::Authenticated => ErrorCode::ServiceUnavailable,
     };
     Error::new(Service::Electricity, code)
+}
+
+fn physical_exam_failure(runtime: &CampusRuntime) -> Error {
+    let code = match runtime.auth_status().identity().state() {
+        AccountAuthState::SignedOut | AccountAuthState::RestoredUnverified => {
+            ErrorCode::SessionRequired
+        }
+        AccountAuthState::Expired => ErrorCode::SessionExpired,
+        AccountAuthState::NeedsInteraction => ErrorCode::InteractionRequired,
+        AccountAuthState::Authenticating => ErrorCode::InteractionInProgress,
+        AccountAuthState::Authenticated => ErrorCode::ServiceUnavailable,
+    };
+    Error::new(Service::PhysicalExam, code)
+}
+
+fn program_failure(runtime: &CampusRuntime) -> Error {
+    let code = match runtime.auth_status().identity().state() {
+        AccountAuthState::SignedOut | AccountAuthState::RestoredUnverified => {
+            ErrorCode::SessionRequired
+        }
+        AccountAuthState::Expired => ErrorCode::SessionExpired,
+        AccountAuthState::NeedsInteraction => ErrorCode::InteractionRequired,
+        AccountAuthState::Authenticating => ErrorCode::InteractionInProgress,
+        AccountAuthState::Authenticated => ErrorCode::ServiceUnavailable,
+    };
+    Error::new(Service::Program, code)
 }
 
 fn classrooms_failure(runtime: &CampusRuntime) -> Error {

@@ -83,6 +83,24 @@ pub mod electricity {
     };
 }
 
+/// Physical-education test results, with the App-side reference total
+/// explicitly labelled as a local recomputation.
+pub mod physical_exam {
+    pub use crate::client::PhysicalExamClient;
+    pub use tsinghua_kit_engine::physical_exam_read::{
+        PhysicalExamItem, PhysicalExamItems, PhysicalExamReport,
+    };
+}
+
+/// Degree-program completion, read from the live service on every call.
+pub mod program {
+    pub use crate::client::ProgramClient;
+    pub use tsinghua_kit_engine::program_read::{
+        CourseCompletion, CourseFull, CourseSetCompletion, CourseSetFull, CourseSetKind,
+        CourseState, FullProgram, ProgramCompletion,
+    };
+}
+
 pub mod learn {
     pub use crate::client::LearnClient;
     pub use chrono::{DateTime, Utc};

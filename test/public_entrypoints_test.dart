@@ -9,6 +9,8 @@ import 'package:tsinghua_kit/library.dart' as library_api;
 import 'package:tsinghua_kit/network.dart' as network;
 import 'package:tsinghua_kit/news.dart' as news;
 import 'package:tsinghua_kit/overview.dart' as overview;
+import 'package:tsinghua_kit/physical_exam.dart' as physical_exam;
+import 'package:tsinghua_kit/program.dart' as program;
 import 'package:tsinghua_kit/read.dart' as read;
 import 'package:tsinghua_kit/registrar_calendar.dart' as calendar;
 import 'package:tsinghua_kit/self_service.dart' as self_service;
@@ -76,5 +78,12 @@ void main() {
     expect(_publicType<overview.OverviewClient>(), isNull);
     expect(_publicType<overview.DailyOverview>(), isNull);
     expect(overview.OverviewScheduleKind.course.name, 'course');
+    expect(_publicType<physical_exam.PhysicalExamClient>(), isNull);
+    expect(_publicType<physical_exam.PhysicalExamItem>(), isNull);
+    expect(_publicType<physical_exam.PhysicalExamReport>(), isNull);
+    expect(_publicType<program.ProgramClient>(), isNull);
+    expect(_publicType<program.ProgramCompletion>(), isNull);
+    expect(program.ProgramCourseState.completed.name, 'completed');
+    expect(program.ProgramCourseSetKind.excluded.name, 'excluded');
   });
 }

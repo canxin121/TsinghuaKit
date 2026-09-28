@@ -67,6 +67,8 @@ use crate::{
     learn_client::{LearnClient, LearnClientConfig, LearnCourseRecord, LearnPageClassification},
     learn_todos::{LearnTodoConfig, LearnTodoSource},
     library_read::LibraryReadAdapter,
+    physical_exam_read::{PhysicalExamAdapter, PhysicalExamBusinessProof, PhysicalExamReport},
+    program_read::{ProgramAdapter, ProgramBusinessProof, ProgramCompletion},
     protocol::{
         AcademicStage, CourseRole, SecondFactorMethod, ServiceId, ServiceSessionState, UserIdentity,
     },
@@ -186,6 +188,10 @@ mod lastmile_tests;
 #[cfg(test)]
 #[path = "runtime_info_cache_tests.rs"]
 mod info_cache_tests;
+
+#[cfg(test)]
+#[path = "runtime_program_tests.rs"]
+mod program_tests;
 
 #[cfg(test)]
 #[path = "runtime_library_cache_tests.rs"]
@@ -1232,6 +1238,30 @@ pub struct ElectricityPaymentHistoryResultDto {
 pub struct ElectricityRemainderResultDto {
     pub remainder: f64,
     pub update_time: String,
+    pub generated_at: String,
+    pub source: String,
+    pub status: String,
+    pub error: Option<String>,
+}
+
+/// Source-aware physical-education report.  The service's own no-result answer
+/// is carried by `no_result` rather than by an absent envelope, so a student
+/// with no record is distinguishable from an unreadable response.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PhysicalExamResultDto {
+    pub report: PhysicalExamReport,
+    pub generated_at: String,
+    pub source: String,
+    pub status: String,
+    pub error: Option<String>,
+}
+
+/// Source-aware degree-program completion report.  The report is re-read from
+/// the live service on every request; a read that fails after the adapter was
+/// already prepared still reports the failure rather than a stale report.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProgramCompletionResultDto {
+    pub report: ProgramCompletion,
     pub generated_at: String,
     pub source: String,
     pub status: String,
@@ -2481,6 +2511,12 @@ pub struct CampusRuntime {
     // can satisfy the caller's first remainder request. Retain it only until
     // that first read (or another electricity operation) consumes it.
     electricity_remainder_prefetch: Option<ElectricityRemainder>,
+    physical_exam_adapter: Option<PhysicalExamAdapter>,
+    physical_exam_proof: Option<PhysicalExamBusinessProof>,
+    // The degree-program adapter is prepared per confirmed INFO session; the
+    // completion report itself is re-read live on every request.
+    program_adapter: Option<ProgramAdapter>,
+    program_proof: Option<ProgramBusinessProof>,
     card_client: Option<CampusCardClient>,
     card_session: Option<CampusCardSession>,
     // One initial target-auth chain per explicit login. Retain after failure
@@ -3189,6 +3225,10 @@ impl CampusRuntime {
             electricity_adapter: None,
             electricity_proof: None,
             electricity_remainder_prefetch: None,
+            physical_exam_adapter: None,
+            physical_exam_proof: None,
+            program_adapter: None,
+            program_proof: None,
             card_client: None,
             card_session: None,
             card_auth_attempted: false,
@@ -9387,6 +9427,72 @@ impl CampusRuntime {
         .await
     }
 
+    /// Reads the physical-education test report.
+    ///
+    /// The service's own "no result" answer is a successful read carrying
+    /// `no_result`, never a failure and never a zero-filled record.  Nothing
+    /// is cached: the report is a grade-like document, and a stale copy has no
+    /// value the caller could not get from the live service.
+    pub async fn load_physical_exam_result(&mut self) -> Result<PhysicalExamResultDto, String> {
+        crate::telemetry::observe("physical_exam", "load_physical_exam_result", async {
+            self.allow_live_operation()?;
+            let user = self.ensure_identity_user_for_live_read().await?;
+            match self.ensure_physical_exam_reader_session(&user).await {
+                Ok(()) => {}
+                Err(error) => return Err(error),
+            }
+
+            let mut result = {
+                let Some(adapter) = self.physical_exam_adapter.as_ref() else {
+                    return self.fail("体测成绩服务会话未建立");
+                };
+                adapter.read_result_with_proof().await
+            };
+            if matches!(&result, Err(error) if error.is_session_expired()) {
+                self.invalidate_physical_exam_session();
+                if let Err(error) = self
+                    .refresh_nonacademic_service_after_expiry(ServiceId::Info)
+                    .await
+                {
+                    return Err(self.record_error(format!("体测成绩自动续接失败: {error}")));
+                }
+                let user = self.ensure_identity_user_for_live_read().await?;
+                self.ensure_physical_exam_session(&user).await?;
+                let Some(adapter) = self.physical_exam_adapter.as_ref() else {
+                    return self.fail("体测成绩自动续接后会话未建立");
+                };
+                result = adapter.read_result_with_proof().await;
+                if matches!(&result, Err(error) if error.is_session_expired()) {
+                    self.invalidate_physical_exam_session();
+                    return self.fail("体测成绩自动续接后仍已过期，请重新建立");
+                }
+            }
+            match result {
+                Ok(read) => {
+                    self.physical_exam_proof = Some(read.proof);
+                    if !self.physical_exam_service_is_proven() {
+                        return self.fail("体测成绩服务会话证明未确认，请重新建立服务会话");
+                    }
+                    self.last_error = None;
+                    self.persist_resume_state_after_live_read(&user, "physical_exam");
+                    Ok(PhysicalExamResultDto {
+                        report: read.value,
+                        generated_at: Utc::now().to_rfc3339(),
+                        source: "live".to_owned(),
+                        status: "ready".to_owned(),
+                        error: None,
+                    })
+                }
+                Err(error) => Err(self.record_business_failure(
+                    "physical_exam",
+                    "physical_exam_read",
+                    error.diagnostic_code(),
+                )),
+            }
+        })
+        .await
+    }
+
     /// Legacy electricity-remainder shape retained for deterministic callers.
     /// Production Flutter uses the result envelope below so a stale fallback
     /// cannot be rendered as a current balance.
@@ -14242,8 +14348,9 @@ impl CampusRuntime {
         Ok(())
     }
 
-    /// Classroom and electricity use the INFO/WebVPN proof as their shared
-    /// parent. If a child (or that parent) was already present but is no
+    /// Classroom, electricity and the physical-education report use the
+    /// INFO/WebVPN proof as their shared parent. If a child (or that parent)
+    /// was already present but is no
     /// longer proven, refresh INFO through the bounded gate before rebuilding
     /// the child. A first-ever child read still uses the normal lazy setup.
     async fn ensure_classroom_reader_session(&mut self, user: &UserIdentity) -> Result<(), String> {
@@ -14278,6 +14385,144 @@ impl CampusRuntime {
                 .map_err(|error| self.record_error(format!("INFO 自动续接失败: {error}")))?;
         }
         self.ensure_electricity_session(user).await
+    }
+
+    async fn ensure_physical_exam_reader_session(
+        &mut self,
+        user: &UserIdentity,
+    ) -> Result<(), String> {
+        if self.physical_exam_service_is_proven() {
+            return Ok(());
+        }
+        let context_exists = self.physical_exam_adapter.is_some()
+            || self.physical_exam_proof.is_some()
+            || self.info_session_context_exists();
+        if context_exists && !self.service_session_is_proven(ServiceId::Info) {
+            self.refresh_nonacademic_service_after_expiry(ServiceId::Info)
+                .await
+                .map_err(|error| self.record_error(format!("INFO 自动续接失败: {error}")))?;
+        }
+        self.ensure_physical_exam_session(user).await
+    }
+
+    /// Prepares the degree-program adapter inside the already-confirmed INFO
+    /// session.  It deliberately performs no business read: the read that
+    /// follows owns its own expiry classification, and the INFO session alone
+    /// is enough to take the registrar handoff.
+    async fn ensure_program_reader_session(&mut self, user: &UserIdentity) -> Result<(), String> {
+        if self.program_service_is_proven() {
+            return Ok(());
+        }
+        let context_exists = self.program_adapter.is_some()
+            || self.program_proof.is_some()
+            || self.info_session_context_exists();
+        if context_exists && !self.service_session_is_proven(ServiceId::Info) {
+            self.refresh_nonacademic_service_after_expiry(ServiceId::Info)
+                .await
+                .map_err(|error| self.record_error(format!("INFO 自动续接失败: {error}")))?;
+        }
+        self.prepare_program_adapter(user).await
+    }
+
+    async fn prepare_program_adapter(&mut self, user: &UserIdentity) -> Result<(), String> {
+        self.invalidate_program_session();
+        self.ensure_info_session(user).await?;
+
+        let transport = self.identity.transport().clone();
+        let handoff = match self.info_adapter.as_ref() {
+            Some(info) => {
+                info.additional_roaming(crate::program_read::PROGRAM_WEBVPN_TARGET)
+                    .await
+            }
+            None => return Err(self.record_error("INFO 服务会话尚未建立")),
+        };
+        let roaming_url = handoff.map_err(|error| {
+            self.record_business_failure("program", "program_handoff", info_failure_code(&error))
+        })?;
+        let mut base_url = Url::parse(roaming_url.as_str())
+            .map_err(|_| self.record_error("program roaming URL is invalid"))?;
+        let expected = Url::parse(REGISTRAR_WEBVPN_BASE_URL).expect("static registrar mapping");
+        if !base_url.path().starts_with(expected.path()) {
+            return Err(self.record_business_failure(
+                "program",
+                "program_handoff",
+                "program_mapping_rejected",
+            ));
+        }
+        // The handoff query is consumed here. Only the proved target mapping
+        // configures the read endpoints that follow.
+        base_url.set_path(expected.path());
+        base_url.set_query(None);
+        base_url.set_fragment(None);
+        let adapter = ProgramAdapter::try_with_transport(base_url, transport)
+            .map_err(|error| self.record_error(format!("program adapter: {error}")))?;
+        self.program_adapter = Some(adapter);
+        Ok(())
+    }
+
+    /// Reads the degree-program completion report.
+    ///
+    /// The report is a grade-like document, so it is read live every time and
+    /// never served from a cached copy: a report from earlier in this process
+    /// has no value the caller could not get from the live service, and
+    /// presenting it as current would be worse than reporting the failure.
+    pub async fn load_program_completion_result(
+        &mut self,
+    ) -> Result<ProgramCompletionResultDto, String> {
+        crate::telemetry::observe("program", "load_program_completion_result", async {
+            self.allow_live_operation()?;
+            let user = self.ensure_identity_user_for_live_read().await?;
+            self.ensure_program_reader_session(&user).await?;
+
+            let mut result = {
+                let Some(adapter) = self.program_adapter.as_ref() else {
+                    return self.fail("培养方案服务会话未建立");
+                };
+                adapter.read_completion_with_proof().await
+            };
+            if matches!(&result, Err(error) if error.is_session_expired()) {
+                self.invalidate_program_session();
+                if let Err(error) = self
+                    .refresh_nonacademic_service_after_expiry(ServiceId::Info)
+                    .await
+                {
+                    return Err(self.record_error(format!("培养方案自动续接失败: {error}")));
+                }
+                let user = self.ensure_identity_user_for_live_read().await?;
+                self.prepare_program_adapter(&user).await?;
+                let Some(adapter) = self.program_adapter.as_ref() else {
+                    return self.fail("培养方案自动续接后会话未建立");
+                };
+                result = adapter.read_completion_with_proof().await;
+                if matches!(&result, Err(error) if error.is_session_expired()) {
+                    self.invalidate_program_session();
+                    return self.fail("培养方案自动续接后仍已过期，请重新建立");
+                }
+            }
+            match result {
+                Ok(read) => {
+                    self.program_proof = Some(read.proof);
+                    if !self.program_service_is_proven() {
+                        return self.fail("培养方案服务会话证明未确认，请重新建立服务会话");
+                    }
+                    self.last_error = None;
+                    self.persist_resume_state_after_live_read(&user, "program_completion");
+                    Ok(ProgramCompletionResultDto {
+                        report: read.value,
+                        generated_at: Utc::now().to_rfc3339(),
+                        source: "live".to_owned(),
+                        status: "ready".to_owned(),
+                        error: None,
+                    })
+                }
+                Err(error) => Err(self.record_business_failure(
+                    "program",
+                    "program_read",
+                    error.diagnostic_code(),
+                )),
+            }
+        })
+        .await
     }
 
     async fn ensure_campus_card_reader_session(&mut self) -> Result<(), String> {
@@ -14370,6 +14615,69 @@ impl CampusRuntime {
     async fn ensure_electricity_session(&mut self, user: &UserIdentity) -> Result<(), String> {
         let flow = self.configured_electricity_flow()?;
         self.ensure_electricity_with_flow(user, &flow).await
+    }
+
+    /// Establishes the physical-education report by proving the shared INFO
+    /// session and taking the registrar handoff for the report's own selector.
+    /// The handoff target shares the registrar mapping, so the resulting base
+    /// URL is re-narrowed to the proved mapping root before any read: the
+    /// handoff's own query is consumed and never reused.
+    async fn ensure_physical_exam_session(&mut self, user: &UserIdentity) -> Result<(), String> {
+        if self.physical_exam_service_is_proven() {
+            return Ok(());
+        }
+        self.invalidate_physical_exam_session();
+        self.ensure_info_session(user).await?;
+
+        let transport = self.identity.transport().clone();
+        let handoff = match self.info_adapter.as_ref() {
+            Some(info) => {
+                info.additional_roaming(crate::physical_exam_read::PHYSICAL_EXAM_WEBVPN_TARGET)
+                    .await
+            }
+            None => return Err(self.record_error("INFO 服务会话尚未建立")),
+        };
+        let roaming_url = handoff.map_err(|error| {
+            self.record_business_failure(
+                "physical_exam",
+                "physical_exam_handoff",
+                info_failure_code(&error),
+            )
+        })?;
+        let mut base_url = Url::parse(roaming_url.as_str())
+            .map_err(|_| self.record_error("physical-exam roaming URL is invalid"))?;
+        let expected = Url::parse(REGISTRAR_WEBVPN_BASE_URL).expect("static registrar mapping");
+        if !base_url.path().starts_with(expected.path()) {
+            return Err(self.record_business_failure(
+                "physical_exam",
+                "physical_exam_handoff",
+                "physical_exam_mapping_rejected",
+            ));
+        }
+        base_url.set_path(expected.path());
+        base_url.set_query(None);
+        base_url.set_fragment(None);
+        let adapter = PhysicalExamAdapter::try_with_transport(base_url, transport)
+            .map_err(|error| self.record_error(format!("physical-exam adapter: {error}")))?;
+        let read = match adapter.read_result_with_proof().await {
+            Ok(read) => read,
+            Err(error) => {
+                self.invalidate_physical_exam_session();
+                return Err(self.record_business_failure(
+                    "physical_exam",
+                    "physical_exam_read",
+                    error.diagnostic_code(),
+                ));
+            }
+        };
+        self.physical_exam_proof = Some(read.proof);
+        self.physical_exam_adapter = Some(adapter);
+        if self.physical_exam_service_is_proven() {
+            Ok(())
+        } else {
+            self.invalidate_physical_exam_session();
+            Err(self.record_error("体测成绩服务会话建立状态未确认"))
+        }
     }
 
     async fn establish_electricity_read_at(&mut self, base: Url) -> Result<(), String> {
@@ -15523,6 +15831,8 @@ impl CampusRuntime {
                 self.info_subscription_at = None;
                 self.invalidate_classroom_session();
                 self.invalidate_electricity_session();
+                self.invalidate_physical_exam_session();
+                self.invalidate_program_session();
             }
             ServiceId::Library => {
                 self.library_adapter = None;
@@ -15571,6 +15881,16 @@ impl CampusRuntime {
         self.electricity_remainder_prefetch = None;
     }
 
+    fn invalidate_physical_exam_session(&mut self) {
+        self.physical_exam_adapter = None;
+        self.physical_exam_proof = None;
+    }
+
+    fn invalidate_program_session(&mut self) {
+        self.program_adapter = None;
+        self.program_proof = None;
+    }
+
     fn classroom_service_is_proven(&self) -> bool {
         self.service_session_is_proven(ServiceId::Info)
             && self.classroom_adapter.is_some()
@@ -15583,6 +15903,24 @@ impl CampusRuntime {
                 .electricity_adapter
                 .as_ref()
                 .zip(self.electricity_proof.as_ref())
+                .is_some_and(|(adapter, proof)| adapter.business_proof_matches(proof))
+    }
+
+    fn physical_exam_service_is_proven(&self) -> bool {
+        self.service_session_is_proven(ServiceId::Info)
+            && self
+                .physical_exam_adapter
+                .as_ref()
+                .zip(self.physical_exam_proof.as_ref())
+                .is_some_and(|(adapter, proof)| adapter.business_proof_matches(proof))
+    }
+
+    fn program_service_is_proven(&self) -> bool {
+        self.service_session_is_proven(ServiceId::Info)
+            && self
+                .program_adapter
+                .as_ref()
+                .zip(self.program_proof.as_ref())
                 .is_some_and(|(adapter, proof)| adapter.business_proof_matches(proof))
     }
 
@@ -16329,6 +16667,10 @@ impl CampusRuntime {
         self.electricity_adapter = None;
         self.electricity_proof = None;
         self.electricity_remainder_prefetch = None;
+        self.physical_exam_adapter = None;
+        self.physical_exam_proof = None;
+        self.program_adapter = None;
+        self.program_proof = None;
         self.card_client = None;
         self.card_session = None;
         self.card_auth_attempted = false;

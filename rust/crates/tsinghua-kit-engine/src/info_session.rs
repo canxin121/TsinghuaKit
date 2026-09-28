@@ -729,11 +729,14 @@ impl InfoSessionAdapter {
     ) -> Result<crate::info::OpaqueUrl, InfoSessionError> {
         let url = Url::parse(target.as_str()).map_err(|_| InfoSessionError::UnexpectedOrigin)?;
         let known = match selector {
+            // The registrar reports, including the physical-education test
+            // result, all live behind the same campus target.
             "40470BB47E0849E9EF717983490BC964"
             | "287C0C6D90ABB364CD5FDF1495199962"
             | "BEABB32641DC4EC3510B048BAF42471A"
             | "B7EF0ADF9406335AD7905B30CD7B49B1"
-            | "E35232808C08C8C5F199F13BF6B7F5D0" => (
+            | "E35232808C08C8C5F199F13BF6B7F5D0"
+            | crate::physical_exam_read::PHYSICAL_EXAM_WEBVPN_TARGET => (
                 "zhjw.cic.tsinghua.edu.cn",
                 "http",
                 "77726476706e69737468656265737421eaff4b8b69336153301c9aa596522b20bc86e6e559a9b290",

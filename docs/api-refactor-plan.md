@@ -1056,3 +1056,33 @@ test/public_entrypoints_test.dart | 1 +
 验证：`flutter pub get` 将锁文件解析到 `7d28a58`（版本仍为 `0.2.0-alpha.1`）；`flutter analyze lib test` 无问题；`flutter test test/tsinghua_kit_thos_controller_test.dart test/tsinghua_kit_failure_test.dart` 13 项通过。SDK 侧 `flutter analyze lib test` 无问题，`flutter test test/public_entrypoints_test.dart test/auth_status_test.dart test/second_factor_method_test.dart` 5 项通过，`cargo check --workspace --all-targets` 退出 0。App 侧 `flutter build macos --debug --no-pub` 退出 0（产物 `build/macos/Build/Products/Debug/thyou.app`；仅剩 `tsinghua_kit` 插件尚未支持 Swift Package Manager 的工具级提示）。未执行真实账号登录或学校服务请求。
 
 已发布：`23aefda`（`ErrorCode::RedirectRefused`）与 `10c4ea8` 已随本次提交一起推到 `origin/main`（`7d28a58..e70a9e5`），App 侧 `lib/data/tsinghua_kit_failure.dart` 的 `('service_hall','redirect_refused')` 中文文案现在有对应引擎代码与线上提交；生产路由切换仍未开始，`FrbCampusRuntimeGateway`/`lib/src/rust` 仍是唯一执行真实请求的路径。
+
+## 53. 2026-09-29 零新认证教务域：培养方案完成情况与体测成绩
+
+本轮按已批准的计划补上 `thu_reference` 里已实现、而 TsinghuaKit 缺失的**零新认证只读域**的前两项，两者都复用已有 INFO/WebVPN 会话与已有 zhjw（registrar）映射，不新增认证路径、不新增 Cookie jar、不绕过 `CampusHttpTransport` 与 request gate。
+
+**新增引擎模块**
+
+- `program_read.rs`：培养方案完成情况。`ProgramAdapter` 走 `/jhBks.by_fascjgmxb_gr.do?m=queryFaScjgmx_gr&xsViewFlag=pyfa&…`，解析器把摘要块、`.table-striped` 课程表与方案外课程表分别还原为 `ProgramCompletion` / `CourseSetCompletion` / `CourseCompletion`。参考实现用 `illegalCourseLevelFlag` 表达“属性列不认识”，引擎保留同一语义：**未知属性不是默认任选，而是 `UnknownAttribute` 解析错误**；`W`/`F`/`I` 等标记一律是 `NotCompleted`，不会被当作已完成课程；方案外课程是独立分组（`CourseSetKind::Excluded`），不并入方案内学分。参考库的 `PROGRAM_WEBVPN_TARGET = 287C0C6D90ABB364CD5FDF1495199962` 早已在 `InfoSessionAdapter::map_additional_roaming` 的允许名单内，因此**无需新增 selector 条目**。
+- `physical_exam_read.rs`：体测成绩。走 `/tyjx.tyjx_tc_xscjb.do?m=jsonCj`，选择器 `8BF4F9A706589060488B6B6179E462E5` 解析到同一个 zhjw 映射（本轮只把该 selector 登记进允许名单，映射 id 没有增加）。服务自己的 `success === "false"` 是**合法空态**（`no_result`），不是失败，也不是补零记录；非 JSON、缺 `success`、复合字段值都是明确解析错误。
+- `campus_html.rs`：两个 HTML/JSON 域共用的页面分类（登录页 / 超时页 / 未知）与有界元素扫描；分类发生在任何解析之前，因此登录失效不会被误判成“格式异常”。
+
+**APP 自动结算分的处理**（本轮唯一需要人工判断的语义）
+
+`PhysicalExamReport::reference_total` 是**在 Rust 内按固定权重本地重算**的参考值，不是服务返回的成绩，也不进任何缓存。它与常量标签 `参考成绩（APP自动结算，仅供参考）` 成对暴露，FFI DTO 与 Dart 都强制携带该标签。规则是：**未参加的项目不计入（其权重贡献为 0，这正是总分能存在的原因——一个学生只跑 800m 或 1000m 之一，不可能两者都有）**，而**服务确实报了分但读不成数字**的情况会让整个参考总分缺席，而不是悄悄变小。
+
+**缓存策略**
+
+两个域都是**只读且不落缓存**：培养方案完成情况与体测成绩都是成绩类文档，一份陈旧副本对调用方没有价值，反而会引入“把旧成绩当当前成绩渲染”的错误类别，所以失败就是失败。
+
+**Runtime 接线（与既有教室/电费域同构）**
+
+`ensure_program_reader_session` / `prepare_program_adapter` 与 `ensure_physical_exam_reader_session` / `ensure_physical_exam_session` 都要求 INFO 会话已证明后才发起 handoff；handoff 返回的 URL 只用于**校验**是否落在 `REGISTRAR_WEBVPN_BASE_URL` 映射根内，随后把 path 收敛到映射根、清空 query/fragment —— handoff 自带的 `ticket` 永远不成为适配器 base URL。业务证明用 `AtomicU64` binding 计数器绑定到适配器实例，`*_service_is_proven()` 同时要求 INFO 已证明且证明与当前实例匹配。`ServiceId::Info` 失效与账号登出都会清除这两个域的状态。
+
+**FFI / Dart**
+
+`sdk_api.rs` 新增 `PhysicalExamResultDto` / `PhysicalExamDataDto` / `PhysicalExamItemDto` 与 `ProgramCompletionResultDto` / `ProgramCompletionDataDto` / `ProgramCourseSetDto` / `ProgramCourseDto`，`Debug` 全部脱敏（只打印计数与“是否有值”标志），课程状态与课组类别在上桥时字符串化；`ClientHandle::physical_exam_result` 与 `ClientHandle::program_completion_result` 为仅有的两个新入口。FRB 2.13.0 重新生成，生成物未手工编辑。Dart 侧新增 `lib/src/physical_exam.dart`、`lib/src/program.dart` 两个 part 文件与对应的 `lib/physical_exam.dart`、`lib/program.dart` 入口；`ProgramCourseState` / `ProgramCourseSetKind` 是手写枚举，未知字符串落到保守取值而不是抛错。
+
+**验证**
+
+`cargo test -p tsinghua_kit_engine --lib program_tests` 14 项通过（另有 `api::runtime::program_tests` 3 项通过：handoff 后的读取落在映射根、handoff 的 ticket 不出现在后续请求、失效页返回失败而不是旧报告、账号未证明时零请求）；体测定向 `physical_exam_tests` 16 项通过。`cargo check --workspace --all-targets` 退出 0；严格 `RUSTDOCFLAGS="-D warnings" cargo doc -p tsinghua_kit` 通过；`cargo fmt --all -- --check` 与 `flutter analyze lib test` 无问题；`flutter test test/public_entrypoints_test.dart` 通过并覆盖两个新入口。`docs/api-surface-baseline.json` 已按本节源码与重新渲染的 Rustdoc 刷新（`source_revision`、模块列表、根 `pub use` 计数、DTO/方法清单、`direct_state_field_count`）。**未执行任何真实账号登录或学校服务请求**；这两个域的线上可用性仍未验证。

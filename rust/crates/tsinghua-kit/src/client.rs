@@ -21,7 +21,8 @@ use tsinghua_kit_engine::{
         IdentitySessionStoragePolicy as EngineIdentitySessionStoragePolicy,
         LearnClient as EngineLearnClient, LibraryClient as EngineLibraryClient,
         NetworkClient as EngineNetworkClient, NetworkProfilesClient as EngineNetworkProfilesClient,
-        NewsClient as EngineNewsClient, RegistrarClient as EngineRegistrarClient,
+        NewsClient as EngineNewsClient, PhysicalExamClient as EnginePhysicalExamClient,
+        ProgramClient as EngineProgramClient, RegistrarClient as EngineRegistrarClient,
         SelfServiceCaptcha, SelfServiceClient as EngineSelfServiceClient, SelfServiceLoginOutcome,
         ServiceHallClient as EngineServiceHallClient,
     },
@@ -44,6 +45,8 @@ use tsinghua_kit_engine::{
         NewsSubscriptionRef, NewsSubscriptions,
     },
     overview_api::{DailyOverview, OverviewClient as EngineOverviewClient},
+    physical_exam_read::PhysicalExamReport,
+    program_read::ProgramCompletion,
     read::{ReadPolicy, ReadResult},
     registrar_api::{ExamReport, GradeReport, SemesterSchedule},
     self_service::{AccountProfile, DeviceRef, OnlineDevice, UsageBalance},
@@ -269,6 +272,20 @@ impl Client {
     pub fn electricity(&mut self) -> ElectricityClient<'_> {
         ElectricityClient {
             inner: self.inner.electricity(),
+        }
+    }
+
+    /// Borrows the read-only physical-education test report.
+    pub fn physical_exam(&mut self) -> PhysicalExamClient<'_> {
+        PhysicalExamClient {
+            inner: self.inner.physical_exam(),
+        }
+    }
+
+    /// Borrows the read-only degree-program completion report.
+    pub fn program(&mut self) -> ProgramClient<'_> {
+        ProgramClient {
+            inner: self.inner.program(),
         }
     }
 
@@ -644,6 +661,32 @@ impl ElectricityClient<'_> {
         &mut self,
     ) -> Result<ReadResult<ElectricityPaymentHistory>, Error> {
         self.inner.payment_history().await
+    }
+}
+
+/// Read-only physical-education test results through this Client's shared
+/// runtime. An explicit no-result answer is data, not an error.
+pub struct PhysicalExamClient<'client> {
+    inner: EnginePhysicalExamClient<'client>,
+}
+
+impl PhysicalExamClient<'_> {
+    /// Reads the validated physical-education report.
+    pub async fn result(&mut self) -> Result<ReadResult<PhysicalExamReport>, Error> {
+        self.inner.result().await
+    }
+}
+
+/// Read-only degree-program completion through this Client's shared runtime.
+/// The report is read live on every call; there is no cached fallback.
+pub struct ProgramClient<'client> {
+    inner: EngineProgramClient<'client>,
+}
+
+impl ProgramClient<'_> {
+    /// Reads the plan-wide completion report.
+    pub async fn completion(&mut self) -> Result<ReadResult<ProgramCompletion>, Error> {
+        self.inner.completion().await
     }
 }
 
