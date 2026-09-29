@@ -4295,6 +4295,10 @@ pub struct CourseGradeDto {
     pub credit: f64,
     pub grade: String,
     pub grade_point: Option<f64>,
+    /// The same grade read against the previous policy's scale.  It is a
+    /// locally derived alternate, not a second service value; see
+    /// `CourseGrade::old_grade_point`.
+    pub old_grade_point: Option<f64>,
     pub semester: String,
 }
 
@@ -4306,6 +4310,7 @@ impl fmt::Debug for CourseGradeDto {
             .field("credit", &self.credit)
             .field("grade_present", &!self.grade.is_empty())
             .field("grade_point_present", &self.grade_point.is_some())
+            .field("old_grade_point_present", &self.old_grade_point.is_some())
             .field("semester_present", &!self.semester.is_empty())
             .finish()
     }
@@ -4351,6 +4356,7 @@ fn grade_report_result(value: ReadResult<GradeReport>) -> GradeReportResultDto {
                     credit: course.credit(),
                     grade: course.grade().to_owned(),
                     grade_point: course.grade_point(),
+                    old_grade_point: course.old_grade_point(),
                     semester: course.semester().to_owned(),
                 })
                 .collect(),

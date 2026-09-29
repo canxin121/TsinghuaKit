@@ -26,6 +26,25 @@ pub enum GradeReportKind {
     Minor,
 }
 
+/// The alternative grade-point scale the App has always offered next to the
+/// service's own.
+///
+/// Only the letter grades whose two policies differ appear here.  A grade the
+/// service reports outside this table keeps the service's own point under both
+/// policies, which is why the table is consulted as an override rather than as
+/// a complete scale.
+const OLD_GRADE_POINT_SCALE: [(&str, f64); 9] = [
+    ("A-", 3.7),
+    ("B+", 3.3),
+    ("B", 3.0),
+    ("B-", 2.7),
+    ("C+", 2.3),
+    ("C", 2.0),
+    ("C-", 1.7),
+    ("D+", 1.3),
+    ("D", 1.0),
+];
+
 /// A course-grade value in a Registrar report.
 #[derive(Clone, PartialEq)]
 pub struct CourseGrade {
@@ -73,10 +92,32 @@ impl CourseGrade {
         self.grade_point
     }
 
+    /// Returns the grade point under the previous policy, or `None` when no
+    /// point can be stated under it.
+    ///
+    /// This is a **locally derived alternate**, never a second service value:
+    /// the service sends one point, and this is the letter grade read against
+    /// the older scale.  A grade outside that scale keeps
+    /// [`Self::grade_point`], and a course whose grade has no point at all has
+    /// none here either — an absent point is not a zero.
+    pub fn old_grade_point(&self) -> Option<f64> {
+        old_grade_point(&self.grade, self.grade_point)
+    }
+
     /// Returns the academic term label.
     pub fn semester(&self) -> &str {
         &self.semester
     }
+}
+
+/// Reads one letter grade against the older scale, falling back to the
+/// service's own point.
+fn old_grade_point(grade: &str, grade_point: Option<f64>) -> Option<f64> {
+    OLD_GRADE_POINT_SCALE
+        .iter()
+        .find(|(letter, _)| *letter == grade.trim())
+        .map(|(_, point)| *point)
+        .or(grade_point)
 }
 
 impl fmt::Debug for CourseGrade {
@@ -499,5 +540,55 @@ impl fmt::Debug for ExamReport {
             .field("stage", &self.stage)
             .field("exam_count", &self.exams.len())
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn grade(letter: &str, point: Option<f64>) -> CourseGrade {
+        CourseGrade::new(
+            "合成课程".to_owned(),
+            3.0,
+            letter.to_owned(),
+            point,
+            "2026-2027-1".to_owned(),
+        )
+    }
+
+    /// The alternate scale is an override table, not a replacement scale: only
+    /// the letters whose two policies differ are mapped, and every other grade
+    /// keeps exactly what the service sent.
+    #[test]
+    fn the_previous_policy_scale_overrides_only_the_letters_it_defines() {
+        // The service's own point is deliberately a different number, so a
+        // lookup that silently fell through could not pass this.
+        assert_eq!(grade("A-", Some(3.9)).old_grade_point(), Some(3.7));
+        assert_eq!(grade("B+", Some(3.9)).old_grade_point(), Some(3.3));
+        assert_eq!(grade("D", Some(3.9)).old_grade_point(), Some(1.0));
+        // A+ is not in the table on either policy, so the service's value
+        // stands — the alternate is never invented.
+        assert_eq!(grade("A+", Some(4.0)).old_grade_point(), Some(4.0));
+        assert_eq!(grade("P", Some(0.0)).old_grade_point(), Some(0.0));
+        // The service's own point is untouched by the alternate read.
+        assert_eq!(grade("A-", Some(3.9)).grade_point(), Some(3.9));
+    }
+
+    /// An absent point is an absence under both policies: the alternate must
+    /// not turn "the service printed nothing" into a zero.
+    #[test]
+    fn an_absent_grade_point_stays_absent_under_the_previous_policy() {
+        assert_eq!(grade("A-", None).old_grade_point(), Some(3.7));
+        assert_eq!(grade("A+", None).old_grade_point(), None);
+        assert_eq!(grade("", None).old_grade_point(), None);
+    }
+
+    /// The scale is consulted on the trimmed grade text, so the surrounding
+    /// whitespace a table cell may carry cannot defeat a legitimate lookup.
+    #[test]
+    fn the_previous_policy_scale_tolerates_surrounding_whitespace() {
+        assert_eq!(grade(" B ", Some(3.9)).old_grade_point(), Some(3.0));
+        assert_eq!(grade("\tC+\n", Some(3.9)).old_grade_point(), Some(2.3));
     }
 }

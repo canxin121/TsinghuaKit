@@ -1420,3 +1420,28 @@ SDK `cargo test -p tsinghua_kit --all-targets` 28 项通过（`client_api` 12 + 
 SDK `public_api` 增补 `compile_sports_api` 编译检查与两项活动断言（**18 项通过**）：无会话时 `resources` / `records` 都以 `Service::Sports` + `SessionRequired` 返回且账号仍是 `SignedOut`；空场馆号、非数字 item、`2026-02-30`、`2026-9-30` 四种参数都在**没有任何会话工作**的前提下以 `InvalidInput` 返回。桥接层另有 2 项定向测试：时段/记录/资源的 `Debug` 只保留 `has_res_hash` / `has_book_id` / `has_pay_id` / `phone_present` 与计数，被拒参数同样零请求且 `auth_status` 仍是 `SignedOut`。`cargo check --manifest-path rust/Cargo.toml --workspace --all-targets` 退出 0（FFI 侧唯一 warning 是 HEAD 就有的 `physical_exam` / `program` 未使用导入，与本轮无关，逐条核对未新增）；严格 `RUSTDOCFLAGS="-D warnings" cargo doc -p tsinghua_kit` 退出 0；`flutter analyze lib test` 无问题；`flutter test test/public_entrypoints_test.dart` 通过并覆盖 `SportsClient` / `SportsResource` / `SportsResources` / `SportsReservationRecord`（含 `List.unmodifiable` 与 `cost` 原样保留）。`docs/api-surface-baseline.json` 已刷新：模块列表 64 → 65（新增 `sports_read`）、引擎根 `pub use` 51 → 52、渲染项计数 `struct 301→312` / `enum 143→148` / `fn 50→55` / `constant 45→51`、`runtime.line_count` 27896 → 28148、`direct_state_field_count` 110 → 112、runtime DTO 68 → 74、runtime 公开方法 92 → 94、`scope` 追加本轮说明。
 
 **未验证**：体育场馆域的线上可用性**未验证**，需要另行真实只读验收；在此之前不得用 fixture 或空结果冒充线上证据。**未执行任何真实账号登录或场馆服务请求，也未发起下单、支付、退订或手机号更新**（这些在该模块里根本不存在）。宿舍卫生分的结论（§58）不变。
+
+## 62. 2026-09-29 成绩的旧绩点口径（局部派生，非服务值）
+
+参考实现在成绩页提供一个「新绩点 / 旧绩点」开关：当调用方选择旧口径时，它会用一张本地表把字母成绩换算成绩点，表外成绩沿用服务自己给的值。本轮把这**一个可分离的口径**补进 `CourseGrade::old_grade_point()`。
+
+**为什么它不违反「不得用本地派生冒充服务值」**
+
+教务服务只发**一个**绩点值。旧口径不是第二个服务值，而是**同一个字母成绩在旧表下的读数**，因此接口按这个性质成形：
+
+- 它是 `CourseGrade` 上的**方法**，与服务自己的 `grade_point()` 并列且命名区分（`old_grade_point()`），Dart 侧同样是并列的 `gradePoint` / `oldGradePoint` 两个字段——调用方无法把两者混为一谈。
+- 文档明写这是「locally derived alternate, never a second service value」，并要求展示时必须带「这是哪套口径」的标签（与 `PhysicalExamReport::REFERENCE_TOTAL_LABEL` 的处理同构）。
+- 表**只列两套口径不同的九个字母**（`A-` 3.7 / `B+` 3.3 / `B` 3.0 / `B-` 2.7 / `C+` 2.3 / `C` 2.0 / `C-` 1.7 / `D+` 1.3 / `D` 1.0），作为**覆盖表**使用：表外成绩（`A+`、`P` 等）原样沿用服务值，绝不凭空造一个。这与参考实现的 `gradeToOldGPA.get(grade) ?? point` 语义一致。
+- 缺值仍是缺值：服务在绩点列什么都没印时，`grade_point` 是 `None`，表外成绩的旧口径也是 `None`——不会把「没有」变成 0。
+
+**接线**
+
+- 引擎：`registrar_api.rs` 新增 `OLD_GRADE_POINT_SCALE` 常量、`CourseGrade::old_grade_point()` 与内部 `old_grade_point()`（对成绩文本 trim 后查表）。行数据本身（`RegistrarCourseGrade`）与解析器**未改动**：服务值照旧按原样解析与缓存，旧口径是读取时的派生视图，因此既有缓存 payload 的 schema 与校验都不受影响。
+- FFI：`CourseGradeDto` 新增 `old_grade_point`，`Debug` 增 `old_grade_point_present`（与 `grade_point_present` 一样只打存在性）。FRB 2.13.0 重新生成。
+- Dart：`CourseGrade` 新增必填 `oldGradePoint`，文档说明它与 `gradePoint` 的差别与标签要求。
+
+**未纳入本轮**：参考实现的 `getReport(bx=…)` 会在额外一页里筛出必修/限选课程并与主表取交集。该行为的证据只有参考自己的 `table-striped tr` 与第 8 格文案，**没有观察到该端点在当前部署上的响应形状**，也不在既有白名单路径里；在拿到真实响应证据之前不实现，也不猜测它的列位。
+
+**验证**
+
+`cargo test --manifest-path rust/Cargo.toml -p tsinghua_kit_engine --lib -- registrar_api::tests` **3 项通过**：九个字母在服务值故意不同（`Some(3.9)`）时仍被覆盖为旧表值、表外的 `A+` / `P` 与空成绩沿用服务值而不被发明、服务值为 `None` 时表外成绩仍为 `None`（缺失不是零）、成绩文本带首尾空白时仍能命中（` B ` ⇒ 3.0、`\tC+\n` ⇒ 2.3）。`cargo check --workspace --all-targets` 退出 0；严格 `RUSTDOCFLAGS="-D warnings" cargo doc -p tsinghua_kit` 退出 0；`flutter analyze lib test` 无问题；`flutter test test/public_entrypoints_test.dart` 通过。渲染项计数与模块数**未变**（新增的是方法与常量，不改变引擎根的 `pub use` 数量）。**未执行任何真实账号请求**；`getReport` 的 `bx` 过滤仍未实现。

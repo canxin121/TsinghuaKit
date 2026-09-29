@@ -86,13 +86,26 @@ class CourseGrade {
     required this.credit,
     required this.grade,
     required this.gradePoint,
+    required this.oldGradePoint,
     required this.semester,
   });
 
   final String courseName;
   final double credit;
   final String grade;
+
+  /// The point the service itself reports for this grade.
   final double? gradePoint;
+
+  /// The same grade read against the previous policy's scale.
+  ///
+  /// This is a **locally derived alternate**, not a second value from the
+  /// service: the service sends one point, and this is [grade] looked up in the
+  /// older table. A grade outside that table keeps [gradePoint], and a course
+  /// whose grade has no point at all has none here either — `null` is not zero.
+  /// Show it only next to a label that says whose scale it is.
+  final double? oldGradePoint;
+
   final String semester;
 }
 
@@ -300,6 +313,7 @@ ReadResult<GradeReport> _gradeReportResult(native.GradeReportResultDto value) =>
                 credit: course.credit,
                 grade: course.grade,
                 gradePoint: course.gradePoint,
+                oldGradePoint: course.oldGradePoint,
                 semester: course.semester,
               ),
             )

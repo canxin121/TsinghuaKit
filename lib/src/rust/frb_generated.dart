@@ -3902,14 +3902,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   CourseGradeDto dco_decode_course_grade_dto(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 5)
-      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
     return CourseGradeDto(
       courseName: dco_decode_String(arr[0]),
       credit: dco_decode_f_64(arr[1]),
       grade: dco_decode_String(arr[2]),
       gradePoint: dco_decode_opt_box_autoadd_f_64(arr[3]),
-      semester: dco_decode_String(arr[4]),
+      oldGradePoint: dco_decode_opt_box_autoadd_f_64(arr[4]),
+      semester: dco_decode_String(arr[5]),
     );
   }
 
@@ -7066,12 +7067,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_credit = sse_decode_f_64(deserializer);
     var var_grade = sse_decode_String(deserializer);
     var var_gradePoint = sse_decode_opt_box_autoadd_f_64(deserializer);
+    var var_oldGradePoint = sse_decode_opt_box_autoadd_f_64(deserializer);
     var var_semester = sse_decode_String(deserializer);
     return CourseGradeDto(
         courseName: var_courseName,
         credit: var_credit,
         grade: var_grade,
         gradePoint: var_gradePoint,
+        oldGradePoint: var_oldGradePoint,
         semester: var_semester);
   }
 
@@ -10397,6 +10400,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_f_64(self.credit, serializer);
     sse_encode_String(self.grade, serializer);
     sse_encode_opt_box_autoadd_f_64(self.gradePoint, serializer);
+    sse_encode_opt_box_autoadd_f_64(self.oldGradePoint, serializer);
     sse_encode_String(self.semester, serializer);
   }
 

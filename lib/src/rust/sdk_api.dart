@@ -1458,6 +1458,11 @@ class CourseGradeDto {
   final double credit;
   final String grade;
   final double? gradePoint;
+
+  /// The same grade read against the previous policy's scale.  It is a
+  /// locally derived alternate, not a second service value; see
+  /// `CourseGrade::old_grade_point`.
+  final double? oldGradePoint;
   final String semester;
 
   const CourseGradeDto({
@@ -1465,6 +1470,7 @@ class CourseGradeDto {
     required this.credit,
     required this.grade,
     this.gradePoint,
+    this.oldGradePoint,
     required this.semester,
   });
 
@@ -1474,6 +1480,7 @@ class CourseGradeDto {
       credit.hashCode ^
       grade.hashCode ^
       gradePoint.hashCode ^
+      oldGradePoint.hashCode ^
       semester.hashCode;
 
   @override
@@ -1485,6 +1492,7 @@ class CourseGradeDto {
           credit == other.credit &&
           grade == other.grade &&
           gradePoint == other.gradePoint &&
+          oldGradePoint == other.oldGradePoint &&
           semester == other.semester;
 }
 

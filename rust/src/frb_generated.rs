@@ -6073,12 +6073,14 @@ impl SseDecode for crate::sdk_api::CourseGradeDto {
         let mut var_credit = <f64>::sse_decode(deserializer);
         let mut var_grade = <String>::sse_decode(deserializer);
         let mut var_gradePoint = <Option<f64>>::sse_decode(deserializer);
+        let mut var_oldGradePoint = <Option<f64>>::sse_decode(deserializer);
         let mut var_semester = <String>::sse_decode(deserializer);
         return crate::sdk_api::CourseGradeDto {
             course_name: var_courseName,
             credit: var_credit,
             grade: var_grade,
             grade_point: var_gradePoint,
+            old_grade_point: var_oldGradePoint,
             semester: var_semester,
         };
     }
@@ -10743,6 +10745,7 @@ impl flutter_rust_bridge::IntoDart for crate::sdk_api::CourseGradeDto {
             self.credit.into_into_dart().into_dart(),
             self.grade.into_into_dart().into_dart(),
             self.grade_point.into_into_dart().into_dart(),
+            self.old_grade_point.into_into_dart().into_dart(),
             self.semester.into_into_dart().into_dart(),
         ]
         .into_dart()
@@ -14678,6 +14681,7 @@ impl SseEncode for crate::sdk_api::CourseGradeDto {
         <f64>::sse_encode(self.credit, serializer);
         <String>::sse_encode(self.grade, serializer);
         <Option<f64>>::sse_encode(self.grade_point, serializer);
+        <Option<f64>>::sse_encode(self.old_grade_point, serializer);
         <String>::sse_encode(self.semester, serializer);
     }
 }
