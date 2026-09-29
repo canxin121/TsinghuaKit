@@ -33,9 +33,35 @@ use crate::transport::{CampusHttpTransport, TransportError};
 pub const ELECTRICITY_WEBVPN_TARGET: &str = "0a993de7e533cd43a594459abdcab27d/1";
 
 /// The health-chart selector is recorded for documentation and future work.
-/// It is deliberately not exposed as a working operation because the public
-/// response evidence does not establish whether the second response is an
-/// image, base64 text, or another payload.
+/// It is deliberately not exposed as a working operation.
+///
+/// The **payload type** of the second response is no longer in doubt.  The
+/// reference client's only consumer of this selector renders that response as
+/// an image data URL, its shared fetch copies a body to base64 whenever the
+/// response content type starts with `image/`, and its own fixture for this
+/// operation is a single JPEG of a chart rather than a value list.  A second
+/// response that plots numbers as pixels is not a series this engine could
+/// parse into scores, so even a fully verified route would return an image
+/// rather than the hygiene figures a caller actually wants.
+///
+/// What stays unverified is the **route** that reaches it, and that is what
+/// keeps this operation closed:
+///
+/// * The chart page is served from a *different* WebVPN mapping and scheme
+///   (`fdb94c85…` over `https`) than the electricity pages this module does
+///   implement (`fdee4993…` over `http`), so it cannot reuse this profile's
+///   verified base URL.
+/// * Its own URL is read out of the first page's chart element `src` rather
+///   than being a constant, and that element's shape has not been observed.
+/// * This selector is reached through the per-app Identity roam, whose broker
+///   leg carries the destination host as **plaintext**.  The reference pairs
+///   that mapping with a mobile `myhome` hostname only through another
+///   project's older constants, and adopting that host into the flow above
+///   would be a guess about a security-relevant boundary.
+///
+/// Until a real response settles the host, the scheme and the `src` shape, the
+/// honest answer is "not implemented" — not an empty chart and not a
+/// placeholder series.
 pub const HEALTH_WEBVPN_TARGET: &str = "0a993de7e533cd43a594459abdcab27d/0";
 
 /// Exact electricity remainder route observed behind the opaque WebVPN
