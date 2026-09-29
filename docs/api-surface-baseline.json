@@ -1,13 +1,14 @@
 {
   "schema_version": 1,
-  "source_revision": "e5d2b573fcfde12a18ee990a98d8823d71e7ff39",
+  "source_revision": "5e546ab70ade6dbb205ad0d096f9e86f6fbc2b73",
   "source_date": "2026-09-29",
-  "scope": "Current source and the existing Rustdoc rendered from it; not an exhaustive semver API report or a live-validation result. The 2026-09-29 refresh adds the e-invoice list and document read slice on top of the degree-program, physical-education, and teaching-evaluation slices; no live campus request was made for it.",
+  "scope": "Current source and the existing Rustdoc rendered from it; not an exhaustive semver API report or a live-validation result. The 2026-09-29 refresh adds the bank-payroll and graduate-income statement read slice on top of the e-invoice, degree-program, physical-education, and teaching-evaluation slices; no live campus request was made for it.",
   "methodology": "Public module/method/DTO declarations are counted from source. Rustdoc item links are deduplicated by class and href on the rendered crate root. Counts include deprecated or compatibility items; source line counts include inline tests.",
   "root_public_modules": [
     "api",
     "assessment_read",
     "auth",
+    "bank_read",
     "cache",
     "calendar_api",
     "campus_card_adapter",
@@ -66,19 +67,19 @@
     "usereg_client",
     "webvpn_identity"
   ],
-  "root_pub_use_statement_count": 49,
+  "root_pub_use_statement_count": 50,
   "rendered_crate_root_item_counts": {
-    "constant": 35,
-    "enum": 132,
-    "fn": 47,
-    "struct": 270,
+    "struct": 291,
+    "enum": 141,
+    "fn": 50,
+    "constant": 42,
     "trait": 2,
     "type": 5
   },
   "runtime": {
     "path": "rust/crates/tsinghua-kit-engine/src/api/runtime.rs",
-    "line_count": 27118,
-    "direct_state_field_count": 102,
+    "line_count": 27579,
+    "direct_state_field_count": 108,
     "dto_structs": [
       "CampusRuntimeStatusDto",
       "UseregCaptchaDto",
@@ -135,7 +136,12 @@
       "ClassroomStateResultDto",
       "ElectricityRemainderDto",
       "ElectricityPaymentRecordDto",
-      "ElectricityPaymentHistoryDto"
+      "ElectricityPaymentHistoryDto",
+      "BankPaymentLedgerResultDto",
+      "BankReceiptMonthDto",
+      "BankReceiptDto",
+      "GraduateIncomeResultDto",
+      "GraduateIncomeRecordDto"
     ],
     "public_methods": [
       {
@@ -572,6 +578,16 @@
         "name": "load_invoice_document_result",
         "line": 14932,
         "signature": "pub async fn load_invoice_document_result( &mut self, reference: &crate::invoice_read::InvoiceRef, ) -> Result<InvoiceDocumentResultDto, String>"
+      },
+      {
+        "name": "load_bank_payment_ledger_result",
+        "line": 15161,
+        "signature": "pub async fn load_bank_payment_ledger_result( &mut self, ledger: BankLedger, ) -> Result<BankPaymentLedgerResultDto, String>"
+      },
+      {
+        "name": "load_graduate_income_result",
+        "line": 15317,
+        "signature": "pub async fn load_graduate_income_result( &mut self, begin: &str, end: &str, ) -> Result<GraduateIncomeResultDto, String>"
       }
     ],
     "public_free_functions": [

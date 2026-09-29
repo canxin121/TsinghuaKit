@@ -120,6 +120,19 @@ pub mod invoice {
     };
 }
 
+/// Bank payroll receipts and graduate-student income statements.
+///
+/// Both are money statements, so every amount is exact integer cents: a caller
+/// never has to round a decimal to read an earned or transferred figure.  The
+/// two payroll ledgers are separate reads on one campus host.
+pub mod bank {
+    pub use crate::client::BankClient;
+    pub use tsinghua_kit_engine::{
+        BankLedger, BankPaymentLedger, BankReceiptMonth, BankReceiptRow, GraduateIncomePage,
+        GraduateIncomeRecord,
+    };
+}
+
 pub mod learn {
     pub use crate::client::LearnClient;
     pub use chrono::{DateTime, Utc};

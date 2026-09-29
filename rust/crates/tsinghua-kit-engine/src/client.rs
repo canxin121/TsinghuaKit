@@ -29,6 +29,9 @@ use crate::{
         AccountAuthState, AccountAuthStatus, AuthDomain, AuthStatus, SecondFactorMethod,
         SelfServiceLoginPhase,
     },
+    bank_read::{
+        BankLedger, BankPaymentLedger, BankReceiptRow, GraduateIncomePage, GraduateIncomeRecord,
+    },
     calendar_api::{AcademicTerm, LearnTermCalendar, SchoolCalendarImage, SchoolCalendarQuery},
     campus_card_api::{
         CampusCardAccount, CampusCardInteraction, CampusCardPasswordRequest,
@@ -949,6 +952,13 @@ impl Client {
         }
     }
 
+    /// Borrows the read-only bank payroll and graduate-income statements.
+    pub fn bank(&mut self) -> BankClient<'_> {
+        BankClient {
+            runtime: &mut self.runtime,
+        }
+    }
+
     /// Borrows school-wide and academic-term calendar reads.
     pub fn calendar(&mut self) -> CalendarClient<'_> {
         CalendarClient {
@@ -1398,6 +1408,114 @@ impl InvoiceClient<'_> {
     }
 }
 
+/// Read-only bank payroll and graduate-income statements.
+///
+/// Both are money statements, so every amount crosses this boundary as exact
+/// integer cents and never through a floating-point type.  Each statement is
+/// read live on every call and never served from a cached copy: a retained
+/// statement would present a superseded disbursement as the current one.
+pub struct BankClient<'client> {
+    runtime: &'client mut CampusRuntime,
+}
+
+impl BankClient<'_> {
+    /// Reads one payroll ledger: the years the service offers this account,
+    /// then every receipt those years hold.
+    ///
+    /// The two ledgers are two path families on one campus host, so each needs
+    /// its own read here; one ledger's read never reports the other's receipts.
+    pub async fn ledger(
+        &mut self,
+        ledger: BankLedger,
+    ) -> Result<ReadResult<BankPaymentLedger>, Error> {
+        let dto = self
+            .runtime
+            .load_bank_payment_ledger_result(ledger)
+            .await
+            .map_err(|_| bank_payment_failure(self.runtime))?;
+        let metadata = cached_read_metadata(
+            Service::BankPayment,
+            &dto.generated_at,
+            &dto.source,
+            &dto.status,
+            dto.error.is_some(),
+            ReadSource::Live,
+        )?;
+        let months = dto
+            .months
+            .into_iter()
+            .map(|month| crate::bank_read::BankReceiptMonth {
+                month: month.month,
+                receipts: month
+                    .receipts
+                    .into_iter()
+                    .map(|receipt| BankReceiptRow {
+                        department: receipt.department,
+                        project: receipt.project,
+                        usage: receipt.usage,
+                        description: receipt.description,
+                        bank: receipt.bank,
+                        time: receipt.time,
+                        total_cents: receipt.total_cents,
+                        deduction_cents: receipt.deduction_cents,
+                        actual_cents: receipt.actual_cents,
+                        deposit_cents: receipt.deposit_cents,
+                        cash_cents: receipt.cash_cents,
+                    })
+                    .collect(),
+            })
+            .collect();
+        Ok(ReadResult::new(BankPaymentLedger { months }, metadata))
+    }
+
+    /// Reads one page of graduate-income records for a `YYYYMMDD` date range.
+    ///
+    /// Both bounds must be eight digits; a range that is not is refused before
+    /// any request, so caller text never becomes a service-side filter.
+    pub async fn graduate_income(
+        &mut self,
+        begin: &str,
+        end: &str,
+    ) -> Result<ReadResult<GraduateIncomePage>, Error> {
+        let dto = self
+            .runtime
+            .load_graduate_income_result(begin, end)
+            .await
+            .map_err(|_| graduate_income_failure(self.runtime))?;
+        let metadata = cached_read_metadata(
+            Service::GraduateIncome,
+            &dto.generated_at,
+            &dto.source,
+            &dto.status,
+            dto.error.is_some(),
+            ReadSource::Live,
+        )?;
+        let records = dto
+            .records
+            .into_iter()
+            .map(|record| GraduateIncomeRecord {
+                id: record.id,
+                year: record.year,
+                month: record.month,
+                date: record.date,
+                year_month: record.year_month,
+                name: record.name,
+                department: record.department,
+                before_tax_cents: record.before_tax_cents,
+                after_tax_cents: record.after_tax_cents,
+                tax_cents: record.tax_cents,
+            })
+            .collect();
+        Ok(ReadResult::new(
+            GraduateIncomePage {
+                records,
+                total: dto.total,
+            },
+            metadata,
+        ))
+    }
+}
+
 /// Read-only campus-card reads and its explicit one-shot SSO password step.
 /// The card password is a target-service interaction, not an Auth account.
 pub struct CampusCardClient<'client> {
@@ -1672,6 +1790,65 @@ fn invoice_failure(runtime: &CampusRuntime) -> Error {
         AccountAuthState::Authenticated => ErrorCode::ServiceUnavailable,
     };
     Error::new(Service::Invoice, code)
+}
+
+/// Maps one payroll failure to its stable code.
+///
+/// As with the invoice reader, the adapter's own diagnostic is checked first so
+/// an expired session is distinguishable from a changed deployment.
+fn bank_payment_failure(runtime: &CampusRuntime) -> Error {
+    if let Some(diagnostic) = runtime.last_bank_payment_failure_code() {
+        let code = match diagnostic {
+            "bank_auth_required" => ErrorCode::SessionExpired,
+            "bank_config" => ErrorCode::InvalidInput,
+            "bank_network" => ErrorCode::NetworkUnavailable,
+            "bank_origin" | "bank_path" => ErrorCode::RedirectRefused,
+            "bank_http" => ErrorCode::ServiceUnavailable,
+            // A year form that offers nothing is the service's own statement
+            // that this account has no payroll rows, which is a closed
+            // capability rather than a broken read.
+            "bank_years_empty" | "bank_months_empty" => ErrorCode::NotAvailable,
+            "bank_size" => ErrorCode::IncompleteResult,
+            _ => ErrorCode::InvalidResponse,
+        };
+        return Error::new(Service::BankPayment, code);
+    }
+    let code = match runtime.auth_status().identity().state() {
+        AccountAuthState::SignedOut | AccountAuthState::RestoredUnverified => {
+            ErrorCode::SessionRequired
+        }
+        AccountAuthState::Expired => ErrorCode::SessionExpired,
+        AccountAuthState::NeedsInteraction => ErrorCode::InteractionRequired,
+        AccountAuthState::Authenticating => ErrorCode::InteractionInProgress,
+        AccountAuthState::Authenticated => ErrorCode::ServiceUnavailable,
+    };
+    Error::new(Service::BankPayment, code)
+}
+
+/// Maps one graduate-income failure to its stable code.
+fn graduate_income_failure(runtime: &CampusRuntime) -> Error {
+    if let Some(diagnostic) = runtime.last_graduate_income_failure_code() {
+        let code = match diagnostic {
+            "graduate_income_auth_required" => ErrorCode::SessionExpired,
+            "graduate_income_config" | "graduate_income_range" => ErrorCode::InvalidInput,
+            "graduate_income_network" => ErrorCode::NetworkUnavailable,
+            "graduate_income_origin" | "graduate_income_path" => ErrorCode::RedirectRefused,
+            "graduate_income_http" => ErrorCode::ServiceUnavailable,
+            "graduate_income_size" => ErrorCode::IncompleteResult,
+            _ => ErrorCode::InvalidResponse,
+        };
+        return Error::new(Service::GraduateIncome, code);
+    }
+    let code = match runtime.auth_status().identity().state() {
+        AccountAuthState::SignedOut | AccountAuthState::RestoredUnverified => {
+            ErrorCode::SessionRequired
+        }
+        AccountAuthState::Expired => ErrorCode::SessionExpired,
+        AccountAuthState::NeedsInteraction => ErrorCode::InteractionRequired,
+        AccountAuthState::Authenticating => ErrorCode::InteractionInProgress,
+        AccountAuthState::Authenticated => ErrorCode::ServiceUnavailable,
+    };
+    Error::new(Service::GraduateIncome, code)
 }
 
 fn classrooms_failure(runtime: &CampusRuntime) -> Error {

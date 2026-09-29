@@ -8,6 +8,7 @@
 pub mod api;
 pub mod assessment_read;
 pub mod auth;
+pub mod bank_read;
 pub mod cache;
 pub mod calendar_api;
 pub mod campus_card_adapter;
@@ -43,6 +44,7 @@ pub mod learn_session;
 pub mod learn_todos;
 pub mod library_api;
 pub mod library_read;
+mod money;
 pub mod network;
 mod network_profile_store;
 pub mod news;
@@ -92,10 +94,12 @@ pub use api::campus::{
     CampusOverviewSectionErrorsDto, CampusScheduleDto, CampusSemesterScheduleDto, CampusTodoDto,
 };
 pub use api::runtime::{
+    BankPaymentLedgerResultDto, BankReceiptDto, BankReceiptMonthDto,
     CampusCardTransactionsResultDto, CampusRuntime, CampusRuntimeStatusDto, ClassroomBuildingDto,
     ClassroomBuildingsResultDto, ClassroomStateDto, ClassroomStateResultDto,
     ElectricityPaymentHistoryDto, ElectricityPaymentHistoryResultDto, ElectricityPaymentRecordDto,
-    ElectricityRemainderDto, UseregCaptchaDto, create_runtime,
+    ElectricityRemainderDto, GraduateIncomeRecordDto, GraduateIncomeResultDto, UseregCaptchaDto,
+    create_runtime,
 };
 pub use api::runtime::{
     InfoNewsAttachmentDto, InfoNewsDetailDto, InfoNewsDetailResultDto, InfoNewsItemDto,
@@ -112,6 +116,18 @@ pub use assessment_read::{
     AssessmentList, AssessmentListRows, AssessmentMethod, AssessmentOperation,
     AssessmentParseError, AssessmentProfile, AssessmentRead, AssessmentRef, AssessmentRequestPlan,
     AssessmentRow, AssessmentSessionPrerequisite, parse_assessment_list_html,
+};
+pub use bank_read::{
+    BANK_SEARCH_PATH, BANK_WEBVPN_TARGET, BankLedger, BankPaymentAdapter, BankPaymentAdapterConfig,
+    BankPaymentAdapterError, BankPaymentBusinessProof, BankPaymentLedger, BankPaymentMethod,
+    BankPaymentOperation, BankPaymentParseError, BankPaymentProfile, BankPaymentRead,
+    BankPaymentRequestPlan, BankReceiptMonth, BankReceiptRow, BankSessionPrerequisite,
+    FOUNDATION_BANK_SEARCH_PATH, FOUNDATION_BANK_WEBVPN_TARGET, GRADUATE_INCOME_PAGE_SIZE,
+    GRADUATE_INCOME_PATH, GRADUATE_INCOME_WEBVPN_TARGET, GraduateIncomeAdapter,
+    GraduateIncomeAdapterError, GraduateIncomeBusinessProof, GraduateIncomeOperation,
+    GraduateIncomePage, GraduateIncomeParseError, GraduateIncomeProfile, GraduateIncomeRead,
+    GraduateIncomeRecord, GraduateIncomeRequestPlan, parse_bank_receipts_html,
+    parse_bank_years_html, parse_graduate_income_json,
 };
 pub use cache::{CacheError, JsonCacheEnvelope, JsonFileCache};
 pub use campus_card_adapter::{
@@ -319,6 +335,9 @@ mod physical_exam_tests;
 
 #[cfg(test)]
 mod invoice_tests;
+
+#[cfg(test)]
+mod bank_tests;
 
 #[cfg(test)]
 mod reference_test_support;

@@ -1171,3 +1171,58 @@ test/public_entrypoints_test.dart | 1 +
 **边界**
 
 本轮**未执行任何真实账号登录或学校服务请求**；本域的线上可用性仍未验证，需另行真实只读验收。发票域只读，不含任何报销或支付动作；`thu_reference` 侧的相关实现仅作为路径/字段/选择器/可观察行为的证据使用，未复制其源码、夹具或资源。
+
+## 56. 2026-09-29 零新认证生活域：银行到款（含基金会）与研究生收入
+
+本轮补上 `thu_reference` 已实现、TsinghuaKit 缺失的**银行代发到款**（`yhdf.tsinghua.edu.cn`，`/yhdfcx/search.do` 与 `/yhdfcx_jjh/search.do` 两个路径族）与**研究生收入**（`zzjl.graduate.tsinghua.edu.cn`，`/b/yjsjzxt/v_yjszzjl_yjscwdfmx_cx/pageList`）。两者都是**钱款对账单**，因此共用同一套精确金额与有界读取规则，但各自有独立的 selector、映射与适配器实例。
+
+**新增引擎模块 `bank_read.rs` 与 `money.rs`**
+
+- `money.rs`（crate-private）把两位小数字符串换算成 `i64` 分：`exact_cents` 只接受整体十进制 token（允许前导 `+`/`-`、最多两位小数、无指数、无多余字符），`json_cents` 同时接受字符串与 JSON 数字但同样拒绝有损表示。任何有损值报 `AmountError`，因此调用方拿到的分与服务的分逐位相等。第三条规则是**空列不是零**：服务在某个金额列什么都没印时，该字段是 `None`，而不是 `Some(0)`。
+- `bank_read.rs`：`BankPaymentProfile` 持常量请求计划，`BankPaymentRequestPlan` 只保存 path 与要提交的年份，绝不保存 URL；`BankReceiptRow` / `BankReceiptMonth` / `BankPaymentLedger` 是解析结果。`BankPaymentAdapter` / `GraduateIncomeAdapter` 与既有 `invoice_read`/`assessment_read` 同构：`AtomicU64` binding 计数器绑定的 `*BusinessProof`、`try_with_transport(base_url, transport)` 共享同一个 identity Cookie jar、`execute()` 在解析之前先分类 login/expiry/origin/path/content-type、无 body 的 `*AdapterError`（带 `diagnostic_code()` 与 `is_session_expired()`）。
+
+**本域唯一需要判断的语义：参考实现的三路并发改为有界串行派发**
+
+参考客户端在这里用 `Promise.all` 一次并发三个年份批次。引擎侧**不能**照搬：一次调用若同时把三、四个请求推上线路，就绕过了统一门禁 `MAX_READ_DISPATCHES = 4` 的意图，也会让 `request_gate` 的退避形同虚设。因此 `read_ledger()` 把年份按 `MAX_YEARS_PER_BATCH = 4` 切分后**顺序**派发，批次上界 `MAX_YEAR_BATCHES = 24`、年份上界 `MAX_YEARS = 96`，一次成功读取最多 24 个批次，每个批次都单独经过 `CampusHttpTransport` 与 request gate。这是引擎侧主动的性能取舍，不是对参考实现的忠实复刻，模块文档与测试注释里都写明了原因。
+
+**年份表单是全部后续请求的边界**
+
+第一个响应的 `<option>` 集是服务自己给出的、该账号有到款记录的年份，因此**没有任何年份是凭空发明的**：调用方无法索取服务从未提供的年份。`NoYears`（空 option 集）是**失败**，不是"这个账号没有到款"——200 加一个空表单既可能是账号确实无记录，也可能是页面改版，引擎不替它选一个。年份值与表单再编码逐字节复核（`year=2021&year=2020`；敌意值 `"2&year=9"` 变成 `year=2%26year%3D9`），所以调用方文本永远无法拼进表单体。
+
+**按表头标签读数，不按列号**
+
+代发表格的每一列都由 **header 标签**定位（`代发部门`/`代发项目`/…/`应发金额`/`扣税金额`/`实发金额`/`存折金额`/`现金金额`），列序漂移只会报"表头不符"，不会把某一列的数字当成另一列的语义。这与 §54 的教学评估域同一原则：`campus_html` 刻意**不提供**位置索引能力。测试里有一条"列序调换后按标签取值"的用例以及两条 `SectionCountMismatch`（表头 1 / 表 0、表头 1 / 表 2），后者保证"标题与表格必须一一配对"。
+
+**基金会账本是与主账本同主机同映射的另一条路径**
+
+参考客户端的两个 search URL 只有 `/yhdfcx` 与 `/yhdfcx_jjh` 之别，映射 token 完全相同，因此两条 selector 登记到**同一个** `(host, scheme, mapping)` 三元组，由请求计划区分账本。`BankLedger::{Main, Foundation}` 在 SDK 与 FFI 上都是显式枚举，`ensure_bank_payment_reader_session` 只在**已证明且账本相同**时复用适配器，切账本会重新走上 handoff。
+
+**host 名标注为推断**
+
+`info_session.rs` 的两条新允许名单臂分别写作 `yhdf.tsinghua.edu.cn`（主/基金会）与 `zzjl.graduate.tsinghua.edu.cn`（研究生收入）。这两个主机名是从参考实现的主机表**推断**出来的，不是从任何一次真实响应中观察到的，代码注释里明确写了 `inferred, not evidenced`。映射 token 本身来自参考实现的选择器表，是可用证据。
+
+**研究生收入：越界参数在会话工作之前就被拒绝**
+
+`load_graduate_income_result(begin, end)` 在 `ensure_identity_user_for_live_read` 之前先跑 `GraduateIncomeProfile::standard().list_request(begin, end)`：两个边界都必须是八位数字，否则记下 `last_graduate_income_failure_code = "graduate_income_range"` 并在**零请求**的情况下返回失败。理由写在代码里：一个非法参数不该花掉一次 handoff，其自由文本也永远不该到达服务端。`rows` 固定上界 1000，`total` 是可选总数；**缺 `rows` 数组是失败**（`MissingRows`），而显式空数组才是服务自己的"无收入"答复。
+
+**Runtime 接线**
+
+`ensure_bank_payment_reader_session` / `prepare_bank_payment_adapter`（及研究生收入的同构方法）要求 INFO 已证明后才发起 handoff；handoff 返回的 URL 只用于**校验**是否落在 `BANK_WEBVPN_BASE_URL` / `GRADUATE_INCOME_WEBVPN_BASE_URL` 映射根内（否则 `bank_mapping_rejected`），随后把 path 收敛到映射根、清空 query 与 fragment —— handoff 自带的 `ticket` 永远不成为适配器 base URL。两个 load 各带一次性过期恢复（失效 → 刷新 INFO → 重新 handoff → 重读，第二次仍过期才 `fail("银行到款自动续接后仍已过期，请重新建立")`），失败时把 `diagnostic_code()` 记进 `last_bank_payment_failure_code` / `last_graduate_income_failure_code` 再 `record_business_failure(...)`。`bank_payment_service_is_proven()` / `graduate_income_service_is_proven()` 同时要求 INFO 已证明且证明与当前 adapter 实例匹配；`ServiceId::Info` 失效与 `logout` 都会清除 adapter 与 proof。两个域都不落缓存：到款状态是可变财务状态，一份陈旧副本会被渲染成当前状态。
+
+**SDK 错误分类**
+
+`error_sdk.rs` 新增 `Service::BankPayment` / `Service::GraduateIncome`；SDK 的 `bank_payment_failure` / `graduate_income_failure` 把 `bank_auth_required` / `graduate_income_auth_required` 映到 `SessionExpired`，`bank_years_empty` / `bank_months_empty` 映到 `NotAvailable`，`graduate_income_range` 映到 `InvalidInput`，`*_size` 映到 `IncompleteResult`，`*_network` 映到 `NetworkUnavailable`，`*_origin` / `*_path` 映到 `RedirectRefused`，`*_http` 映到 `ServiceUnavailable`，其余落到 `InvalidResponse`，最后回退到 identity auth 状态。
+
+**FFI / Dart**
+
+`sdk_api.rs` 新增 `BankReceiptDto` / `BankReceiptMonthDto` / `BankPaymentLedgerDataDto` / `BankPaymentLedgerResultDto` / `GraduateIncomeRecordDto` / `GraduateIncomeDataDto` / `GraduateIncomeResultDto` 与 `BankLedgerDto`（`Main`/`Foundation`），`Debug` 全部脱敏（只打印 `month_count` / `receipt_count` / `record_count` / `total`）。金额跨桥一律是 `PlatformInt64` 分；Dart 侧新增 `lib/src/bank.dart` part 文件与 `lib/bank.dart` 入口，用 `_optionalInt64ToBigInt` 保留"服务没印"与"零金额"的区别（`null` vs `BigInt.zero`），`receiptCount` 与 `total` 同样经既有 `_platformInt64ToBigInt` 转换，因此 Dart 侧是 `BigInt` 而不是可能丢精度的 `int`。FRB 2.13.0 重新生成，生成物未手工编辑。
+
+**验证**
+
+`cargo test -p tsinghua_kit_engine --lib -- bank_tests` **28 项通过**（`bank_tests` 20 项 + `api::runtime::bank_tests` 8 项）：年份表单解析与空 option 失败、按表头标签读数（含列序调换）、`SectionCountMismatch` 两例、非精确金额被拒、登录页/超时页是会话失败、表单再编码（含敌意值）、基金会账本的独立 path 与 selector、收入区间两端必须是八位、adapter `Debug` 不含映射 token、映射根之外的 base URL 被拒、批次**顺序**派发（断言 `GET` 后 `POST`，且 body 为 `year=2021&year=2020`）、收入行精确分与请求 query（`ffkssj=20260101&ffjssj=20261231&rows=1000&page=1&sidx=id&sord=asc`）、被拒区间**零请求**、缺 `rows` 是失败而空数组是合法空页、缺 id 行被拒、非精确收入金额被拒；Runtime 8 项覆盖：INFO 会话内读取（5 请求，含映射根路径与批次体）、基金会账本作为同映射的另一条路径、切账本重新证明（10 请求）、`bank_years_empty` 失败且无后续到款请求、过期页 ⇒ `!bank_payment_service_is_proven()`、账号未证明时两次读取均零请求失败、研究生收入走自己的映射（`requests[3]` 断言路径与区间参数）且只证明自己、非数字区间以 `graduate_income_range` 到达调用方并在**发请求之前**被拒（`graduate_income_adapter.is_none()`，INFO 仍证明）。
+
+`cargo check --workspace --all-targets` 退出 0；严格 `RUSTDOCFLAGS="-D warnings" cargo doc -p tsinghua_kit` 通过；`cargo fmt --all -- --check` 与 `git diff --check` 干净；`flutter analyze lib test` 无问题；`flutter test test/public_entrypoints_test.dart` 通过并覆盖 `BankClient`/`BankPaymentLedger`/`BankReceiptMonth`/`BankReceipt`/`GraduateIncomePage`/`GraduateIncomeRecord` 与 `BankLedger.main`/`foundation`。`docs/api-surface-baseline.json` 已按本节源码与重新渲染的 Rustdoc 刷新（`source_revision`、模块列表新增 `bank_read`、根 `pub use` 计数 50、DTO/方法清单、`direct_state_field_count`、渲染项计数）。
+
+**边界**
+
+本轮**未执行任何真实账号登录或学校服务请求**；两个域的线上可用性仍未验证，需另行真实只读验收。两个主机名是推断而非证据。到款域只读，不含任何支付、充值或退订动作；`thu_reference` 侧的相关实现仅作为路径/字段/选择器/可观察行为的证据使用，未复制其源码、夹具或资源。

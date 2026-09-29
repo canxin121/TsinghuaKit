@@ -31,6 +31,10 @@ use super::{
 };
 use crate::{
     assessment_read::{AssessmentAdapter, AssessmentBusinessProof, AssessmentRef},
+    bank_read::{
+        BankLedger, BankPaymentAdapter, BankPaymentBusinessProof, GraduateIncomeAdapter,
+        GraduateIncomeBusinessProof, GraduateIncomeProfile,
+    },
     cache::{JsonCacheEnvelope, JsonFileCache, read_untyped_json_envelope},
     campus_card_adapter::{
         CAMPUS_CARD_SSO_TARGET, CampusCardAdapterConfig, CampusCardClient, CampusCardSession,
@@ -107,6 +111,10 @@ const ASSESSMENT_WEBVPN_BASE_URL: &str = "https://webvpn.tsinghua.edu.cn/http/77
 /// ticket exchange rather than a plain roam, so only the proved mapping root is
 /// used to configure the read endpoints.
 const INVOICE_WEBVPN_BASE_URL: &str = "https://webvpn.tsinghua.edu.cn/https/77726476706e69737468656265737421f4ed519669247b59700f81b9991b2631aee63c51/";
+/// The bank payroll host's WebVPN mapping.  Both payroll ledgers share it.
+const BANK_WEBVPN_BASE_URL: &str = "https://webvpn.tsinghua.edu.cn/http/77726476706e69737468656265737421e9ff459a69247b59700f81b9991b26317dbd36ae/";
+/// The graduate-income host's WebVPN mapping.
+const GRADUATE_INCOME_WEBVPN_BASE_URL: &str = "https://webvpn.tsinghua.edu.cn/http/77726476706e69737468656265737421eaed4b9069377a517a1d88b89d1b37269c624d2b1c6925f37faea82b8d/";
 const WEBVPN_BASE_URL: &str = "https://webvpn.tsinghua.edu.cn/";
 const INFO_DIRECT_ORIGIN: &str = "https://info.tsinghua.edu.cn/";
 // Current THUInfo public clients perform one target-application identity roam
@@ -208,6 +216,10 @@ mod assessment_tests;
 #[cfg(test)]
 #[path = "runtime_invoice_tests.rs"]
 mod invoice_tests;
+
+#[cfg(test)]
+#[path = "runtime_bank_tests.rs"]
+mod bank_tests;
 
 #[cfg(test)]
 #[path = "runtime_library_cache_tests.rs"]
@@ -1359,6 +1371,74 @@ pub struct InvoiceDocumentResultDto {
     pub source: String,
     pub status: String,
     pub error: Option<String>,
+}
+
+/// Source-aware payroll receipt ledger.
+///
+/// The ledger is read live on every request and never served from a cached
+/// copy: a retained statement would present a superseded disbursement as the
+/// current one.  Amounts cross the boundary as exact integer cents, so no
+/// caller has to round a decimal to read a payroll figure.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BankPaymentLedgerResultDto {
+    pub months: Vec<BankReceiptMonthDto>,
+    /// The number of receipt rows across every month section.
+    pub receipt_count: u32,
+    pub generated_at: String,
+    pub source: String,
+    pub status: String,
+    pub error: Option<String>,
+}
+
+/// One month section of payroll receipts.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BankReceiptMonthDto {
+    pub month: String,
+    pub receipts: Vec<BankReceiptDto>,
+}
+
+/// One payroll receipt row.  It carries only the columns the service prints;
+/// no Cookie, route, or account value is included.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BankReceiptDto {
+    pub department: String,
+    pub project: String,
+    pub usage: String,
+    pub description: String,
+    pub bank: String,
+    pub time: String,
+    pub total_cents: Option<i64>,
+    pub deduction_cents: Option<i64>,
+    pub actual_cents: Option<i64>,
+    pub deposit_cents: Option<i64>,
+    pub cash_cents: Option<i64>,
+}
+
+/// Source-aware graduate-income page.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GraduateIncomeResultDto {
+    pub records: Vec<GraduateIncomeRecordDto>,
+    /// The service's total record count, when it reported one.
+    pub total: Option<u64>,
+    pub generated_at: String,
+    pub source: String,
+    pub status: String,
+    pub error: Option<String>,
+}
+
+/// One graduate-income row with exact integer cents.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GraduateIncomeRecordDto {
+    pub id: String,
+    pub year: String,
+    pub month: String,
+    pub date: String,
+    pub year_month: String,
+    pub name: String,
+    pub department: String,
+    pub before_tax_cents: Option<i64>,
+    pub after_tax_cents: Option<i64>,
+    pub tax_cents: Option<i64>,
 }
 
 /// Source-aware campus-card account. The account record contains only the
@@ -2619,6 +2699,13 @@ pub struct CampusRuntime {
     // leaves no resolvable reference behind.
     invoice_adapter: Option<InvoiceAdapter>,
     invoice_proof: Option<InvoiceBusinessProof>,
+    // The payroll adapter is prepared per confirmed INFO session.  One adapter
+    // serves one ledger; both ledgers of the same host hold their own proof.
+    bank_payment_adapter: Option<BankPaymentAdapter>,
+    bank_payment_proof: Option<BankPaymentBusinessProof>,
+    // The graduate-income adapter is prepared on its own mapping.
+    graduate_income_adapter: Option<GraduateIncomeAdapter>,
+    graduate_income_proof: Option<GraduateIncomeBusinessProof>,
     card_client: Option<CampusCardClient>,
     card_session: Option<CampusCardSession>,
     // One initial target-auth chain per explicit login. Retain after failure
@@ -2754,6 +2841,10 @@ pub struct CampusRuntime {
     // The invoice service's explicit deployment/parse answer is likewise mapped
     // by the SDK from a stable code instead of from message text.
     last_invoice_failure_code: Option<&'static str>,
+    // The payroll and income services answer with an explicit deployment shape
+    // too, so their failures are mapped from a stable code as well.
+    last_bank_payment_failure_code: Option<&'static str>,
+    last_graduate_income_failure_code: Option<&'static str>,
     // The WebVPN/OAuth/Identity origin graph is part of the Rust runtime's
     // authenticated transport boundary. Production uses the current THU
     // deployment; loopback fixtures may inject a fully validated graph so
@@ -3342,6 +3433,10 @@ impl CampusRuntime {
             assessment_proof: None,
             invoice_adapter: None,
             invoice_proof: None,
+            bank_payment_adapter: None,
+            bank_payment_proof: None,
+            graduate_income_adapter: None,
+            graduate_income_proof: None,
             card_client: None,
             card_session: None,
             card_auth_attempted: false,
@@ -3415,6 +3510,8 @@ impl CampusRuntime {
             last_usereg_failure_code: None,
             last_assessment_failure_code: None,
             last_invoice_failure_code: None,
+            last_bank_payment_failure_code: None,
+            last_graduate_income_failure_code: None,
             webvpn_identity_config,
         };
 
@@ -14990,6 +15087,334 @@ impl CampusRuntime {
         .await
     }
 
+    /// Prepares one payroll ledger's adapter inside the already-confirmed INFO
+    /// session.  The two ledgers are two path families on one host and one
+    /// mapping, so each needs its own adapter instance: the ledger a proof was
+    /// issued for is part of that proof, and a receipt from the other ledger
+    /// must not be presented as this one's.
+    async fn ensure_bank_payment_reader_session(
+        &mut self,
+        user: &UserIdentity,
+        ledger: BankLedger,
+    ) -> Result<(), String> {
+        if self
+            .bank_payment_adapter
+            .as_ref()
+            .map(BankPaymentAdapter::ledger)
+            == Some(ledger)
+            && self.bank_payment_service_is_proven()
+        {
+            return Ok(());
+        }
+        let context_exists = self.bank_payment_adapter.is_some()
+            || self.bank_payment_proof.is_some()
+            || self.info_session_context_exists();
+        if context_exists && !self.service_session_is_proven(ServiceId::Info) {
+            self.refresh_nonacademic_service_after_expiry(ServiceId::Info)
+                .await
+                .map_err(|error| self.record_error(format!("INFO 自动续接失败: {error}")))?;
+        }
+        self.prepare_bank_payment_adapter(user, ledger).await
+    }
+
+    async fn prepare_bank_payment_adapter(
+        &mut self,
+        user: &UserIdentity,
+        ledger: BankLedger,
+    ) -> Result<(), String> {
+        self.invalidate_bank_payment_session();
+        self.ensure_info_session(user).await?;
+
+        let transport = self.identity.transport().clone();
+        let handoff = match self.info_adapter.as_ref() {
+            Some(info) => info.additional_roaming(ledger.webvpn_target()).await,
+            None => return Err(self.record_error("INFO 服务会话尚未建立")),
+        };
+        let roaming_url = handoff.map_err(|error| {
+            self.record_business_failure(
+                "bank_payment",
+                "bank_payment_handoff",
+                info_failure_code(&error),
+            )
+        })?;
+        let mut base_url = Url::parse(roaming_url.as_str())
+            .map_err(|_| self.record_error("银行到款 roaming URL is invalid"))?;
+        let expected = Url::parse(BANK_WEBVPN_BASE_URL).expect("static bank mapping");
+        if !base_url.path().starts_with(expected.path()) {
+            return Err(self.record_business_failure(
+                "bank_payment",
+                "bank_payment_handoff",
+                "bank_mapping_rejected",
+            ));
+        }
+        // The handoff query is consumed here.  Only the proved target mapping
+        // configures the read endpoint that follows.
+        base_url.set_path(expected.path());
+        base_url.set_query(None);
+        base_url.set_fragment(None);
+        let adapter = BankPaymentAdapter::try_with_transport(base_url, ledger, transport)
+            .map_err(|error| self.record_error(format!("银行到款 adapter: {error}")))?;
+        self.bank_payment_adapter = Some(adapter);
+        Ok(())
+    }
+
+    /// Reads one payroll ledger: the years the service offers, then every
+    /// receipt those years hold.
+    ///
+    /// The ledger is read live every time and never served from a cached copy:
+    /// a retained statement would present a superseded disbursement as the
+    /// current one.  The year batches are dispatched sequentially through the
+    /// shared transport, so one call stays inside the request gate's bounded
+    /// read dispatch.
+    pub async fn load_bank_payment_ledger_result(
+        &mut self,
+        ledger: BankLedger,
+    ) -> Result<BankPaymentLedgerResultDto, String> {
+        crate::telemetry::observe("bank_payment", "load_bank_payment_ledger_result", async {
+            self.allow_live_operation()?;
+            let user = self.ensure_identity_user_for_live_read().await?;
+            self.ensure_bank_payment_reader_session(&user, ledger)
+                .await?;
+
+            let mut result = {
+                let Some(adapter) = self.bank_payment_adapter.as_ref() else {
+                    return self.fail("银行到款服务会话未建立");
+                };
+                adapter.read_ledger_with_proof().await
+            };
+            if matches!(&result, Err(error) if error.is_session_expired()) {
+                self.invalidate_bank_payment_session();
+                if let Err(error) = self
+                    .refresh_nonacademic_service_after_expiry(ServiceId::Info)
+                    .await
+                {
+                    return Err(self.record_error(format!("银行到款自动续接失败: {error}")));
+                }
+                let user = self.ensure_identity_user_for_live_read().await?;
+                self.prepare_bank_payment_adapter(&user, ledger).await?;
+                let Some(adapter) = self.bank_payment_adapter.as_ref() else {
+                    return self.fail("银行到款自动续接后会话未建立");
+                };
+                result = adapter.read_ledger_with_proof().await;
+                if matches!(&result, Err(error) if error.is_session_expired()) {
+                    self.invalidate_bank_payment_session();
+                    return self.fail("银行到款自动续接后仍已过期，请重新建立");
+                }
+            }
+            match result {
+                Ok(read) => {
+                    self.bank_payment_proof = Some(read.proof);
+                    if !self.bank_payment_service_is_proven() {
+                        return self.fail("银行到款服务会话证明未确认，请重新建立服务会话");
+                    }
+                    self.last_error = None;
+                    self.last_bank_payment_failure_code = None;
+                    self.persist_resume_state_after_live_read(&user, "bank_payment");
+                    let receipt_count = read.value.receipt_count();
+                    let months = read
+                        .value
+                        .months
+                        .into_iter()
+                        .map(|month| BankReceiptMonthDto {
+                            month: month.month,
+                            receipts: month
+                                .receipts
+                                .into_iter()
+                                .map(|receipt| BankReceiptDto {
+                                    department: receipt.department,
+                                    project: receipt.project,
+                                    usage: receipt.usage,
+                                    description: receipt.description,
+                                    bank: receipt.bank,
+                                    time: receipt.time,
+                                    total_cents: receipt.total_cents,
+                                    deduction_cents: receipt.deduction_cents,
+                                    actual_cents: receipt.actual_cents,
+                                    deposit_cents: receipt.deposit_cents,
+                                    cash_cents: receipt.cash_cents,
+                                })
+                                .collect(),
+                        })
+                        .collect();
+                    Ok(BankPaymentLedgerResultDto {
+                        months,
+                        receipt_count: u32::try_from(receipt_count).unwrap_or(u32::MAX),
+                        generated_at: Utc::now().to_rfc3339(),
+                        source: "live".to_owned(),
+                        status: "ready".to_owned(),
+                        error: None,
+                    })
+                }
+                Err(error) => {
+                    let reason = error.diagnostic_code();
+                    self.last_bank_payment_failure_code = Some(reason);
+                    Err(self.record_business_failure("bank_payment", "bank_payment_ledger", reason))
+                }
+            }
+        })
+        .await
+    }
+
+    /// Prepares the graduate-income adapter inside the already-confirmed INFO
+    /// session.  It has its own campus host and mapping, so it is prepared
+    /// separately from the payroll adapter.
+    async fn ensure_graduate_income_reader_session(
+        &mut self,
+        user: &UserIdentity,
+    ) -> Result<(), String> {
+        if self.graduate_income_service_is_proven() {
+            return Ok(());
+        }
+        let context_exists = self.graduate_income_adapter.is_some()
+            || self.graduate_income_proof.is_some()
+            || self.info_session_context_exists();
+        if context_exists && !self.service_session_is_proven(ServiceId::Info) {
+            self.refresh_nonacademic_service_after_expiry(ServiceId::Info)
+                .await
+                .map_err(|error| self.record_error(format!("INFO 自动续接失败: {error}")))?;
+        }
+        self.prepare_graduate_income_adapter(user).await
+    }
+
+    async fn prepare_graduate_income_adapter(&mut self, user: &UserIdentity) -> Result<(), String> {
+        self.invalidate_graduate_income_session();
+        self.ensure_info_session(user).await?;
+
+        let transport = self.identity.transport().clone();
+        let handoff = match self.info_adapter.as_ref() {
+            Some(info) => {
+                info.additional_roaming(crate::bank_read::GRADUATE_INCOME_WEBVPN_TARGET)
+                    .await
+            }
+            None => return Err(self.record_error("INFO 服务会话尚未建立")),
+        };
+        let roaming_url = handoff.map_err(|error| {
+            self.record_business_failure(
+                "graduate_income",
+                "graduate_income_handoff",
+                info_failure_code(&error),
+            )
+        })?;
+        let mut base_url = Url::parse(roaming_url.as_str())
+            .map_err(|_| self.record_error("研究生收入 roaming URL is invalid"))?;
+        let expected =
+            Url::parse(GRADUATE_INCOME_WEBVPN_BASE_URL).expect("static graduate mapping");
+        if !base_url.path().starts_with(expected.path()) {
+            return Err(self.record_business_failure(
+                "graduate_income",
+                "graduate_income_handoff",
+                "graduate_income_mapping_rejected",
+            ));
+        }
+        base_url.set_path(expected.path());
+        base_url.set_query(None);
+        base_url.set_fragment(None);
+        let adapter = GraduateIncomeAdapter::try_with_transport(base_url, transport)
+            .map_err(|error| self.record_error(format!("研究生收入 adapter: {error}")))?;
+        self.graduate_income_adapter = Some(adapter);
+        Ok(())
+    }
+
+    /// Reads one page of graduate-income records for a `YYYYMMDD` date range.
+    ///
+    /// The page is read live every time and never served from a cached copy.
+    /// The service's own record identifier stays inside Rust: it is an internal
+    /// row key, not something any caller addresses.
+    pub async fn load_graduate_income_result(
+        &mut self,
+        begin: &str,
+        end: &str,
+    ) -> Result<GraduateIncomeResultDto, String> {
+        crate::telemetry::observe("graduate_income", "load_graduate_income_result", async {
+            self.allow_live_operation()?;
+            // The date range is a caller argument, so it is validated before
+            // any session work: an invalid argument must not cost a handoff,
+            // and its free text must never reach the service.
+            if let Err(error) = GraduateIncomeProfile::standard().list_request(begin, end) {
+                self.last_graduate_income_failure_code = Some(error.diagnostic_code());
+                return Err(self.record_business_failure(
+                    "graduate_income",
+                    "graduate_income_list",
+                    error.diagnostic_code(),
+                ));
+            }
+            let user = self.ensure_identity_user_for_live_read().await?;
+            self.ensure_graduate_income_reader_session(&user).await?;
+
+            let mut result = {
+                let Some(adapter) = self.graduate_income_adapter.as_ref() else {
+                    return self.fail("研究生收入服务会话未建立");
+                };
+                adapter.read_list_with_proof(begin, end).await
+            };
+            if matches!(&result, Err(error) if error.is_session_expired()) {
+                self.invalidate_graduate_income_session();
+                if let Err(error) = self
+                    .refresh_nonacademic_service_after_expiry(ServiceId::Info)
+                    .await
+                {
+                    return Err(self.record_error(format!("研究生收入自动续接失败: {error}")));
+                }
+                let user = self.ensure_identity_user_for_live_read().await?;
+                self.prepare_graduate_income_adapter(&user).await?;
+                let Some(adapter) = self.graduate_income_adapter.as_ref() else {
+                    return self.fail("研究生收入自动续接后会话未建立");
+                };
+                result = adapter.read_list_with_proof(begin, end).await;
+                if matches!(&result, Err(error) if error.is_session_expired()) {
+                    self.invalidate_graduate_income_session();
+                    return self.fail("研究生收入自动续接后仍已过期，请重新建立");
+                }
+            }
+            match result {
+                Ok(read) => {
+                    self.graduate_income_proof = Some(read.proof);
+                    if !self.graduate_income_service_is_proven() {
+                        return self.fail("研究生收入服务会话证明未确认，请重新建立服务会话");
+                    }
+                    self.last_error = None;
+                    self.last_graduate_income_failure_code = None;
+                    self.persist_resume_state_after_live_read(&user, "graduate_income");
+                    let records = read
+                        .value
+                        .records
+                        .into_iter()
+                        .map(|record| GraduateIncomeRecordDto {
+                            id: record.id,
+                            year: record.year,
+                            month: record.month,
+                            date: record.date,
+                            year_month: record.year_month,
+                            name: record.name,
+                            department: record.department,
+                            before_tax_cents: record.before_tax_cents,
+                            after_tax_cents: record.after_tax_cents,
+                            tax_cents: record.tax_cents,
+                        })
+                        .collect();
+                    Ok(GraduateIncomeResultDto {
+                        records,
+                        total: read.value.total,
+                        generated_at: Utc::now().to_rfc3339(),
+                        source: "live".to_owned(),
+                        status: "ready".to_owned(),
+                        error: None,
+                    })
+                }
+                Err(error) => {
+                    let reason = error.diagnostic_code();
+                    self.last_graduate_income_failure_code = Some(reason);
+                    Err(self.record_business_failure(
+                        "graduate_income",
+                        "graduate_income_list",
+                        reason,
+                    ))
+                }
+            }
+        })
+        .await
+    }
+
     async fn ensure_campus_card_reader_session(&mut self) -> Result<(), String> {
         if self.service_session_is_proven(ServiceId::CampusCard) {
             return Ok(());
@@ -16300,6 +16725,8 @@ impl CampusRuntime {
                 self.invalidate_program_session();
                 self.invalidate_assessment_session();
                 self.invalidate_invoice_session();
+                self.invalidate_bank_payment_session();
+                self.invalidate_graduate_income_session();
             }
             ServiceId::Library => {
                 self.library_adapter = None;
@@ -16373,6 +16800,18 @@ impl CampusRuntime {
         self.invoice_proof = None;
     }
 
+    fn invalidate_bank_payment_session(&mut self) {
+        // Dropping the adapter drops the year set the service offered with it,
+        // so a later read cannot name a year a superseded session learned.
+        self.bank_payment_adapter = None;
+        self.bank_payment_proof = None;
+    }
+
+    fn invalidate_graduate_income_session(&mut self) {
+        self.graduate_income_adapter = None;
+        self.graduate_income_proof = None;
+    }
+
     fn classroom_service_is_proven(&self) -> bool {
         self.service_session_is_proven(ServiceId::Info)
             && self.classroom_adapter.is_some()
@@ -16421,6 +16860,24 @@ impl CampusRuntime {
                 .invoice_adapter
                 .as_ref()
                 .zip(self.invoice_proof.as_ref())
+                .is_some_and(|(adapter, proof)| adapter.business_proof_matches(proof))
+    }
+
+    fn bank_payment_service_is_proven(&self) -> bool {
+        self.service_session_is_proven(ServiceId::Info)
+            && self
+                .bank_payment_adapter
+                .as_ref()
+                .zip(self.bank_payment_proof.as_ref())
+                .is_some_and(|(adapter, proof)| adapter.business_proof_matches(proof))
+    }
+
+    fn graduate_income_service_is_proven(&self) -> bool {
+        self.service_session_is_proven(ServiceId::Info)
+            && self
+                .graduate_income_adapter
+                .as_ref()
+                .zip(self.graduate_income_proof.as_ref())
                 .is_some_and(|(adapter, proof)| adapter.business_proof_matches(proof))
     }
 
@@ -16760,6 +17217,16 @@ impl CampusRuntime {
     /// deployment without inspecting any message text.
     pub(crate) fn last_invoice_failure_code(&self) -> Option<&'static str> {
         self.last_invoice_failure_code
+    }
+
+    /// The payroll service's own failure code from the last read.
+    pub(crate) fn last_bank_payment_failure_code(&self) -> Option<&'static str> {
+        self.last_bank_payment_failure_code
+    }
+
+    /// The graduate-income service's own failure code from the last read.
+    pub(crate) fn last_graduate_income_failure_code(&self) -> Option<&'static str> {
+        self.last_graduate_income_failure_code
     }
 
     fn record_error(&mut self, error: impl std::fmt::Display) -> String {

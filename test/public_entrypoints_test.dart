@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tsinghua_kit/assessment.dart' as assessment;
 import 'package:tsinghua_kit/auth.dart' as auth;
+import 'package:tsinghua_kit/bank.dart' as bank;
 import 'package:tsinghua_kit/campus_card.dart' as campus_card;
 import 'package:tsinghua_kit/classrooms.dart' as classrooms;
 import 'package:tsinghua_kit/core.dart' as core;
@@ -96,5 +97,13 @@ void main() {
     expect(_publicType<invoice.InvoiceDocument>(), isNull);
     expect(invoice.InvoiceClient.maxPage, 1000);
     expect(invoice.InvoiceClient.pageSize, 20);
+    expect(_publicType<bank.BankClient>(), isNull);
+    expect(_publicType<bank.BankPaymentLedger>(), isNull);
+    expect(_publicType<bank.BankReceiptMonth>(), isNull);
+    expect(_publicType<bank.BankReceipt>(), isNull);
+    expect(bank.BankLedger.main.name, 'main');
+    expect(bank.BankLedger.foundation.name, 'foundation');
+    expect(_publicType<bank.GraduateIncomePage>(), isNull);
+    expect(_publicType<bank.GraduateIncomeRecord>(), isNull);
   });
 }

@@ -111,6 +111,22 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   AuthStatusDto dco_decode_auth_status_dto(dynamic raw);
 
   @protected
+  BankLedgerDto dco_decode_bank_ledger_dto(dynamic raw);
+
+  @protected
+  BankPaymentLedgerDataDto dco_decode_bank_payment_ledger_data_dto(dynamic raw);
+
+  @protected
+  BankPaymentLedgerResultDto dco_decode_bank_payment_ledger_result_dto(
+      dynamic raw);
+
+  @protected
+  BankReceiptDto dco_decode_bank_receipt_dto(dynamic raw);
+
+  @protected
+  BankReceiptMonthDto dco_decode_bank_receipt_month_dto(dynamic raw);
+
+  @protected
   bool dco_decode_bool(dynamic raw);
 
   @protected
@@ -130,6 +146,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   GradeReportKindDto dco_decode_box_autoadd_grade_report_kind_dto(dynamic raw);
+
+  @protected
+  PlatformInt64 dco_decode_box_autoadd_i_64(dynamic raw);
 
   @protected
   IdentityLoginResultDto dco_decode_box_autoadd_identity_login_result_dto(
@@ -252,6 +271,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   GradeReportResultDto dco_decode_grade_report_result_dto(dynamic raw);
+
+  @protected
+  GraduateIncomeDataDto dco_decode_graduate_income_data_dto(dynamic raw);
+
+  @protected
+  GraduateIncomeRecordDto dco_decode_graduate_income_record_dto(dynamic raw);
+
+  @protected
+  GraduateIncomeResultDto dco_decode_graduate_income_result_dto(dynamic raw);
 
   @protected
   int dco_decode_i_32(dynamic raw);
@@ -439,6 +467,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
       dynamic raw);
 
   @protected
+  List<BankReceiptDto> dco_decode_list_bank_receipt_dto(dynamic raw);
+
+  @protected
+  List<BankReceiptMonthDto> dco_decode_list_bank_receipt_month_dto(dynamic raw);
+
+  @protected
   List<CampusCardTransactionDto> dco_decode_list_campus_card_transaction_dto(
       dynamic raw);
 
@@ -461,6 +495,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<ExamDto> dco_decode_list_exam_dto(dynamic raw);
+
+  @protected
+  List<GraduateIncomeRecordDto> dco_decode_list_graduate_income_record_dto(
+      dynamic raw);
 
   @protected
   List<InvoiceRecordDto> dco_decode_list_invoice_record_dto(dynamic raw);
@@ -651,6 +689,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   GradeReportKindDto? dco_decode_opt_box_autoadd_grade_report_kind_dto(
       dynamic raw);
+
+  @protected
+  PlatformInt64? dco_decode_opt_box_autoadd_i_64(dynamic raw);
 
   @protected
   IdentityLoginResultDto? dco_decode_opt_box_autoadd_identity_login_result_dto(
@@ -947,6 +988,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   AuthStatusDto sse_decode_auth_status_dto(SseDeserializer deserializer);
 
   @protected
+  BankLedgerDto sse_decode_bank_ledger_dto(SseDeserializer deserializer);
+
+  @protected
+  BankPaymentLedgerDataDto sse_decode_bank_payment_ledger_data_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  BankPaymentLedgerResultDto sse_decode_bank_payment_ledger_result_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  BankReceiptDto sse_decode_bank_receipt_dto(SseDeserializer deserializer);
+
+  @protected
+  BankReceiptMonthDto sse_decode_bank_receipt_month_dto(
+      SseDeserializer deserializer);
+
+  @protected
   bool sse_decode_bool(SseDeserializer deserializer);
 
   @protected
@@ -967,6 +1026,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   GradeReportKindDto sse_decode_box_autoadd_grade_report_kind_dto(
       SseDeserializer deserializer);
+
+  @protected
+  PlatformInt64 sse_decode_box_autoadd_i_64(SseDeserializer deserializer);
 
   @protected
   IdentityLoginResultDto sse_decode_box_autoadd_identity_login_result_dto(
@@ -1105,6 +1167,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   GradeReportResultDto sse_decode_grade_report_result_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  GraduateIncomeDataDto sse_decode_graduate_income_data_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  GraduateIncomeRecordDto sse_decode_graduate_income_record_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  GraduateIncomeResultDto sse_decode_graduate_income_result_dto(
       SseDeserializer deserializer);
 
   @protected
@@ -1323,6 +1397,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
       SseDeserializer deserializer);
 
   @protected
+  List<BankReceiptDto> sse_decode_list_bank_receipt_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  List<BankReceiptMonthDto> sse_decode_list_bank_receipt_month_dto(
+      SseDeserializer deserializer);
+
+  @protected
   List<CampusCardTransactionDto> sse_decode_list_campus_card_transaction_dto(
       SseDeserializer deserializer);
 
@@ -1349,6 +1431,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<ExamDto> sse_decode_list_exam_dto(SseDeserializer deserializer);
+
+  @protected
+  List<GraduateIncomeRecordDto> sse_decode_list_graduate_income_record_dto(
+      SseDeserializer deserializer);
 
   @protected
   List<InvoiceRecordDto> sse_decode_list_invoice_record_dto(
@@ -1574,6 +1660,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   GradeReportKindDto? sse_decode_opt_box_autoadd_grade_report_kind_dto(
       SseDeserializer deserializer);
+
+  @protected
+  PlatformInt64? sse_decode_opt_box_autoadd_i_64(SseDeserializer deserializer);
 
   @protected
   IdentityLoginResultDto? sse_decode_opt_box_autoadd_identity_login_result_dto(
@@ -1905,6 +1994,25 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_auth_status_dto(AuthStatusDto self, SseSerializer serializer);
 
   @protected
+  void sse_encode_bank_ledger_dto(BankLedgerDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_bank_payment_ledger_data_dto(
+      BankPaymentLedgerDataDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_bank_payment_ledger_result_dto(
+      BankPaymentLedgerResultDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_bank_receipt_dto(
+      BankReceiptDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_bank_receipt_month_dto(
+      BankReceiptMonthDto self, SseSerializer serializer);
+
+  @protected
   void sse_encode_bool(bool self, SseSerializer serializer);
 
   @protected
@@ -1925,6 +2033,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_grade_report_kind_dto(
       GradeReportKindDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_box_autoadd_i_64(
+      PlatformInt64 self, SseSerializer serializer);
 
   @protected
   void sse_encode_box_autoadd_identity_login_result_dto(
@@ -2068,6 +2180,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_grade_report_result_dto(
       GradeReportResultDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_graduate_income_data_dto(
+      GraduateIncomeDataDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_graduate_income_record_dto(
+      GraduateIncomeRecordDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_graduate_income_result_dto(
+      GraduateIncomeResultDto self, SseSerializer serializer);
 
   @protected
   void sse_encode_i_32(int self, SseSerializer serializer);
@@ -2290,6 +2414,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
       List<AssessmentListItemDto> self, SseSerializer serializer);
 
   @protected
+  void sse_encode_list_bank_receipt_dto(
+      List<BankReceiptDto> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_bank_receipt_month_dto(
+      List<BankReceiptMonthDto> self, SseSerializer serializer);
+
+  @protected
   void sse_encode_list_campus_card_transaction_dto(
       List<CampusCardTransactionDto> self, SseSerializer serializer);
 
@@ -2315,6 +2447,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_list_exam_dto(List<ExamDto> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_graduate_income_record_dto(
+      List<GraduateIncomeRecordDto> self, SseSerializer serializer);
 
   @protected
   void sse_encode_list_invoice_record_dto(
@@ -2542,6 +2678,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_box_autoadd_grade_report_kind_dto(
       GradeReportKindDto? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_box_autoadd_i_64(
+      PlatformInt64? self, SseSerializer serializer);
 
   @protected
   void sse_encode_opt_box_autoadd_identity_login_result_dto(

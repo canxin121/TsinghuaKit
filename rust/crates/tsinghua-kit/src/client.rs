@@ -5,6 +5,7 @@ use std::{fmt, path::PathBuf};
 use tsinghua_kit_engine::{
     assessment_read::AssessmentList as EngineAssessmentList,
     auth::{AccountAuthStatus, AuthStatus, SecondFactorMethod, SelfServiceLoginPhase},
+    bank_read::{BankLedger, BankPaymentLedger, GraduateIncomePage},
     calendar_api::{LearnTermCalendar, SchoolCalendarImage, SchoolCalendarQuery},
     campus_card_api::{
         CampusCardAccount, CampusCardInteraction, CampusCardPasswordRequest,
@@ -14,10 +15,10 @@ use tsinghua_kit_engine::{
         BuildingRef, ClassroomAvailability, ClassroomBuildings, ClassroomWeekSelection,
     },
     client::{
-        AssessmentClient as EngineAssessmentClient, CalendarClient as EngineCalendarClient,
-        CampusCardClient as EngineCampusCardClient, ClassroomsClient as EngineClassroomsClient,
-        Client as EngineClient, ClientBuilder as EngineClientBuilder,
-        ClientCachePolicy as EngineCachePolicy,
+        AssessmentClient as EngineAssessmentClient, BankClient as EngineBankClient,
+        CalendarClient as EngineCalendarClient, CampusCardClient as EngineCampusCardClient,
+        ClassroomsClient as EngineClassroomsClient, Client as EngineClient,
+        ClientBuilder as EngineClientBuilder, ClientCachePolicy as EngineCachePolicy,
         CredentialStoragePolicy as EngineCredentialStoragePolicy,
         ElectricityClient as EngineElectricityClient, IdentityLoginOutcome, IdentityLoginRequest,
         IdentitySessionStoragePolicy as EngineIdentitySessionStoragePolicy,
@@ -304,6 +305,13 @@ impl Client {
     pub fn invoice(&mut self) -> InvoiceClient<'_> {
         InvoiceClient {
             inner: self.inner.invoice(),
+        }
+    }
+
+    /// Borrows the read-only bank payroll and graduate-income statements.
+    pub fn bank(&mut self) -> BankClient<'_> {
+        BankClient {
+            inner: self.inner.bank(),
         }
     }
 
@@ -761,6 +769,42 @@ impl InvoiceClient<'_> {
         reference: &InvoiceRef,
     ) -> Result<ReadResult<InvoiceDocument>, Error> {
         self.inner.document(reference).await
+    }
+}
+
+/// Read-only bank payroll and graduate-income statements.
+///
+/// Both are money statements, so every amount is exact integer cents.  Each
+/// statement is read live on every call and never served from a cached copy: a
+/// retained statement would present a superseded disbursement as the current
+/// one.
+pub struct BankClient<'client> {
+    inner: EngineBankClient<'client>,
+}
+
+impl BankClient<'_> {
+    /// Reads one payroll ledger: the years the service offers this account,
+    /// then every receipt those years hold.
+    ///
+    /// The two ledgers are two path families on one campus host, so each is
+    /// read separately; one ledger never reports the other's receipts.
+    pub async fn ledger(
+        &mut self,
+        ledger: BankLedger,
+    ) -> Result<ReadResult<BankPaymentLedger>, Error> {
+        self.inner.ledger(ledger).await
+    }
+
+    /// Reads one page of graduate-income records for a `YYYYMMDD` date range.
+    ///
+    /// Both bounds must be eight digits; a range that is not is refused before
+    /// any request, so caller text never becomes a service-side filter.
+    pub async fn graduate_income(
+        &mut self,
+        begin: &str,
+        end: &str,
+    ) -> Result<ReadResult<GraduateIncomePage>, Error> {
+        self.inner.graduate_income(begin, end).await
     }
 }
 

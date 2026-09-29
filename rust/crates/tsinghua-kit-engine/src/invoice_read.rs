@@ -1224,63 +1224,7 @@ fn amount_cents(
         serde_json::Value::Null => return Ok(0),
         _ => return Err(InvoiceParseError::InvalidAmount { row }),
     };
-    exact_cents(&token).ok_or(InvoiceParseError::InvalidAmount { row })
-}
-
-/// Converts an exact decimal token into integer cents.
-///
-/// Returns `None` for anything that is not a plain decimal with at most two
-/// significant fraction digits, so a value this module cannot represent exactly
-/// is an error instead of a rounded number.
-pub(crate) fn exact_cents(token: &str) -> Option<i64> {
-    if token.is_empty() || token.len() > 32 {
-        return None;
-    }
-    let (negative, unsigned) = match token.strip_prefix('-') {
-        Some(rest) => (true, rest),
-        None => (false, token.strip_prefix('+').unwrap_or(token)),
-    };
-    let (mantissa, exponent) = match unsigned.find(['e', 'E']) {
-        Some(index) => (
-            &unsigned[..index],
-            unsigned[index + 1..].parse::<i32>().ok()?,
-        ),
-        None => (unsigned, 0),
-    };
-    if !(-18..=18).contains(&exponent) {
-        return None;
-    }
-    let (whole, fraction) = mantissa.split_once('.').unwrap_or((mantissa, ""));
-    if whole.is_empty()
-        || !whole
-            .bytes()
-            .chain(fraction.bytes())
-            .all(|byte| byte.is_ascii_digit())
-    {
-        return None;
-    }
-    let digits: String = format!("{whole}{fraction}");
-    let digits = digits.trim_start_matches('0');
-    if digits.is_empty() {
-        return Some(0);
-    }
-    // cents = digits * 10^(exponent - fraction.len() + 2)
-    let shift = exponent - i32::try_from(fraction.len()).ok()? + 2;
-    if shift.unsigned_abs() > 18 {
-        return None;
-    }
-    let magnitude = digits.parse::<i128>().ok()?;
-    let magnitude = if shift >= 0 {
-        magnitude.checked_mul(10i128.checked_pow(u32::try_from(shift).ok()?)?)?
-    } else {
-        let divisor = 10i128.checked_pow(shift.unsigned_abs())?;
-        if magnitude % divisor != 0 {
-            return None;
-        }
-        magnitude / divisor
-    };
-    let magnitude = i64::try_from(magnitude).ok()?;
-    Some(if negative { -magnitude } else { magnitude })
+    crate::money::exact_cents(&token).ok_or(InvoiceParseError::InvalidAmount { row })
 }
 
 /// The list endpoint is a legacy `*.do` route: it answers JSON, but some

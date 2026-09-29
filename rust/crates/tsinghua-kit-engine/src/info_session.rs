@@ -793,6 +793,31 @@ impl InfoSessionAdapter {
                 "https",
                 crate::invoice_read::INVOICE_MAPPING_TOKEN,
             ),
+            // The bank payroll and the education-foundation payroll are two
+            // path families on **one** host and one mapping: the reference
+            // client's two search URLs differ only in `/yhdfcx` versus
+            // `/yhdfcx_jjh`.  Both selectors are therefore registered against
+            // the same pinning, and the read plan is what separates them.
+            //
+            // The hostname below is inferred, not evidenced: the reference
+            // derives it from the roam response through its own host table and
+            // no response body has been observed here.  The arm grants nothing
+            // on its own — the shared checks still pin the scheme, port,
+            // userinfo and percent-encoding, and an input that arrives already
+            // mapped must sit inside this module's own mapping constant.
+            crate::bank_read::BANK_WEBVPN_TARGET
+            | crate::bank_read::FOUNDATION_BANK_WEBVPN_TARGET => (
+                "yhdf.tsinghua.edu.cn",
+                "http",
+                crate::bank_read::BANK_MAPPING_TOKEN,
+            ),
+            // The graduate-income host is likewise inferred from the
+            // reference's host table rather than from an observed response.
+            crate::bank_read::GRADUATE_INCOME_WEBVPN_TARGET => (
+                "zzjl.graduate.tsinghua.edu.cn",
+                "http",
+                crate::bank_read::GRADUATE_INCOME_MAPPING_TOKEN,
+            ),
             _ => {
                 if same_origin(&self.config.webvpn_base_url, &url) {
                     return Ok(target.clone());

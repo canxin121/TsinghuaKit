@@ -176,18 +176,6 @@ fn an_absent_amount_reads_as_zero_rather_than_a_failure() {
     assert_eq!(parsed.rows[0].invoice_amount_cents, 0);
 }
 
-#[test]
-fn exact_cents_reads_integral_decimals_and_rejects_lossy_ones() {
-    assert_eq!(exact_cents("0"), Some(0));
-    assert_eq!(exact_cents("1"), Some(100));
-    assert_eq!(exact_cents("1.5"), Some(150));
-    assert_eq!(exact_cents("1.50"), Some(150));
-    assert_eq!(exact_cents("-2.25"), Some(-225));
-    assert_eq!(exact_cents("1.005"), None);
-    assert_eq!(exact_cents("abc"), None);
-    assert_eq!(exact_cents(""), None);
-}
-
 #[tokio::test]
 async fn the_adapter_reads_the_list_through_the_cookie_aware_transport() {
     let server = FixtureServer::new(vec![Reply::json(&list_body())]);

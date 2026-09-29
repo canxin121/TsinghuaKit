@@ -14,6 +14,7 @@ use tsinghua_kit_sdk::{
         IdentityLoginRequest, LoginStage, SecondFactorMethod, SelfServiceLoginOutcome,
         SelfServiceLoginPhase, SelfServiceLoginRequest,
     },
+    bank::{BankLedger, BankPaymentLedger, GraduateIncomePage},
     calendar::{
         AcademicTerm, LearnTermCalendar, SchoolCalendarImage, SchoolCalendarLanguage,
         SchoolCalendarQuery, SchoolCalendarSemester,
@@ -1236,6 +1237,74 @@ fn invoice_document_result(value: ReadResult<InvoiceDocument>) -> InvoiceDocumen
     InvoiceDocumentResultDto {
         data: InvoiceDocumentDataDto {
             bytes: document.bytes,
+        },
+        metadata: ReadMetadataDto::from(&metadata),
+    }
+}
+
+/// Flattens one payroll ledger into bridge-safe month sections.
+///
+/// Amounts are already exact integer cents by the time they reach here, so the
+/// bridge carries them without any conversion that could round.
+fn bank_payment_ledger_result(value: ReadResult<BankPaymentLedger>) -> BankPaymentLedgerResultDto {
+    let (ledger, metadata) = value.into_parts();
+    let receipt_count = u32::try_from(ledger.receipt_count()).unwrap_or(u32::MAX);
+    let months = ledger
+        .months
+        .into_iter()
+        .map(|month| BankReceiptMonthDto {
+            month: month.month,
+            receipts: month
+                .receipts
+                .into_iter()
+                .map(|receipt| BankReceiptDto {
+                    department: receipt.department,
+                    project: receipt.project,
+                    usage: receipt.usage,
+                    description: receipt.description,
+                    bank: receipt.bank,
+                    time: receipt.time,
+                    total_cents: receipt.total_cents,
+                    deduction_cents: receipt.deduction_cents,
+                    actual_cents: receipt.actual_cents,
+                    deposit_cents: receipt.deposit_cents,
+                    cash_cents: receipt.cash_cents,
+                })
+                .collect(),
+        })
+        .collect();
+    BankPaymentLedgerResultDto {
+        data: BankPaymentLedgerDataDto {
+            months,
+            receipt_count,
+        },
+        metadata: ReadMetadataDto::from(&metadata),
+    }
+}
+
+/// Flattens one graduate-income page into bridge-safe rows.
+fn graduate_income_result(value: ReadResult<GraduateIncomePage>) -> GraduateIncomeResultDto {
+    let (page, metadata) = value.into_parts();
+    let records = page
+        .records
+        .into_iter()
+        .map(|record| GraduateIncomeRecordDto {
+            id: record.id,
+            year: record.year,
+            month: record.month,
+            date: record.date,
+            year_month: record.year_month,
+            name: record.name,
+            department: record.department,
+            before_tax_cents: record.before_tax_cents,
+            after_tax_cents: record.after_tax_cents,
+            tax_cents: record.tax_cents,
+        })
+        .collect();
+    GraduateIncomeResultDto {
+        data: GraduateIncomeDataDto {
+            records,
+            total: page.total,
         },
         metadata: ReadMetadataDto::from(&metadata),
     }
@@ -2510,6 +2579,112 @@ impl fmt::Debug for InvoiceDocumentDataDto {
 pub struct InvoiceDocumentResultDto {
     pub data: InvoiceDocumentDataDto,
     pub metadata: ReadMetadataDto,
+}
+
+/// One payroll receipt row as it crosses the bridge.
+///
+/// Amounts are exact integer cents.  Nothing here is account-identifying: the
+/// row holds only the columns the service prints on the statement.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BankReceiptDto {
+    pub department: String,
+    pub project: String,
+    pub usage: String,
+    pub description: String,
+    pub bank: String,
+    pub time: String,
+    pub total_cents: Option<i64>,
+    pub deduction_cents: Option<i64>,
+    pub actual_cents: Option<i64>,
+    pub deposit_cents: Option<i64>,
+    pub cash_cents: Option<i64>,
+}
+
+/// One month section of payroll receipts.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BankReceiptMonthDto {
+    pub month: String,
+    pub receipts: Vec<BankReceiptDto>,
+}
+
+/// One payroll ledger as it crosses the bridge.
+#[derive(Clone, PartialEq, Eq)]
+pub struct BankPaymentLedgerDataDto {
+    pub months: Vec<BankReceiptMonthDto>,
+    /// The number of receipt rows across every month section.
+    pub receipt_count: u32,
+}
+
+impl fmt::Debug for BankPaymentLedgerDataDto {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("BankPaymentLedgerDataDto")
+            .field("month_count", &self.months.len())
+            .field("receipt_count", &self.receipt_count)
+            .finish()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BankPaymentLedgerResultDto {
+    pub data: BankPaymentLedgerDataDto,
+    pub metadata: ReadMetadataDto,
+}
+
+/// One graduate-income record as it crosses the bridge.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GraduateIncomeRecordDto {
+    pub id: String,
+    pub year: String,
+    pub month: String,
+    pub date: String,
+    pub year_month: String,
+    pub name: String,
+    pub department: String,
+    pub before_tax_cents: Option<i64>,
+    pub after_tax_cents: Option<i64>,
+    pub tax_cents: Option<i64>,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct GraduateIncomeDataDto {
+    pub records: Vec<GraduateIncomeRecordDto>,
+    /// The service's total record count, when it reported one.
+    pub total: Option<u64>,
+}
+
+impl fmt::Debug for GraduateIncomeDataDto {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("GraduateIncomeDataDto")
+            .field("record_count", &self.records.len())
+            .field("total", &self.total)
+            .finish()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GraduateIncomeResultDto {
+    pub data: GraduateIncomeDataDto,
+    pub metadata: ReadMetadataDto,
+}
+
+/// Which payroll ledger a read addresses.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BankLedgerDto {
+    /// `银行代发`
+    Main,
+    /// `银行代发（基金会）`
+    Foundation,
+}
+
+impl From<BankLedgerDto> for BankLedger {
+    fn from(value: BankLedgerDto) -> Self {
+        match value {
+            BankLedgerDto::Main => Self::Main,
+            BankLedgerDto::Foundation => Self::Foundation,
+        }
+    }
 }
 
 /// TUNet-only registration evidence for the current local IPv4.
@@ -4787,6 +4962,33 @@ impl ClientHandle {
         };
         let result = self.inner.invoice().document(&reference).await?;
         Ok(invoice_document_result(result))
+    }
+
+    /// Reads one live payroll ledger: the years the service offers this
+    /// account, then every receipt those years hold.
+    ///
+    /// The two ledgers are two path families on one campus host, so each is
+    /// read separately.  Amounts cross the bridge as exact integer cents and
+    /// never through a floating-point type.
+    pub async fn bank_payment_ledger_result(
+        &mut self,
+        ledger: BankLedgerDto,
+    ) -> Result<BankPaymentLedgerResultDto, SdkErrorDto> {
+        let result = self.inner.bank().ledger(ledger.into()).await?;
+        Ok(bank_payment_ledger_result(result))
+    }
+
+    /// Reads one live page of graduate-income records for a `YYYYMMDD` range.
+    ///
+    /// Both bounds must be eight digits.  A range that is not is refused before
+    /// any request, so caller text never becomes a service-side filter.
+    pub async fn graduate_income_result(
+        &mut self,
+        begin: String,
+        end: String,
+    ) -> Result<GraduateIncomeResultDto, SdkErrorDto> {
+        let result = self.inner.bank().graduate_income(&begin, &end).await?;
+        Ok(graduate_income_result(result))
     }
 
     /// Reads only the TUNet portal's registration state for the current local
