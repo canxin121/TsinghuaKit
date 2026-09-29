@@ -988,6 +988,14 @@ impl Client {
         }
     }
 
+    /// Borrows the read-only CAB study-room catalogue and the account's own
+    /// reservations.
+    pub fn library_room(&mut self) -> LibraryRoomClient<'_> {
+        LibraryRoomClient {
+            runtime: &mut self.runtime,
+        }
+    }
+
     /// Borrows school-wide and academic-term calendar reads.
     pub fn calendar(&mut self) -> CalendarClient<'_> {
         CalendarClient {
@@ -1482,6 +1490,152 @@ impl ReservesClient<'_> {
         )?;
         Ok(ReadResult::new(dto.book, metadata))
     }
+}
+
+/// Read-only CAB study-room catalogue and the account's own reservations.
+///
+/// Both reads go live on every call and are never served from a cached copy: a
+/// room can be withdrawn or reopened between requests, so a retained catalogue
+/// would present an unusable room as reservable.  The reference reaches this
+/// application through a campus identity login whose application id it takes
+/// from a response; this client performs no such login, so an expired session is
+/// reported as an authentication failure rather than answered with an empty
+/// catalogue.
+pub struct LibraryRoomClient<'client> {
+    runtime: &'client mut CampusRuntime,
+}
+
+impl LibraryRoomClient<'_> {
+    /// The widest reservation window this client will read, in days.
+    pub const MAX_WINDOW_DAYS: i64 = crate::library_room_read::LIBRARY_ROOM_MAX_WINDOW_DAYS;
+
+    /// Reads the reservable study-room catalogue.
+    ///
+    /// A response that did not carry the service's own envelope is reported as
+    /// a failure, never as an empty catalogue.
+    pub async fn catalog(
+        &mut self,
+    ) -> Result<ReadResult<crate::library_room_read::LibraryRoomCatalog>, Error> {
+        let dto = self
+            .runtime
+            .load_library_room_catalog_result()
+            .await
+            .map_err(|_| library_room_failure(self.runtime))?;
+        let metadata = cached_read_metadata(
+            Service::LibraryRoom,
+            &dto.generated_at,
+            &dto.source,
+            &dto.status,
+            dto.error.is_some(),
+            ReadSource::Live,
+        )?;
+        Ok(ReadResult::new(
+            crate::library_room_read::LibraryRoomCatalog {
+                kinds: dto
+                    .kinds
+                    .into_iter()
+                    .map(|kind| crate::library_room_read::LibraryRoomKind {
+                        kind_id: kind.kind_id,
+                        kind_name: kind.kind_name,
+                        rooms: kind
+                            .rooms
+                            .into_iter()
+                            .map(|room| crate::library_room_read::LibraryRoom {
+                                device_id: room.device_id,
+                                name: room.name,
+                                min_reserve_minutes: room.min_reserve_minutes,
+                            })
+                            .collect(),
+                    })
+                    .collect(),
+            },
+            metadata,
+        ))
+    }
+
+    /// Reads the account's own reservations for one bounded window.
+    ///
+    /// Both dates are `YYYY-MM-DD`.  The window is validated inside Rust before
+    /// any request, so a reversed, malformed, or over-wide window is refused
+    /// without costing a handoff.  An empty list is only ever the service's own
+    /// answer that the window holds nothing.
+    pub async fn records(
+        &mut self,
+        begin: &str,
+        end: &str,
+    ) -> Result<ReadResult<Vec<crate::library_room_read::LibraryRoomRecord>>, Error> {
+        let dto = self
+            .runtime
+            .load_library_room_records_result(begin, end)
+            .await
+            .map_err(|_| library_room_failure(self.runtime))?;
+        let metadata = cached_read_metadata(
+            Service::LibraryRoom,
+            &dto.generated_at,
+            &dto.source,
+            &dto.status,
+            dto.error.is_some(),
+            ReadSource::Live,
+        )?;
+        Ok(ReadResult::new(
+            dto.records
+                .into_iter()
+                .map(|record| crate::library_room_read::LibraryRoomRecord {
+                    name: record.name,
+                    device_name: record.device_name,
+                    kind_name: record.kind_name,
+                    date: record.date,
+                    begin_time: record.begin_time,
+                    end_time: record.end_time,
+                    members: record
+                        .members
+                        .into_iter()
+                        .map(|member| crate::library_room_read::LibraryRoomMember {
+                            name: member.name,
+                        })
+                        .collect(),
+                })
+                .collect(),
+            metadata,
+        ))
+    }
+}
+
+/// Maps one study-room failure to its stable code.
+///
+/// The adapter's own diagnostic is checked first so an expired session is
+/// distinguishable from a changed deployment.  A response that did not carry
+/// the service's envelope, or a record missing a field the service sent, is
+/// `InvalidResponse` rather than an empty catalogue — the reference answers
+/// that shape from a mock, which is exactly what must not happen here.
+fn library_room_failure(runtime: &CampusRuntime) -> Error {
+    if let Some(diagnostic) = runtime.last_library_room_failure_code() {
+        let code = match diagnostic {
+            "library_room_auth_required" => ErrorCode::SessionExpired,
+            "library_room_config" | "library_room_window" => ErrorCode::InvalidInput,
+            "library_room_network" => ErrorCode::NetworkUnavailable,
+            "library_room_origin" | "library_room_path" => ErrorCode::RedirectRefused,
+            "library_room_http" | "library_room_deployment" => ErrorCode::ServiceUnavailable,
+            "library_room_mapping_rejected" => ErrorCode::RedirectRefused,
+            "library_room_size" => ErrorCode::IncompleteResult,
+            // The service's own envelope refusal comes with its own status
+            // number.  It is a real answer, so the capability is closed for this
+            // account rather than the service being unreachable.
+            "library_room_rejected" => ErrorCode::NotAvailable,
+            _ => ErrorCode::InvalidResponse,
+        };
+        return Error::new(Service::LibraryRoom, code);
+    }
+    let code = match runtime.auth_status().identity().state() {
+        AccountAuthState::SignedOut | AccountAuthState::RestoredUnverified => {
+            ErrorCode::SessionRequired
+        }
+        AccountAuthState::Expired => ErrorCode::SessionExpired,
+        AccountAuthState::NeedsInteraction => ErrorCode::InteractionRequired,
+        AccountAuthState::Authenticating => ErrorCode::InteractionInProgress,
+        AccountAuthState::Authenticated => ErrorCode::ServiceUnavailable,
+    };
+    Error::new(Service::LibraryRoom, code)
 }
 
 /// Read-only teaching-evaluation questionnaire list.

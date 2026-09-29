@@ -1650,3 +1650,62 @@ SDK `public_api` 增补 `compile_sports_api` 编译检查与两项活动断言�
 `docs/api-surface-baseline.json` 已按本节源码与重新渲染的 Rustdoc 刷新到第八版：`source_revision` 前进到 `1748bad`；`root_public_modules` 66 → **67**（新增 `reserves_read`）；根 `pub use` 53 → **54**；`rendered_crate_root_item_counts` struct 323 → **337**、enum 155 → **160**、fn 59 → **62**、constant 55 → **60**（`trait` / `type` 不变），与本模块 14/5/3/5 个公开项一一对应；runtime `dto_structs` 76 → **78**、`public_methods` 102 → **104**、`direct_state_field_count` 120 → **123**（新增 `reserves_adapter` / `reserves_proof` / `last_reserves_failure_code`）、`line_count` 28455 → **28740**（与 `git diff --numstat` 的 `285 0` 一致）。方法行号按源码重新锚定：`impl` 之前的插入使既有 102 条整体下移 54 行，两个新方法插在 `load_sports_records_result` 之后（`load_invoice_list_result` / `load_invoice_document_result` / 银行与研究生收入 / 体育两读各下移 54 行，其余 96 条各下移自己的插入偏移）。
 
 **未验证**：本域的线上可用性**未验证**，需要另行真实只读验收——本轮**未对任何真实账号发起任何请求**，也未尝试教参全文阅读（那需要本引擎刻意不实现的校园身份登录）。在此之前不得用 fixture 或空结果冒充线上证据。
+
+## 67. 2026-09-30 研读间（图书馆研读间 / CAB）的房间目录与本人预约（只读）
+
+计划阶段 3 的第四个子域：**研读间**（图书馆座位预约系统的"研读间"应用，参考库里叫 `cab`）。它落在自己的校园主机上，走一个固定的 WebVPN 映射，复用的是 transport 已经持有的 INFO/WebVPN 会话。本子域**只读**，且**没有新增任何认证方式**（`Service::LibraryRoom` 早已存在于 `error_sdk.rs`，本轮只是第一次被真正使用）。
+
+**允许名单条目，以及为什么这一条是"有据"的**
+
+与 §66 的教参域同理：映射令牌是固定 ASCII 前缀 `77726476706e69737468656265737421`（即 `wrdvpnisthebest!` 的十六进制）加 AES-128-CFB（密钥与 IV 同为 `wrdvpnisthebest!`，明文为主机名）。把本模块的令牌 `f3f643d22b396a1e6a1b80a29f5d363409e413829737d1` 解码得到的正是 `cab.lib.tsinghua.edu.cn`，参考库自己的常量也带着 `finalAddress=https:%2F%2Fcab.lib.tsinghua.edu.cn`。因此 `map_additional_roaming` 里的新分支把主机写作**有据**而不是推断。方案写作 `https`，与参考库把每条 CAB 路由拼成 `/https/<token>/…` 一致。该分支本身不授予任何东西：共享检查仍然钉住 scheme/port/userinfo/百分号编码，而"已经映射过的输入"必须落在这个模块自己的映射常量之内。
+
+**刻意不实现参考的恢复策略，并且不接受响应选定的登录 app id**
+
+参考库给这个应用登记的策略是 `"cab"`，也就是一次**校园身份登录**：它先取 `…/ic-web/auth/address` 的响应，从里面用 `/\/login\/form\/(.+)$/` 抠出一个载荷，再拿这个载荷去 `id.tsinghua.edu.cn` 取公钥、提交凭据，然后重试。也就是说，那次提交凭据的请求里，**登录应用 id 是响应给的**——这不是一个常量。引擎不实现第二套校园登录，也**不接受由响应选定的身份登录 app id**，因此 `LIBRARY_ROOM_WEBVPN_TARGET = "cab"` 只作为**文档常量**保留，说明"这条恢复路径被刻意没有实现"，它**没有**被登记为漫游 selector（`info_session.rs` 里登记的是**真实映射令牌**，不是这个策略名）。这一点由测试 `the_cab_identity_login_policy_is_never_registered_as_a_roam_selector` 固定。会话过期统一报 `LibraryRoomAdapterError::SessionExpired`，由既有的 INFO 刷新路径处理，与其它 INFO 承载的读取完全一致。
+
+参考的 `LIBRARY_ROOM_USER_INFO_PATH`（`/ic-web/auth/userInfo`）同理：它是参考用来**判断要不要跑上面那次登录**的探针，本模块**永不请求它**（它只出现在常量声明里，请求路径只有目录与预约记录两条）。这一点在常量自己的文档注释里写明，避免后来者以为"少了一条读取"。
+
+**没有 mock，也不把"读不出来"当"空目录"**
+
+页面是 JSON 信封（`{"code": 0, "data": …}`）。参考实现在自己的 mock 上返回内置数据；本模块改成**服务自己的信封就是证据**：`code` 不为 0 一律失败，缺 `data` 一律失败，而不是空结果。空房间列表只能来自"真的带了空数组的信封"，所以"没有可预约房间"不可能由一次解析失败的响应制造出来。
+
+**会话页与"任何 HTML"是两件事**
+
+`get()` 的判定顺序经过一次返工：早期草稿把**任何** HTML 响应都当成 `SessionExpired`，那会让运行时为一个刷新修不了的部署变化去跑 INFO 认证刷新链——正是 AGENTS.md 禁止的"把解析失败当成可恢复的会话问题"。最终顺序是：先读体 → 超长判 `UnexpectedDeployment` → **只把 `campus_html::classify_page` 认出的登录页/超时页判为 `SessionExpired`** → 非 200 判 `HttpStatus` → 其余 HTML 判 `Parse(NotEnvelope)`（→ `library_room_envelope` → `invalid_response`）→ 内容类型不是 JSON 判 `UnexpectedContentType`。测试 `an_html_page_that_is_not_a_login_page_is_not_folded_into_a_session_failure` 把这条钉住。
+
+**服务自己的拒绝与解析失败可区分**
+
+`code != 0` 走 `LibraryRoomParseError::ServiceRejected { code }`，**服务自己的数字状态被保留**，而它附带的文本被丢弃——服务撰写的文字不进错误、不进日志、也不进 DTO。它在 `diagnostic_code()` 里落到 `library_room_rejected` → `ErrorCode::NotAvailable`（"服务可达且回答了，但这个能力对这个账号是关闭的"），而不是被当成网络或解析故障。
+
+**日期窗口在**任何**会话工作之前验证**
+
+`records` 的 `begin`/`end` 是 `YYYY-MM-DD`。运行时在**建立会话之前**先用 `LibraryRoomProfile::standard().records_request(begin, end)` 校验：反向窗口、非法日期、超过 `LIBRARY_ROOM_MAX_WINDOW_DAYS = 31` 天的窗口都被拒为 `library_room_window` → `invalid_input`，因此被拒的参数**不会花掉一次 handoff**，其文本也永远不会变成服务端查询。适配器内部用同一个 `validated_window` 再校验一次，并把日期**重新打印**成自己的形状（所以查询串的字母表只由本模块的常量构成），未补零的日期会被规范化为 `beginDate=2026-09-03` 而不是原样送出。
+
+**基址配置比"能拼出 URL"更严**
+
+`normalize_base_url` 只接受两种路径：空（裸源）或一个**合法的映射根**（`opaque_mapping_root` 用 `safe_webvpn_mapping_id()` 校验固定前缀、长度 64..=96、偶数、纯小写十六进制）。别的任何配置路径一律 `InvalidBaseUrl`——一个配置进来的更深路径是本模块没有授予的权限，放行就会去访问本模块从未记录过的路由。测试 `a_mistyped_mapping_token_is_refused_where_it_is_configured` 覆盖截断、大写、缺前缀三种错令牌。
+
+**一个自己发现并修掉的失败码污染**
+
+`last_library_room_failure_code` 是"上一次失败是什么"的粘性记录，`library_room_failure()` 会优先读它。于是"先送一个被拒的窗口、再让会话检查失败"会把**窗口拒绝的码**报成会话失败，让 `invalid_input` 出现在一次与参数无关的失败上。修法是：两个读入口在**做完参数校验之后、任何会话工作之前**把该字段清空，于是每次读报的失败码一定是这次读自己的。SDK 与桥接各有一条用例把顺序钉住（先断言会话失败、再断言窗口拒绝、最后再断言一次会话失败仍然是会话失败）。
+
+**SDK / FFI / Dart**
+
+- 引擎：新增模块 `library_room_read`（12 struct / 5 enum / 2 fn / 5 const）；`info_session.rs` 新增一条允许名单分支；`api/runtime.rs` 新增 `load_library_room_catalog_result` / `load_library_room_records_result` 两个公开方法与三个状态字段（`library_room_adapter` / `library_room_proof` / `last_library_room_failure_code`）、六个 DTO；`client.rs` 新增 `LibraryRoomClient`（含 `MAX_WINDOW_DAYS`）；`ServiceId::Info` 的失效分支里补上 `invalidate_library_room_session()`。两条读都走"失效 → INFO 刷新 → 重试一次"的既有模式，第二次仍过期就失败。
+- SDK：`tsinghua-kit/src/lib.rs` 新增 `pub mod library_room { … }` 再导出块，`client.rs` 新增 `Client::library_room()` 与薄包装 `LibraryRoomClient`。
+- FFI：`ClientHandle` 新增 `library_room_catalog_result` / `library_room_records_result`；新增 `LibraryRoomDto` / `LibraryRoomKindDto` / `LibraryRoomCatalogDataDto` / `LibraryRoomCatalogResultDto` / `LibraryRoomMemberDto` / `LibraryRoomRecordDto` / `LibraryRoomRecordsDataDto` / `LibraryRoomRecordsResultDto`。两张含个人数据的 DTO 有**自定义 `Debug`**：成员只印 `name_present`，预约行只印六个 `*_present` 与 `member_count`，名字、房间名与时间一个都不印。FRB 重新生成，生成物未手工编辑。
+- Dart：`lib/src/library_room.dart`（part）+ `lib/library_room.dart` 入口 + `lib/tsinghua_kit.dart` 的 `part`/字段；`LibraryRoomClient.catalog()` 与 `records({begin, end})`，`maxWindowDays = 31`。`deviceId` / `minReserveMinutes` / `kindId` 是 `u64` → `BigInt`；`roomCount` 是 `u32` → 普通 `int`（与 `u64` 不同，生成物在每个平台上都是 `int`）。
+
+**验证**
+
+引擎定向（loopback fixture，无任何真实账号 / Cookie / 房间标识）：`cargo test -p tsinghua_kit_engine library_room_tests` **42 项通过 / 0 失败**，覆盖信封形状、字符串化 id、真实空目录、缺 `roomInfos`、缺/空名字、负 id、控制字符、超长字段被拒而不是被截断、服务拒绝带自己的数字、缺 `data`、非信封体、WebVPN 门户页、超时页、空体、记录形状、**成员账号名不进投影记录**（断言 `Debug` 里没有该账号名）、无设备的预约、缺字段、空列表、窗口校验（反向、`2026-02-30`、`today`、带引号的值）、窗口上下界（正好等于上界通过、超一天被拒）、未补零日期被规范化而不是原样送出、目录计划不带查询、两条 loopback 读的路径与查询逐字节形状、不可用窗口不花请求、登录页回答、**非登录页的 HTML 不折叠成会话失败**、服务拒绝、非 JSON 内容类型、500、401、跨源 302 在**被跟随之前**就被拒（且只发出 1 次请求）、同源但映射外的 302、配置路径规范化与错令牌被拒、profile 固定、以及"CAB 身份登录策略从未登记为漫游 selector"和"映射令牌带固定前缀"。
+
+桥接层 `cargo test -p tsinghua_kit_ffi --lib`（含 `--features ffi-bridge` 与不带该特性两种配置）**51 项通过**，其中本轮新增 2 项（`library_room_bridge_debug_omits_names_and_times`、`library_room_refusals_need_no_account_and_no_request`）。SDK `cargo test -p tsinghua_kit` **22 项通过**（新增 `library_room_refuses_an_unusable_window_before_any_session_check`，`compile_library_room_api` 与 `rust_consumers_can_import_curated_domain_modules_without_ffi` 增补该域类型与 `MAX_WINDOW_DAYS == 31`）。`cargo fmt --all -- --check` 与 `git diff --check` 干净；严格 `RUSTDOCFLAGS="-D warnings" cargo doc --locked --no-deps -p tsinghua_kit` 退出 0；`flutter analyze lib test` 无问题；`flutter test test/public_entrypoints_test.dart` 通过并覆盖 `LibraryRoomClient` / `LibraryRoom` / `LibraryRoomKind` / `LibraryRoomCatalog` / `LibraryRoomRecord` / `LibraryRoomMember`、`maxWindowDays == 31`、空目录只由 `roomCount == 0` 得出，以及两张列表的不可变。
+
+**同过滤器下的既有失败**：`library` 过滤器仍为 87 通过 / 4 失败，与本轮之前记录的**同一批 4 项**（`backend_repair_cached_library_read_uses_existing_expiry_gate`、`backend_repair_proven_library_action_survives_unavailable_info_bootstrap`、`backend_repair_runtime_library_segments_and_seats_reach_safe_dtos`、`backend_repair_binding_library_timestamp_date_must_match_segment_day`），原因是它们直接安装 library 证明却从不填充 `library_seat_section_ids`，与新增读路径无关；本轮**未修**。`tsinghua_kit_ffi` 的 `classroom_contract` 集成测试 3 项失败（`MissingDateHeaders`）经 `git stash` 对照确认为 **HEAD 既有**，同样不是本轮引入。整个 `--lib` 引擎套件在本机 HEAD 上还会因一个既有的栈溢出而中断（`backend_repair_learn_fresh_announcement_cache_skips_live_handoff`），因此本轮的判据是**定向**测试而不是整套。
+
+**baseline**
+
+`docs/api-surface-baseline.json` 已按本节源码与重新渲染的 Rustdoc 刷新到第九版：`source_revision` 前进到 `a51bca4`；`root_public_modules` 67 → **68**（新增 `library_room_read`）；根 `pub use` 54 → **55**；`rendered_crate_root_item_counts` struct 337 → **349**、enum 160 → **165**、fn 62 → **64**、constant 60 → **65**（`trait` / `type` 不变），与本模块 12/5/2/5 个公开项一一对应；runtime `dto_structs` 78 → **84**、`public_methods` 104 → **106**、`direct_state_field_count` 123 → **126**（新增 `library_room_adapter` / `library_room_proof` / `last_library_room_failure_code`）、`line_count` 28740 → **29129**（与 `git diff --numstat` 的 `389 0` 一致）。方法行号按源码重新锚定：本轮在 runtime 里新增的整段使既有 104 条公开方法、6 个公开自由函数与全部 DTO 声明一起下移 **133 行**（不是逐段偏移），两个新方法插在 `load_reserves_detail_result` 之后。
+
+**未验证**：本域的线上可用性**未验证**，需要另行真实只读验收——本轮**未对任何真实账号发起任何请求**，也未尝试预约、取消或联系方式修改（这些路由在本模块里**根本不存在**）。在此之前不得用 fixture 或空结果冒充线上证据。

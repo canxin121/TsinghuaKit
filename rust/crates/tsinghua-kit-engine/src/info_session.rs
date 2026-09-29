@@ -851,6 +851,28 @@ impl InfoSessionAdapter {
                 crate::reserves_read::RESERVES_MAPPING_SCHEME,
                 crate::reserves_read::RESERVES_MAPPING_TOKEN,
             ),
+            // The CAB study-room application is a third campus host, reached
+            // through its own mapping.  As with the reserve catalogue above,
+            // the hostname is **evidenced** rather than inferred: decoding this
+            // module's mapping token with the fixed WebVPN key and IV yields
+            // exactly this host, and the reference's own constants carry
+            // `finalAddress=https:%2F%2Fcab.lib.tsinghua.edu.cn` verbatim.
+            //
+            // The reference recovers this application with a roaming policy of
+            // its own (`LIBRARY_ROOM_WEBVPN_TARGET`) that performs a campus
+            // identity login, and it derives the application id to submit from
+            // the `…/auth/address` response.  This engine does not implement a
+            // second campus login and does not let a response choose an
+            // identity-login application id, so the read rides the INFO/WebVPN
+            // session the transport already holds.  The arm grants nothing on
+            // its own — the shared checks below still pin the scheme, port,
+            // userinfo and percent-encoding, and an input that arrives already
+            // mapped must sit inside this module's own mapping constant.
+            crate::library_room_read::LIBRARY_ROOM_WEBVPN_TARGET => (
+                "cab.lib.tsinghua.edu.cn",
+                crate::library_room_read::LIBRARY_ROOM_MAPPING_SCHEME,
+                crate::library_room_read::LIBRARY_ROOM_MAPPING_TOKEN,
+            ),
             _ => {
                 if same_origin(&self.config.webvpn_base_url, &url) {
                     return Ok(target.clone());

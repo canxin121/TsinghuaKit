@@ -312,6 +312,22 @@ pub mod reserves {
     };
 }
 
+/// The CAB study-room application (`研读间`), reached through the INFO WebVPN
+/// session the client already holds.
+///
+/// Its own campus login is deliberately not implemented: the reference derives
+/// the application id it would submit from a response, and this SDK performs no
+/// second campus login. An expired session is reported as an authentication
+/// failure rather than answered with an empty catalogue.
+pub mod library_room {
+    pub use crate::client::LibraryRoomClient;
+    pub use tsinghua_kit_engine::library_room_read::{
+        LIBRARY_ROOM_CATALOG_PATH, LIBRARY_ROOM_MAX_WINDOW_DAYS, LIBRARY_ROOM_RECORDS_PATH,
+        LIBRARY_ROOM_USER_INFO_PATH, LibraryRoom, LibraryRoomCatalog, LibraryRoomKind,
+        LibraryRoomMember, LibraryRoomRecord,
+    };
+}
+
 /// The standard result type for public SDK operations.
 pub type Result<T> = std::result::Result<T, Error>;
 

@@ -347,6 +347,36 @@ async fn compile_reserves_api(client: &mut tsinghua_kit::Client) -> Result<()> {
     Ok(())
 }
 
+/// The CAB study-room application is a `Client` method pair because both reads
+/// are account-bound to the INFO/WebVPN session, and both are read-only: the
+/// application's own campus login is deliberately not implemented, so there is
+/// no write of any kind on this surface.
+#[allow(dead_code)]
+async fn compile_library_room_api(client: &mut tsinghua_kit::Client) -> Result<()> {
+    let mut library_room = client.library_room();
+    let _window: i64 = tsinghua_kit::library_room::LibraryRoomClient::MAX_WINDOW_DAYS;
+    let catalog = library_room.catalog().await?;
+    let _: &tsinghua_kit::library_room::LibraryRoomCatalog = catalog.data();
+    let _count: usize = catalog.data().room_count();
+    if let Some(kind) = catalog.data().kinds.first() {
+        let _: &tsinghua_kit::library_room::LibraryRoomKind = kind;
+        if let Some(room) = kind.rooms.first() {
+            let _: &tsinghua_kit::library_room::LibraryRoom = room;
+            let _: (u64, u64) = (room.device_id, room.min_reserve_minutes);
+        }
+    }
+    let records = library_room.records("2026-09-30", "2026-09-30").await?;
+    for record in records.data() {
+        let _: &tsinghua_kit::library_room::LibraryRoomRecord = record;
+        if let Some(member) = record.members.first() {
+            // A member carries the printed name only; the service's account
+            // identifier for that person is not a field.
+            let _: &tsinghua_kit::library_room::LibraryRoomMember = member;
+        }
+    }
+    Ok(())
+}
+
 /// Both third-party reads are free functions rather than `Client` methods:
 /// they carry no campus account binding, so neither can require a session.
 /// They report their own error types rather than the campus `Error`, so this
@@ -471,6 +501,15 @@ fn rust_consumers_can_import_curated_domain_modules_without_ffi() {
     accepts_public_types::<tsinghua_kit::reserves::ReservesBookDetail>(None);
     accepts_public_types::<tsinghua_kit::reserves::ReservesChapter>(None);
     assert_eq!(tsinghua_kit::reserves::ReservesClient::MAX_PAGE, 1000);
+    accepts_public_types::<tsinghua_kit::library_room::LibraryRoomCatalog>(None);
+    accepts_public_types::<tsinghua_kit::library_room::LibraryRoomKind>(None);
+    accepts_public_types::<tsinghua_kit::library_room::LibraryRoom>(None);
+    accepts_public_types::<tsinghua_kit::library_room::LibraryRoomRecord>(None);
+    accepts_public_types::<tsinghua_kit::library_room::LibraryRoomMember>(None);
+    assert_eq!(
+        tsinghua_kit::library_room::LibraryRoomClient::MAX_WINDOW_DAYS,
+        31
+    );
     accepts_public_types::<NewsCatalog>(None);
     accepts_public_types::<NewsFavorites>(None);
     accepts_public_types::<NewsSubscription>(None);
@@ -534,6 +573,7 @@ fn rust_consumers_can_import_curated_domain_modules_without_ffi() {
     );
     let _ = compile_third_party_read_api;
     let _ = compile_reserves_api;
+    let _ = compile_library_room_api;
     let _ = compile_news_api;
     let _ = compile_learn_api;
     let _ = compile_registrar_api;
@@ -779,6 +819,62 @@ async fn reserves_refuses_unusable_search_text_before_any_session_check() {
     // one cannot be written.  What a cross-search reference does at run time is
     // covered by the engine's own adapter tests.
     drop(reserves);
+
+    assert_eq!(
+        client.auth().status().identity().state(),
+        AccountAuthState::SignedOut
+    );
+}
+
+/// A refused reservation window is a caller-input error, and it is decided
+/// before any session is even considered: the account is signed out here, yet
+/// the answer is `InvalidInput` rather than `SessionRequired`, so a malformed
+/// window never reaches the service and never costs a handoff.  The catalogue
+/// read has no argument to refuse, so it reports the missing session instead of
+/// an empty catalogue.
+#[tokio::test]
+async fn library_room_refuses_an_unusable_window_before_any_session_check() {
+    let mut client = tsinghua_kit::Client::builder().build().unwrap();
+    let mut library_room = client.library_room();
+
+    // Each read clears this domain's previous failure code before it does any
+    // session work, so a failure the session check reports is always its own and
+    // not a refusal an earlier call recorded.
+    let widest = library_room
+        .records("2026-09-30", "2026-10-30")
+        .await
+        .unwrap_err();
+    assert_eq!(widest.service(), Service::LibraryRoom);
+    assert_eq!(widest.code(), ErrorCode::SessionRequired);
+
+    let catalog = library_room.catalog().await.unwrap_err();
+    assert_eq!(catalog.service(), Service::LibraryRoom);
+    assert_eq!(catalog.code(), ErrorCode::SessionRequired);
+
+    for (begin, end) in [
+        ("", "2026-09-30"),
+        ("2026-09-30", ""),
+        ("2026-09-30", "2026-09-29"),
+        ("2026-02-30", "2026-03-01"),
+        ("today", "2026-09-30"),
+        ("2026-09-30", "2026-11-30"),
+        ("2026-09-30", "2026-09-30 "),
+    ] {
+        let error = library_room.records(begin, end).await.unwrap_err();
+        assert_eq!(error.service(), Service::LibraryRoom);
+        assert_eq!(error.code(), ErrorCode::InvalidInput);
+    }
+
+    // The bound itself is accepted: `MAX_WINDOW_DAYS` is the widest read, not an
+    // argument error, so the widest window reaches the session check and reports
+    // the session that is missing.
+    let widest = library_room
+        .records("2026-09-30", "2026-10-30")
+        .await
+        .unwrap_err();
+    assert_eq!(widest.service(), Service::LibraryRoom);
+    assert_eq!(widest.code(), ErrorCode::SessionRequired);
+    drop(library_room);
 
     assert_eq!(
         client.auth().status().identity().state(),

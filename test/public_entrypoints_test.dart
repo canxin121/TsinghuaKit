@@ -11,6 +11,7 @@ import 'package:tsinghua_kit/invoice.dart' as invoice;
 import 'package:tsinghua_kit/laundry.dart' as laundry;
 import 'package:tsinghua_kit/learn.dart' as learn;
 import 'package:tsinghua_kit/library.dart' as library_api;
+import 'package:tsinghua_kit/library_room.dart' as library_room;
 import 'package:tsinghua_kit/network.dart' as network;
 import 'package:tsinghua_kit/news.dart' as news;
 import 'package:tsinghua_kit/overview.dart' as overview;
@@ -331,6 +332,66 @@ void main() {
     expect(detail.chapters, hasLength(1));
     expect(
       () => detail.chapters.clear(),
+      throwsUnsupportedError,
+    );
+    // The study-room application's own campus login is deliberately not
+    // implemented, so its client exposes reads only and its types carry no
+    // reservation handle.
+    expect(_publicType<library_room.LibraryRoomClient>(), isNull);
+    expect(_publicType<library_room.LibraryRoom>(), isNull);
+    expect(_publicType<library_room.LibraryRoomKind>(), isNull);
+    expect(_publicType<library_room.LibraryRoomCatalog>(), isNull);
+    expect(_publicType<library_room.LibraryRoomRecord>(), isNull);
+    expect(_publicType<library_room.LibraryRoomMember>(), isNull);
+    expect(library_room.LibraryRoomClient.maxWindowDays, 31);
+    final room = library_room.LibraryRoom(
+      deviceId: BigInt.from(101),
+      name: 'A-101',
+      minReserveMinutes: BigInt.from(30),
+    );
+    final kind = library_room.LibraryRoomKind(
+      kindId: BigInt.from(11),
+      kindName: '研读间 A',
+      rooms: [room],
+    );
+    // The room list is unmodifiable, so a caller cannot present a catalogue the
+    // service did not send.
+    expect(kind.rooms, hasLength(1));
+    expect(
+      () => kind.rooms.add(room),
+      throwsUnsupportedError,
+    );
+    final catalog = library_room.LibraryRoomCatalog(
+      kinds: [kind],
+      roomCount: 1,
+    );
+    expect(catalog.isEmpty, isFalse);
+    expect(
+      () => catalog.kinds.clear(),
+      throwsUnsupportedError,
+    );
+    // An empty catalogue is the service's own answer, and only a room count of
+    // zero produces it.
+    final emptyCatalog = library_room.LibraryRoomCatalog(
+      kinds: const [],
+      roomCount: 0,
+    );
+    expect(emptyCatalog.isEmpty, isTrue);
+    // A member carries only the printed name; the service's account identifier
+    // for that person is deliberately not a field.
+    final roomRecord = library_room.LibraryRoomRecord(
+      name: '张三',
+      deviceName: 'A-101',
+      kindName: '研读间 A',
+      date: '20260930',
+      beginTime: '2026-09-30 10:00',
+      endTime: '2026-09-30 11:00',
+      members: const [library_room.LibraryRoomMember(name: '张三')],
+    );
+    expect(roomRecord.members, hasLength(1));
+    expect(roomRecord.members.first.name, '张三');
+    expect(
+      () => roomRecord.members.clear(),
       throwsUnsupportedError,
     );
   });

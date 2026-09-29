@@ -29,11 +29,12 @@ use tsinghua_kit_engine::{
         ElectricityClient as EngineElectricityClient, IdentityLoginOutcome, IdentityLoginRequest,
         IdentitySessionStoragePolicy as EngineIdentitySessionStoragePolicy,
         InvoiceClient as EngineInvoiceClient, LearnClient as EngineLearnClient,
-        LibraryClient as EngineLibraryClient, NetworkClient as EngineNetworkClient,
-        NetworkProfilesClient as EngineNetworkProfilesClient, NewsClient as EngineNewsClient,
-        PhysicalExamClient as EnginePhysicalExamClient, ProgramClient as EngineProgramClient,
-        RegistrarClient as EngineRegistrarClient, ReservesClient as EngineReservesClient,
-        SelfServiceCaptcha, SelfServiceClient as EngineSelfServiceClient, SelfServiceLoginOutcome,
+        LibraryClient as EngineLibraryClient, LibraryRoomClient as EngineLibraryRoomClient,
+        NetworkClient as EngineNetworkClient, NetworkProfilesClient as EngineNetworkProfilesClient,
+        NewsClient as EngineNewsClient, PhysicalExamClient as EnginePhysicalExamClient,
+        ProgramClient as EngineProgramClient, RegistrarClient as EngineRegistrarClient,
+        ReservesClient as EngineReservesClient, SelfServiceCaptcha,
+        SelfServiceClient as EngineSelfServiceClient, SelfServiceLoginOutcome,
         ServiceHallClient as EngineServiceHallClient, SportsClient as EngineSportsClient,
     },
     electricity_api::{ElectricityPaymentHistory, ElectricityRemainder},
@@ -48,6 +49,7 @@ use tsinghua_kit_engine::{
         LibraryReservationRef, LibraryReservations, LibrarySections, LibrarySocketAvailability,
         LibraryTimeWindows, SeatRef, SeatWindowRef, SectionRef,
     },
+    library_room_read::{LibraryRoomCatalog, LibraryRoomRecord},
     network::{
         NetworkProfileId, NetworkProfileInput, NetworkProfilePassword, NetworkProfileStoragePolicy,
         NetworkProfileSummary, PortalConnectionResult, PreparedNetworkInput,
@@ -342,6 +344,14 @@ impl Client {
     pub fn reserves(&mut self) -> ReservesClient<'_> {
         ReservesClient {
             inner: self.inner.reserves(),
+        }
+    }
+
+    /// Borrows the read-only CAB study-room catalogue and the account's own
+    /// reservations.
+    pub fn library_room(&mut self) -> LibraryRoomClient<'_> {
+        LibraryRoomClient {
+            inner: self.inner.library_room(),
         }
     }
 
@@ -933,6 +943,48 @@ impl ReservesClient<'_> {
         reference: &ReservesRef,
     ) -> Result<ReadResult<ReservesBookDetail>, Error> {
         self.inner.detail(reference).await
+    }
+}
+
+/// Read-only CAB study-room catalogue and the account's own reservations.
+///
+/// Both reads go live on every call and are never served from a cached copy: a
+/// room can be withdrawn or reopened between requests, so a retained catalogue
+/// would present an unusable room as reservable.
+///
+/// This API is read-only by construction. The application's own campus login is
+/// deliberately not implemented — the reference derives the application id it
+/// would submit from a response — so an expired session is reported as an
+/// authentication failure rather than answered with an empty catalogue.
+pub struct LibraryRoomClient<'client> {
+    inner: EngineLibraryRoomClient<'client>,
+}
+
+impl LibraryRoomClient<'_> {
+    /// The widest reservation window this client will read, in days.
+    pub const MAX_WINDOW_DAYS: i64 = EngineLibraryRoomClient::MAX_WINDOW_DAYS;
+
+    /// Reads the reservable study-room catalogue.
+    ///
+    /// An empty catalogue is only ever the service's own answer that nothing is
+    /// currently reservable; a response that did not carry the service's
+    /// envelope is an error instead.
+    pub async fn catalog(&mut self) -> Result<ReadResult<LibraryRoomCatalog>, Error> {
+        self.inner.catalog().await
+    }
+
+    /// Reads the account's own reservations for one bounded window.
+    ///
+    /// `begin` and `end` are `YYYY-MM-DD`. Both are validated inside Rust before
+    /// any request, so a reversed, malformed, or window wider than
+    /// [Self::MAX_WINDOW_DAYS] is refused as invalid input without costing a
+    /// handoff.
+    pub async fn records(
+        &mut self,
+        begin: &str,
+        end: &str,
+    ) -> Result<ReadResult<Vec<LibraryRoomRecord>>, Error> {
+        self.inner.records(begin, end).await
     }
 }
 

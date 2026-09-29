@@ -31,6 +31,7 @@ part 'src/laundry.dart';
 part 'src/water.dart';
 part 'src/sports.dart';
 part 'src/reserves.dart';
+part 'src/library_room.dart';
 part 'src/course_score.dart';
 part 'src/learn.dart';
 part 'src/registrar_calendar.dart';
@@ -333,6 +334,7 @@ class TsinghuaKitClient {
         water = WaterClient._(handle),
         sports = SportsClient._(handle),
         reserves = ReservesClient._(handle),
+        libraryRoom = LibraryRoomClient._(handle),
         courseScore = CourseScoreClient._(handle),
         learn = LearnClient._(handle),
         news = NewsClient._(handle),
@@ -398,6 +400,11 @@ class TsinghuaKitClient {
   /// The course-reserve textbook collection. Read-only, and account-bound to
   /// the INFO/WebVPN session this client already holds.
   final ReservesClient reserves;
+
+  /// The library's study-room application (`研读间`). Read-only, account-bound
+  /// to the INFO/WebVPN session this client already holds, and no reservation
+  /// is reachable through it.
+  final LibraryRoomClient libraryRoom;
 
   /// One course result looked up by course number.
   final CourseScoreClient courseScore;

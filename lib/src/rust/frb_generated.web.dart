@@ -486,6 +486,34 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
       dynamic raw);
 
   @protected
+  LibraryRoomCatalogDataDto dco_decode_library_room_catalog_data_dto(
+      dynamic raw);
+
+  @protected
+  LibraryRoomCatalogResultDto dco_decode_library_room_catalog_result_dto(
+      dynamic raw);
+
+  @protected
+  LibraryRoomDto dco_decode_library_room_dto(dynamic raw);
+
+  @protected
+  LibraryRoomKindDto dco_decode_library_room_kind_dto(dynamic raw);
+
+  @protected
+  LibraryRoomMemberDto dco_decode_library_room_member_dto(dynamic raw);
+
+  @protected
+  LibraryRoomRecordDto dco_decode_library_room_record_dto(dynamic raw);
+
+  @protected
+  LibraryRoomRecordsDataDto dco_decode_library_room_records_data_dto(
+      dynamic raw);
+
+  @protected
+  LibraryRoomRecordsResultDto dco_decode_library_room_records_result_dto(
+      dynamic raw);
+
+  @protected
   LibrarySeatDto dco_decode_library_seat_dto(dynamic raw);
 
   @protected
@@ -630,6 +658,20 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<LibraryReservationDto> dco_decode_list_library_reservation_dto(
+      dynamic raw);
+
+  @protected
+  List<LibraryRoomDto> dco_decode_list_library_room_dto(dynamic raw);
+
+  @protected
+  List<LibraryRoomKindDto> dco_decode_list_library_room_kind_dto(dynamic raw);
+
+  @protected
+  List<LibraryRoomMemberDto> dco_decode_list_library_room_member_dto(
+      dynamic raw);
+
+  @protected
+  List<LibraryRoomRecordDto> dco_decode_list_library_room_record_dto(
       dynamic raw);
 
   @protected
@@ -1567,6 +1609,37 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
       SseDeserializer deserializer);
 
   @protected
+  LibraryRoomCatalogDataDto sse_decode_library_room_catalog_data_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  LibraryRoomCatalogResultDto sse_decode_library_room_catalog_result_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  LibraryRoomDto sse_decode_library_room_dto(SseDeserializer deserializer);
+
+  @protected
+  LibraryRoomKindDto sse_decode_library_room_kind_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  LibraryRoomMemberDto sse_decode_library_room_member_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  LibraryRoomRecordDto sse_decode_library_room_record_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  LibraryRoomRecordsDataDto sse_decode_library_room_records_data_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  LibraryRoomRecordsResultDto sse_decode_library_room_records_result_dto(
+      SseDeserializer deserializer);
+
+  @protected
   LibrarySeatDto sse_decode_library_seat_dto(SseDeserializer deserializer);
 
   @protected
@@ -1742,6 +1815,22 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<LibraryReservationDto> sse_decode_list_library_reservation_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  List<LibraryRoomDto> sse_decode_list_library_room_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  List<LibraryRoomKindDto> sse_decode_list_library_room_kind_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  List<LibraryRoomMemberDto> sse_decode_list_library_room_member_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  List<LibraryRoomRecordDto> sse_decode_list_library_room_record_dto(
       SseDeserializer deserializer);
 
   @protected
@@ -2769,6 +2858,38 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
       LibraryReservationsResultDto self, SseSerializer serializer);
 
   @protected
+  void sse_encode_library_room_catalog_data_dto(
+      LibraryRoomCatalogDataDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_library_room_catalog_result_dto(
+      LibraryRoomCatalogResultDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_library_room_dto(
+      LibraryRoomDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_library_room_kind_dto(
+      LibraryRoomKindDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_library_room_member_dto(
+      LibraryRoomMemberDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_library_room_record_dto(
+      LibraryRoomRecordDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_library_room_records_data_dto(
+      LibraryRoomRecordsDataDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_library_room_records_result_dto(
+      LibraryRoomRecordsResultDto self, SseSerializer serializer);
+
+  @protected
   void sse_encode_library_seat_dto(
       LibrarySeatDto self, SseSerializer serializer);
 
@@ -2941,6 +3062,22 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_library_reservation_dto(
       List<LibraryReservationDto> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_library_room_dto(
+      List<LibraryRoomDto> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_library_room_kind_dto(
+      List<LibraryRoomKindDto> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_library_room_member_dto(
+      List<LibraryRoomMemberDto> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_library_room_record_dto(
+      List<LibraryRoomRecordDto> self, SseSerializer serializer);
 
   @protected
   void sse_encode_list_library_seat_dto(

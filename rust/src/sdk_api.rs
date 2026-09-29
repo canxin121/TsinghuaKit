@@ -52,6 +52,7 @@ use tsinghua_kit_sdk::{
         LibraryReservationRef, LibraryReservations, LibrarySocketAvailability, LibrarySocketState,
         LibraryTimeWindows, SeatRef, SeatWindowRef, SectionRef,
     },
+    library_room::{LibraryRoomCatalog, LibraryRoomRecord},
     network::{
         NetworkAccessMethod, NetworkProfileId, NetworkProfileInput, NetworkProfilePassword,
         NetworkProfileSummary, PortalAddressRegistration, PortalConnectionResult,
@@ -2809,6 +2810,170 @@ pub struct ReservesDetailDataDto {
 pub struct ReservesDetailResultDto {
     pub data: ReservesDetailDataDto,
     pub metadata: ReadMetadataDto,
+}
+
+/// One reservable study room as the bridge reports it.
+///
+/// The device identifier is the service's own and is printed on the room's page,
+/// so it is not a secret; it is carried as a plain number because it is the only
+/// handle a caller has for a room.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LibraryRoomDto {
+    pub device_id: u64,
+    pub name: String,
+    /// The shortest reservation the service accepts for this room, in minutes.
+    pub min_reserve_minutes: u64,
+}
+
+/// One group of reservable rooms, with the rooms themselves.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LibraryRoomKindDto {
+    pub kind_id: u64,
+    pub kind_name: String,
+    pub rooms: Vec<LibraryRoomDto>,
+}
+
+/// One validated study-room catalogue.
+///
+/// An empty `kinds` list is only ever the service's own answer that nothing is
+/// currently reservable; a response that did not carry the service's envelope is
+/// an error, never an empty catalogue.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LibraryRoomCatalogDataDto {
+    pub kinds: Vec<LibraryRoomKindDto>,
+    /// The number of reservable rooms across every kind.
+    pub room_count: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LibraryRoomCatalogResultDto {
+    pub data: LibraryRoomCatalogDataDto,
+    pub metadata: ReadMetadataDto,
+}
+
+/// One participant of a reservation, by printed name only.
+///
+/// The service also sends each participant's campus account name.  It is
+/// deliberately not a field here, so it cannot reach a bridge DTO.
+#[derive(Clone, PartialEq, Eq)]
+pub struct LibraryRoomMemberDto {
+    pub name: String,
+}
+
+impl fmt::Debug for LibraryRoomMemberDto {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("LibraryRoomMemberDto")
+            .field("name_present", &!self.name.is_empty())
+            .finish()
+    }
+}
+
+/// One reservation held by the account.
+///
+/// The service's own cancellation handle is not a field: no cancellation is
+/// reachable through this bridge, so a caller has nothing to do with it.
+#[derive(Clone, PartialEq, Eq)]
+pub struct LibraryRoomRecordDto {
+    pub name: String,
+    pub device_name: String,
+    pub kind_name: String,
+    pub date: String,
+    pub begin_time: String,
+    pub end_time: String,
+    pub members: Vec<LibraryRoomMemberDto>,
+}
+
+impl fmt::Debug for LibraryRoomRecordDto {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("LibraryRoomRecordDto")
+            .field("name_present", &!self.name.is_empty())
+            .field("device_name_present", &!self.device_name.is_empty())
+            .field("kind_name_present", &!self.kind_name.is_empty())
+            .field("date_present", &!self.date.is_empty())
+            .field("begin_time_present", &!self.begin_time.is_empty())
+            .field("end_time_present", &!self.end_time.is_empty())
+            .field("member_count", &self.members.len())
+            .finish()
+    }
+}
+
+/// One validated list of the account's own reservations.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LibraryRoomRecordsDataDto {
+    pub records: Vec<LibraryRoomRecordDto>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LibraryRoomRecordsResultDto {
+    pub data: LibraryRoomRecordsDataDto,
+    pub metadata: ReadMetadataDto,
+}
+
+/// Flattens one study-room catalogue.
+///
+/// The list is live on every call, so nothing is cached here; the service's own
+/// envelope and its message text never cross the bridge.
+fn library_room_catalog_result(
+    value: ReadResult<LibraryRoomCatalog>,
+) -> LibraryRoomCatalogResultDto {
+    let (catalog, metadata) = value.into_parts();
+    let room_count = u32::try_from(catalog.room_count()).unwrap_or(u32::MAX);
+    LibraryRoomCatalogResultDto {
+        data: LibraryRoomCatalogDataDto {
+            kinds: catalog
+                .kinds
+                .into_iter()
+                .map(|kind| LibraryRoomKindDto {
+                    kind_id: kind.kind_id,
+                    kind_name: kind.kind_name,
+                    rooms: kind
+                        .rooms
+                        .into_iter()
+                        .map(|room| LibraryRoomDto {
+                            device_id: room.device_id,
+                            name: room.name,
+                            min_reserve_minutes: room.min_reserve_minutes,
+                        })
+                        .collect(),
+                })
+                .collect(),
+            room_count,
+        },
+        metadata: ReadMetadataDto::from(&metadata),
+    }
+}
+
+/// Flattens one reservation list.
+///
+/// Times are carried exactly as the service wrote them: it supplies no zone, so
+/// none is invented here.
+fn library_room_records_result(
+    value: ReadResult<Vec<LibraryRoomRecord>>,
+) -> LibraryRoomRecordsResultDto {
+    let (records, metadata) = value.into_parts();
+    LibraryRoomRecordsResultDto {
+        data: LibraryRoomRecordsDataDto {
+            records: records
+                .into_iter()
+                .map(|record| LibraryRoomRecordDto {
+                    name: record.name,
+                    device_name: record.device_name,
+                    kind_name: record.kind_name,
+                    date: record.date,
+                    begin_time: record.begin_time,
+                    end_time: record.end_time,
+                    members: record
+                        .members
+                        .into_iter()
+                        .map(|member| LibraryRoomMemberDto { name: member.name })
+                        .collect(),
+                })
+                .collect(),
+        },
+        metadata: ReadMetadataDto::from(&metadata),
+    }
 }
 
 /// One course result looked up by course number.
@@ -5822,6 +5987,39 @@ impl ClientHandle {
         Ok(reserves_detail_result(result))
     }
 
+    /// Reads the reservable study rooms of the library study-room application.
+    ///
+    /// The catalogue is read live on every call and never served from a cached
+    /// copy: a room can be withdrawn or reopened between requests.  An empty
+    /// `kinds` list is the service's own answer that nothing is currently
+    /// reservable; a response that did not carry the service's envelope is an
+    /// error instead of an empty catalogue.
+    ///
+    /// No reservation can be made through this handle: the application's own
+    /// campus login is deliberately not implemented, so a caller has no way to
+    /// turn a room identifier into a booking.
+    pub async fn library_room_catalog_result(
+        &mut self,
+    ) -> Result<LibraryRoomCatalogResultDto, SdkErrorDto> {
+        let result = self.inner.library_room().catalog().await?;
+        Ok(library_room_catalog_result(result))
+    }
+
+    /// Reads the account's own study-room reservations for one date window.
+    ///
+    /// `begin` and `end` are `YYYY-MM-DD`.  Both are validated inside Rust
+    /// before any request, so a reversed, malformed, or over-wide window is
+    /// refused as invalid input rather than becoming a service query.  An empty
+    /// list is only ever the service's own answer that the window holds nothing.
+    pub async fn library_room_records_result(
+        &mut self,
+        begin: String,
+        end: String,
+    ) -> Result<LibraryRoomRecordsResultDto, SdkErrorDto> {
+        let result = self.inner.library_room().records(&begin, &end).await?;
+        Ok(library_room_records_result(result))
+    }
+
     /// Reads the teaching-evaluation questionnaires the account may fill in.
     /// A closed questionnaire window is the service's own "not available"
     /// state, never a validated empty list.
@@ -8299,6 +8497,98 @@ mod tests {
             .unwrap_err();
         assert_eq!(unknown.service, "reserves");
         assert_eq!(unknown.code, "context_mismatch");
+
+        assert_eq!(
+            client.auth_status().identity.state,
+            AccountStateDto::SignedOut
+        );
+    }
+
+    /// A study-room reservation's bridge `Debug` never prints the printed name
+    /// or any field value: only the presence booleans and the member count
+    /// survive, which is what keeps a personal reservation out of a log.
+    #[test]
+    fn library_room_bridge_debug_omits_names_and_times() {
+        let record = LibraryRoomRecordDto {
+            name: "private-holder".into(),
+            device_name: "private-room".into(),
+            kind_name: "private-kind".into(),
+            date: "private-date".into(),
+            begin_time: "private-begin".into(),
+            end_time: "private-end".into(),
+            members: vec![LibraryRoomMemberDto {
+                name: "private-member".into(),
+            }],
+        };
+        let rendered = format!("{record:?}");
+        assert!(rendered.contains("LibraryRoomRecordDto"));
+        assert!(rendered.contains("member_count"));
+        for private_value in [
+            "private-holder",
+            "private-room",
+            "private-kind",
+            "private-date",
+            "private-begin",
+            "private-end",
+            "private-member",
+        ] {
+            assert!(!rendered.contains(private_value));
+        }
+
+        // The member's own `Debug` is the same shape: it says a name is there,
+        // never what it is.
+        let member = LibraryRoomMemberDto {
+            name: "private-member".into(),
+        };
+        let rendered = format!("{member:?}");
+        assert!(rendered.contains("name_present"));
+        assert!(!rendered.contains("private-member"));
+    }
+
+    /// A refused reservation window is answered by Rust with no request and no
+    /// session work, and the account is left exactly as it was.  The catalogue
+    /// read has no argument to refuse, so it reports the missing session
+    /// instead of inventing an empty catalogue.
+    #[tokio::test]
+    async fn library_room_refusals_need_no_account_and_no_request() {
+        let mut client = client();
+
+        // Each read clears this domain's previous failure code before it does
+        // any session work, so the two answers below are each that read's own:
+        // the widest window is accepted and reaches the session check, while a
+        // malformed one is refused as caller input.
+        let widest = client
+            .library_room_records_result("2026-09-30".to_owned(), "2026-10-30".to_owned())
+            .await
+            .unwrap_err();
+        assert_eq!(widest.service, "library_room");
+        assert_eq!(widest.code, "session_required");
+
+        let catalog = client.library_room_catalog_result().await.unwrap_err();
+        assert_eq!(catalog.service, "library_room");
+        assert_eq!(catalog.code, "session_required");
+
+        for (begin, end) in [
+            ("", "2026-09-30"),
+            ("2026-09-30", ""),
+            ("2026-09-30", "2026-09-29"),
+            ("2026-02-30", "2026-03-01"),
+            ("today", "2026-09-30"),
+            ("2026-09-30", "2026-11-30"),
+        ] {
+            let error = client
+                .library_room_records_result(begin.to_owned(), end.to_owned())
+                .await
+                .unwrap_err();
+            assert_eq!(error.service, "library_room");
+            assert_eq!(error.code, "invalid_input");
+        }
+
+        // A session failure after a refused window is still reported as the
+        // session failure it is, not as the earlier window refusal.
+        let after = client.library_room_catalog_result().await.unwrap_err();
+        assert_eq!(after.service, "library_room");
+        assert_eq!(after.code, "session_required");
 
         assert_eq!(
             client.auth_status().identity.state,

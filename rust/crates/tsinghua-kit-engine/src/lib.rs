@@ -45,6 +45,7 @@ pub mod learn_session;
 pub mod learn_todos;
 pub mod library_api;
 pub mod library_read;
+pub mod library_room_read;
 pub mod library_write;
 mod money;
 pub mod network;
@@ -250,6 +251,16 @@ pub use library_read::{
     LibrarySocketStatusRecordDto, LibrarySocketStatuses, LibrarySocketStatusesDto, parse_area_tree,
     parse_day_segments, parse_seat_availability, parse_socket_status,
 };
+pub use library_room_read::{
+    LIBRARY_ROOM_CATALOG_PATH, LIBRARY_ROOM_MAX_WINDOW_DAYS, LIBRARY_ROOM_RECORDS_PATH,
+    LIBRARY_ROOM_USER_INFO_PATH, LIBRARY_ROOM_WEBVPN_TARGET, LibraryRoom, LibraryRoomAdapter,
+    LibraryRoomAdapterConfig, LibraryRoomAdapterError, LibraryRoomBusinessProof,
+    LibraryRoomCatalog, LibraryRoomCatalogRead, LibraryRoomKind, LibraryRoomMember,
+    LibraryRoomMethod, LibraryRoomOperation, LibraryRoomParseError, LibraryRoomProfile,
+    LibraryRoomRecord, LibraryRoomRecordsRead, LibraryRoomRequestPlan,
+    LibraryRoomSessionPrerequisite, parse_library_room_catalog_json,
+    parse_library_room_records_json,
+};
 pub use library_write::{
     LIBRARY_BOOK_PATH_PREFIX, LIBRARY_BOOK_PATH_SUFFIX, LIBRARY_BOOKING_RECORD_PATH,
     LIBRARY_CANCEL_BOOKING_PATH_PREFIX, LibraryAccessToken, LibraryBookingRecord,
@@ -381,6 +392,9 @@ mod invoice_tests;
 
 #[cfg(test)]
 mod reserves_tests;
+
+#[cfg(test)]
+mod library_room_tests;
 
 #[cfg(test)]
 mod bank_tests;

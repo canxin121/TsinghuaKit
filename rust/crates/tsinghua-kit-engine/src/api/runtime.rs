@@ -76,6 +76,9 @@ use crate::{
     learn_client::{LearnClient, LearnClientConfig, LearnCourseRecord, LearnPageClassification},
     learn_todos::{LearnTodoConfig, LearnTodoSource},
     library_read::LibraryReadAdapter,
+    library_room_read::{
+        LibraryRoomAdapter, LibraryRoomBusinessProof, LibraryRoomCatalog, LibraryRoomRecord,
+    },
     physical_exam_read::{PhysicalExamAdapter, PhysicalExamBusinessProof, PhysicalExamReport},
     program_read::{ProgramAdapter, ProgramBusinessProof, ProgramCompletion},
     protocol::{
@@ -130,6 +133,11 @@ const SPORTS_WEBVPN_BASE_URL: &str = "https://webvpn.tsinghua.edu.cn/http/777264
 /// ASCII prefix followed by AES-128-CFB of the hostname under the same fixed
 /// key and IV, and decoding this one yields `reserves.lib.tsinghua.edu.cn`.
 const RESERVES_WEBVPN_BASE_URL: &str = "https://webvpn.tsinghua.edu.cn/http/77726476706e69737468656265737421e2f2529935266d43300480aed641303c455d43259619a3eaf6eebb99/";
+/// The CAB study-room application's own campus host and WebVPN mapping.  Like
+/// the reserve catalogue above, the hostname behind this token is **evidenced**
+/// rather than inferred: decoding the token yields `cab.lib.tsinghua.edu.cn`,
+/// and the reference's own constants carry that hostname verbatim.
+const LIBRARY_ROOM_WEBVPN_BASE_URL: &str = "https://webvpn.tsinghua.edu.cn/https/77726476706e69737468656265737421f3f643d22b396a1e6a1b80a29f5d363409e413829737d1/";
 const WEBVPN_BASE_URL: &str = "https://webvpn.tsinghua.edu.cn/";
 const INFO_DIRECT_ORIGIN: &str = "https://info.tsinghua.edu.cn/";
 // Current THUInfo public clients perform one target-application identity roam
@@ -1621,6 +1629,75 @@ pub struct ReservesDetailResultDto {
     pub error: Option<String>,
 }
 
+/// Source-aware CAB study-room catalogue.
+///
+/// The catalogue is read live on every request and never served from a cached
+/// copy: a device can be withdrawn or reopened between requests, so a retained
+/// catalogue would present an unusable room as reservable.  An empty `kinds`
+/// list is the service's own answer that nothing is currently reservable; a
+/// response that did not carry the service's envelope is a failure instead.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LibraryRoomCatalogResultDto {
+    pub kinds: Vec<LibraryRoomCatalogKindDto>,
+    /// The number of reservable devices across every kind.
+    pub room_count: u32,
+    pub generated_at: String,
+    pub source: String,
+    pub status: String,
+    pub error: Option<String>,
+}
+
+/// One group of reservable devices, with the devices themselves.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LibraryRoomCatalogKindDto {
+    pub kind_id: u64,
+    pub kind_name: String,
+    pub rooms: Vec<LibraryRoomDto>,
+}
+
+/// One reservable study room.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LibraryRoomDto {
+    pub device_id: u64,
+    pub name: String,
+    pub min_reserve_minutes: u64,
+}
+
+/// Source-aware list of the account's own study-room reservations.
+///
+/// The record window is the caller's, bounded in Rust before any request, so a
+/// caller cannot use this read to walk the account's history without bound.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LibraryRoomRecordsResultDto {
+    pub records: Vec<LibraryRoomRecordDto>,
+    pub generated_at: String,
+    pub source: String,
+    pub status: String,
+    pub error: Option<String>,
+}
+
+/// One reservation held by the account.
+///
+/// The service's own cancellation handle and each member's campus account name
+/// are deliberately absent: no cancellation is reachable through this SDK, and
+/// another person's account name has no business crossing this boundary.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LibraryRoomRecordDto {
+    pub name: String,
+    pub device_name: String,
+    pub kind_name: String,
+    pub date: String,
+    pub begin_time: String,
+    pub end_time: String,
+    pub members: Vec<LibraryRoomMemberDto>,
+}
+
+/// One participant of a reservation, by printed name only.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LibraryRoomMemberDto {
+    pub name: String,
+}
+
 /// Source-aware payroll receipt ledger.
 ///
 /// The ledger is read live on every request and never served from a cached
@@ -2144,6 +2221,50 @@ fn mask_phone(value: &str) -> String {
         .rev()
         .collect();
     format!("{prefix}****{suffix}")
+}
+
+/// Projects one parsed study-room catalogue across the boundary.
+///
+/// Only the room kinds, devices and their shortest reservation cross; the
+/// service's envelope, its message text and any account value stay inside Rust.
+fn library_room_catalog_dto(catalog: LibraryRoomCatalog) -> Vec<LibraryRoomCatalogKindDto> {
+    catalog
+        .kinds
+        .into_iter()
+        .map(|kind| LibraryRoomCatalogKindDto {
+            kind_id: kind.kind_id,
+            kind_name: kind.kind_name,
+            rooms: kind
+                .rooms
+                .into_iter()
+                .map(|room| LibraryRoomDto {
+                    device_id: room.device_id,
+                    name: room.name,
+                    min_reserve_minutes: room.min_reserve_minutes,
+                })
+                .collect(),
+        })
+        .collect()
+}
+
+/// Projects one parsed reservation across the boundary.
+///
+/// The service's cancellation handle and each member's campus account name are
+/// dropped here, so neither can reach a bridge DTO.
+fn library_room_record_dto(record: LibraryRoomRecord) -> LibraryRoomRecordDto {
+    LibraryRoomRecordDto {
+        name: record.name,
+        device_name: record.device_name,
+        kind_name: record.kind_name,
+        date: record.date,
+        begin_time: record.begin_time,
+        end_time: record.end_time,
+        members: record
+            .members
+            .into_iter()
+            .map(|member| LibraryRoomMemberDto { name: member.name })
+            .collect(),
+    }
 }
 
 fn tunet_status_dto(record: &TunetStatusRecord) -> TunetNetworkStatusDto {
@@ -3011,6 +3132,12 @@ pub struct CampusRuntime {
     // superseded search leaves no resolvable reference behind.
     reserves_adapter: Option<ReservesAdapter>,
     reserves_proof: Option<ReservesBusinessProof>,
+    // The CAB study-room adapter is prepared per confirmed INFO session, on its
+    // own mapping.  The reference reaches this application through a campus
+    // identity login inside the read; this engine rides the INFO/WebVPN session
+    // the transport already holds, so only this mapping is addressed.
+    library_room_adapter: Option<LibraryRoomAdapter>,
+    library_room_proof: Option<LibraryRoomBusinessProof>,
     card_client: Option<CampusCardClient>,
     card_session: Option<CampusCardSession>,
     // One initial target-auth chain per explicit login. Retain after failure
@@ -3153,6 +3280,9 @@ pub struct CampusRuntime {
     // The course-reserve catalogue's own deployment/parse answer is mapped by
     // the SDK from a stable code instead of from message text.
     last_reserves_failure_code: Option<&'static str>,
+    // The study-room application's own envelope status and parse answer is
+    // mapped by the SDK from a stable code instead of from message text.
+    last_library_room_failure_code: Option<&'static str>,
     // The course-number query is the caller's argument, so its failures are
     // recorded here rather than inferred from the service hall's wording.
     last_course_score_failure_code: Option<&'static str>,
@@ -3770,6 +3900,8 @@ impl CampusRuntime {
             sports_proof: None,
             reserves_adapter: None,
             reserves_proof: None,
+            library_room_adapter: None,
+            library_room_proof: None,
             card_client: None,
             card_session: None,
             card_auth_attempted: false,
@@ -3846,6 +3978,7 @@ impl CampusRuntime {
             last_bank_payment_failure_code: None,
             last_graduate_income_failure_code: None,
             last_reserves_failure_code: None,
+            last_library_room_failure_code: None,
             last_course_score_failure_code: None,
             last_sports_failure_code: None,
             last_library_failure_code: None,
@@ -16463,6 +16596,238 @@ impl CampusRuntime {
         .await
     }
 
+    /// Prepares the CAB study-room adapter inside the already-confirmed INFO
+    /// session.
+    ///
+    /// Like the other INFO-hosted readers, no business read happens here: the
+    /// read that follows owns its own expiry classification.  The reference
+    /// reaches this application through a campus identity login whose
+    /// application id it takes from a response, which this engine deliberately
+    /// does not perform, so the adapter rides the mapping the INFO session
+    /// already proved.
+    async fn ensure_library_room_reader_session(
+        &mut self,
+        user: &UserIdentity,
+    ) -> Result<(), String> {
+        if self.library_room_service_is_proven() {
+            return Ok(());
+        }
+        let context_exists = self.library_room_adapter.is_some()
+            || self.library_room_proof.is_some()
+            || self.info_session_context_exists();
+        if context_exists && !self.service_session_is_proven(ServiceId::Info) {
+            self.refresh_nonacademic_service_after_expiry(ServiceId::Info)
+                .await
+                .map_err(|error| self.record_error(format!("INFO 自动续接失败: {error}")))?;
+        }
+        self.prepare_library_room_adapter(user).await
+    }
+
+    async fn prepare_library_room_adapter(&mut self, user: &UserIdentity) -> Result<(), String> {
+        self.invalidate_library_room_session();
+        self.ensure_info_session(user).await?;
+
+        let transport = self.identity.transport().clone();
+        let handoff = match self.info_adapter.as_ref() {
+            Some(info) => {
+                info.additional_roaming(crate::library_room_read::LIBRARY_ROOM_WEBVPN_TARGET)
+                    .await
+            }
+            None => return Err(self.record_error("INFO 服务会话尚未建立")),
+        };
+        let roaming_url = handoff.map_err(|error| {
+            self.record_business_failure(
+                "library_room",
+                "library_room_handoff",
+                info_failure_code(&error),
+            )
+        })?;
+        let mut base_url = Url::parse(roaming_url.as_str())
+            .map_err(|_| self.record_error("library_room roaming URL is invalid"))?;
+        let expected =
+            Url::parse(LIBRARY_ROOM_WEBVPN_BASE_URL).expect("static library room mapping");
+        if !base_url.path().starts_with(expected.path()) {
+            return Err(self.record_business_failure(
+                "library_room",
+                "library_room_handoff",
+                "library_room_mapping_rejected",
+            ));
+        }
+        // The handoff query is consumed here.  Only the proved target mapping
+        // configures the read endpoints that follow, so a handoff that carried
+        // a deeper path cannot widen what this adapter addresses.
+        base_url.set_path(expected.path());
+        base_url.set_query(None);
+        base_url.set_fragment(None);
+        let adapter = LibraryRoomAdapter::try_with_transport(base_url, transport)
+            .map_err(|error| self.record_error(format!("library_room adapter: {error}")))?;
+        self.library_room_adapter = Some(adapter);
+        Ok(())
+    }
+
+    /// Reads the CAB study-room catalogue of kinds and reservable devices.
+    ///
+    /// The catalogue is read live every time and never served from a cached
+    /// copy: a device can be withdrawn or reopened between requests.  A response
+    /// that did not carry the service's own envelope is reported as a failure,
+    /// never as an empty catalogue.
+    pub async fn load_library_room_catalog_result(
+        &mut self,
+    ) -> Result<LibraryRoomCatalogResultDto, String> {
+        crate::telemetry::observe("library_room", "load_library_room_catalog_result", async {
+            self.allow_live_operation()?;
+            // The code a previous read refused with is dropped here, so a
+            // failure this read reports is always this read's own.  Without
+            // this, a window refused earlier would be reported for a later
+            // session failure that has nothing to do with it.
+            self.last_library_room_failure_code = None;
+            let user = self.ensure_identity_user_for_live_read().await?;
+            self.ensure_library_room_reader_session(&user).await?;
+
+            let mut result = {
+                let Some(adapter) = self.library_room_adapter.as_ref() else {
+                    return self.fail("研读间服务会话未建立");
+                };
+                adapter.read_catalog_with_proof().await
+            };
+            if matches!(&result, Err(error) if error.is_session_expired()) {
+                self.invalidate_library_room_session();
+                if let Err(error) = self
+                    .refresh_nonacademic_service_after_expiry(ServiceId::Info)
+                    .await
+                {
+                    return Err(self.record_error(format!("研读间自动续接失败: {error}")));
+                }
+                let user = self.ensure_identity_user_for_live_read().await?;
+                self.prepare_library_room_adapter(&user).await?;
+                let Some(adapter) = self.library_room_adapter.as_ref() else {
+                    return self.fail("研读间自动续接后会话未建立");
+                };
+                result = adapter.read_catalog_with_proof().await;
+                if matches!(&result, Err(error) if error.is_session_expired()) {
+                    self.invalidate_library_room_session();
+                    return self.fail("研读间自动续接后仍已过期，请重新建立");
+                }
+            }
+            match result {
+                Ok(read) => {
+                    self.library_room_proof = Some(read.proof);
+                    if !self.library_room_service_is_proven() {
+                        return self.fail("研读间服务会话证明未确认，请重新建立服务会话");
+                    }
+                    self.last_error = None;
+                    self.last_library_room_failure_code = None;
+                    self.persist_resume_state_after_live_read(&user, "library_room_catalog");
+                    let count = read.value.room_count();
+                    Ok(LibraryRoomCatalogResultDto {
+                        kinds: library_room_catalog_dto(read.value),
+                        room_count: u32::try_from(count).unwrap_or(u32::MAX),
+                        generated_at: Utc::now().to_rfc3339(),
+                        source: "live".to_owned(),
+                        status: "ready".to_owned(),
+                        error: None,
+                    })
+                }
+                Err(error) => {
+                    let reason = error.diagnostic_code();
+                    self.last_library_room_failure_code = Some(reason);
+                    Err(self.record_business_failure(
+                        "library_room",
+                        "library_room_catalog",
+                        reason,
+                    ))
+                }
+            }
+        })
+        .await
+    }
+
+    /// Reads the account's own study-room reservations for one bounded window.
+    pub async fn load_library_room_records_result(
+        &mut self,
+        begin: &str,
+        end: &str,
+    ) -> Result<LibraryRoomRecordsResultDto, String> {
+        crate::telemetry::observe("library_room", "load_library_room_records_result", async {
+            self.allow_live_operation()?;
+            // The window is bounded before any session work, so a refused
+            // argument never costs a handoff and its text never reaches the
+            // service.  The adapter revalidates it as well.
+            if crate::library_room_read::LibraryRoomProfile::standard()
+                .records_request(begin, end)
+                .is_err()
+            {
+                self.last_library_room_failure_code = Some("library_room_window");
+                return Err(self.record_business_failure(
+                    "library_room",
+                    "library_room_records",
+                    "library_room_window",
+                ));
+            }
+            self.last_library_room_failure_code = None;
+            let user = self.ensure_identity_user_for_live_read().await?;
+            self.ensure_library_room_reader_session(&user).await?;
+
+            let mut result = {
+                let Some(adapter) = self.library_room_adapter.as_ref() else {
+                    return self.fail("研读间服务会话未建立");
+                };
+                adapter.read_records_with_proof(begin, end).await
+            };
+            if matches!(&result, Err(error) if error.is_session_expired()) {
+                self.invalidate_library_room_session();
+                if let Err(error) = self
+                    .refresh_nonacademic_service_after_expiry(ServiceId::Info)
+                    .await
+                {
+                    return Err(self.record_error(format!("研读间自动续接失败: {error}")));
+                }
+                let user = self.ensure_identity_user_for_live_read().await?;
+                self.prepare_library_room_adapter(&user).await?;
+                let Some(adapter) = self.library_room_adapter.as_ref() else {
+                    return self.fail("研读间自动续接后会话未建立");
+                };
+                result = adapter.read_records_with_proof(begin, end).await;
+                if matches!(&result, Err(error) if error.is_session_expired()) {
+                    self.invalidate_library_room_session();
+                    return self.fail("研读间自动续接后仍已过期，请重新建立");
+                }
+            }
+            match result {
+                Ok(read) => {
+                    self.library_room_proof = Some(read.proof);
+                    if !self.library_room_service_is_proven() {
+                        return self.fail("研读间服务会话证明未确认，请重新建立服务会话");
+                    }
+                    self.last_error = None;
+                    self.last_library_room_failure_code = None;
+                    self.persist_resume_state_after_live_read(&user, "library_room_records");
+                    Ok(LibraryRoomRecordsResultDto {
+                        records: read
+                            .value
+                            .into_iter()
+                            .map(library_room_record_dto)
+                            .collect(),
+                        generated_at: Utc::now().to_rfc3339(),
+                        source: "live".to_owned(),
+                        status: "ready".to_owned(),
+                        error: None,
+                    })
+                }
+                Err(error) => {
+                    let reason = error.diagnostic_code();
+                    self.last_library_room_failure_code = Some(reason);
+                    Err(self.record_business_failure(
+                        "library_room",
+                        "library_room_records",
+                        reason,
+                    ))
+                }
+            }
+        })
+        .await
+    }
+
     async fn ensure_campus_card_reader_session(&mut self) -> Result<(), String> {
         if self.service_session_is_proven(ServiceId::CampusCard) {
             return Ok(());
@@ -17778,6 +18143,7 @@ impl CampusRuntime {
                 self.invalidate_bank_payment_session();
                 self.invalidate_graduate_income_session();
                 self.invalidate_reserves_session();
+                self.invalidate_library_room_session();
             }
             ServiceId::Library => {
                 self.library_adapter = None;
@@ -17880,12 +18246,26 @@ impl CampusRuntime {
         self.reserves_proof = None;
     }
 
+    fn invalidate_library_room_session(&mut self) {
+        self.library_room_adapter = None;
+        self.library_room_proof = None;
+    }
+
     fn reserves_service_is_proven(&self) -> bool {
         self.service_session_is_proven(ServiceId::Info)
             && self
                 .reserves_adapter
                 .as_ref()
                 .zip(self.reserves_proof.as_ref())
+                .is_some_and(|(adapter, proof)| adapter.business_proof_matches(proof))
+    }
+
+    fn library_room_service_is_proven(&self) -> bool {
+        self.service_session_is_proven(ServiceId::Info)
+            && self
+                .library_room_adapter
+                .as_ref()
+                .zip(self.library_room_proof.as_ref())
                 .is_some_and(|(adapter, proof)| adapter.business_proof_matches(proof))
     }
 
@@ -18339,6 +18719,15 @@ impl CampusRuntime {
     /// reported as a parse failure rather than as an empty catalogue.
     pub(crate) fn last_reserves_failure_code(&self) -> Option<&'static str> {
         self.last_reserves_failure_code
+    }
+
+    /// The study-room application's own failure code from the last read.
+    ///
+    /// It exists so the SDK can map a refusal or a changed deployment to its own
+    /// code instead of reading the recorded message, which is what keeps a
+    /// response that failed to parse from ever reading as an empty catalogue.
+    pub(crate) fn last_library_room_failure_code(&self) -> Option<&'static str> {
+        self.last_library_room_failure_code
     }
 
     /// The library booking boundary's own failure code from the last action.
