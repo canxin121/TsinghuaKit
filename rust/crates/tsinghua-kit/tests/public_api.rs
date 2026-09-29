@@ -2,6 +2,12 @@ use std::{fs, path::PathBuf};
 
 use tsinghua_kit::{
     Error, Result,
+    assessment::{
+        ASSESSMENT_MAX_SCORE, ASSESSMENT_MIN_SCORE, AssessmentAnswers, AssessmentFormView,
+        AssessmentInputError, AssessmentItem, AssessmentList, AssessmentPersonAnswers,
+        AssessmentPersonRole, AssessmentPersonView, AssessmentQuestionAnswer,
+        AssessmentQuestionView, AssessmentRef,
+    },
     auth::{AccountAuthState, AuthDomain},
     calendar::{
         AcademicTerm, LearnTermCalendar, SchoolCalendarImage, SchoolCalendarLanguage,
@@ -358,6 +364,20 @@ fn rust_consumers_can_import_curated_domain_modules_without_ffi() {
     accepts_public_types::<CampusCardTransactionRange>(None);
     accepts_public_types::<CampusCardTransactions>(None);
     accepts_public_types::<CampusCardPasswordRequest>(None);
+    accepts_public_types::<AssessmentItem>(None);
+    accepts_public_types::<AssessmentList>(None);
+    accepts_public_types::<AssessmentRef>(None);
+    accepts_public_types::<AssessmentFormView>(None);
+    accepts_public_types::<AssessmentPersonView>(None);
+    accepts_public_types::<AssessmentQuestionView>(None);
+    accepts_public_types::<AssessmentQuestionAnswer>(None);
+    accepts_public_types::<AssessmentPersonAnswers>(None);
+    accepts_public_types::<AssessmentAnswers>(None);
+    accepts_public_types::<AssessmentPersonRole>(None);
+    accepts_public_types::<AssessmentInputError>(None);
+    assert_eq!(AssessmentPersonRole::Teacher, AssessmentPersonRole::Teacher);
+    assert_eq!(ASSESSMENT_MIN_SCORE, 1);
+    assert_eq!(ASSESSMENT_MAX_SCORE, 7);
     accepts_public_types::<ElectricityRemainder>(None);
     accepts_public_types::<ElectricityPaymentRecord>(None);
     accepts_public_types::<ElectricityPaymentHistory>(None);
@@ -419,6 +439,48 @@ async fn campus_card_reads_and_password_submission_fail_explicitly_without_ident
     assert_eq!(
         client.auth().status().identity().state(),
         AccountAuthState::SignedOut
+    );
+}
+
+#[tokio::test]
+async fn assessment_reads_require_identity_without_hiding_the_service() {
+    let mut client = tsinghua_kit::Client::builder().build().unwrap();
+    let list_error = {
+        let mut assessment = client.assessment();
+        assessment.list().await.unwrap_err()
+    };
+
+    assert_eq!(list_error.service(), Service::Assessment);
+    assert_eq!(list_error.code(), ErrorCode::SessionRequired);
+    assert_eq!(
+        client.auth().status().identity().state(),
+        AccountAuthState::SignedOut
+    );
+}
+
+#[test]
+fn assessment_answers_are_bounded_and_redact_their_comments() {
+    assert_eq!(
+        AssessmentQuestionAnswer::new(ASSESSMENT_MAX_SCORE + 1, None).unwrap_err(),
+        AssessmentInputError::ScoreOutOfRange
+    );
+    assert_eq!(
+        AssessmentQuestionAnswer::new(ASSESSMENT_MIN_SCORE - 1, None).unwrap_err(),
+        AssessmentInputError::ScoreOutOfRange
+    );
+    assert_eq!(
+        AssessmentQuestionAnswer::new(ASSESSMENT_MIN_SCORE, Some("private-comment".to_owned()))
+            .unwrap()
+            .suggestion(),
+        Some("private-comment")
+    );
+
+    let answer = AssessmentQuestionAnswer::new(6, Some("private-comment".to_owned())).unwrap();
+    let people = AssessmentPersonAnswers::new(vec![answer]);
+    let rendered = format!("{people:?}");
+    assert!(
+        !rendered.contains("private-comment"),
+        "the comment leaked: {rendered}"
     );
 }
 

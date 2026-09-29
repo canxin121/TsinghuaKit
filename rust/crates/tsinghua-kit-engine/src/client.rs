@@ -24,7 +24,9 @@ use crate::{
         },
         thos::{ThosPhaseStepsDto, ThosServicesDto, ThosTaskListDto},
     },
-    assessment_read::{AssessmentItem, AssessmentList},
+    assessment_read::{
+        AssessmentAnswers, AssessmentFormView, AssessmentItem, AssessmentList, AssessmentRef,
+    },
     auth::{
         AccountAuthState, AccountAuthStatus, AuthDomain, AuthStatus, SecondFactorMethod,
         SelfServiceLoginPhase,
@@ -1361,6 +1363,35 @@ impl AssessmentClient<'_> {
             .collect();
         Ok(ReadResult::new(AssessmentList { items }, metadata))
     }
+
+    /// Reads one questionnaire's questions and current answers.
+    ///
+    /// `reference` must come from this Client's latest [`AssessmentClient::list`]
+    /// result.  The service's submission state stays inside the runtime: what
+    /// comes back is a display copy, and what a caller sends back later is an
+    /// answer set, never a body.
+    pub async fn form(&mut self, reference: &AssessmentRef) -> Result<AssessmentFormView, Error> {
+        self.runtime
+            .load_assessment_form_result(reference)
+            .await
+            .map(|dto| crate::api::runtime::form_view_from_dto(dto))
+            .map_err(|_| assessment_failure(self.runtime))
+    }
+
+    /// Stores one filled-in questionnaire.
+    ///
+    /// This is a one-shot write.  It is dispatched exactly once: an answer the
+    /// service did not confirm is reported as
+    /// [`ErrorCode::OutcomeUnconfirmed`] and is never replayed, and a second
+    /// submission of the same row is refused until a fresh list read replaces
+    /// the list generation it belongs to.
+    pub async fn submit(&mut self, answers: &AssessmentAnswers) -> Result<(), Error> {
+        self.runtime
+            .submit_assessment_form(answers)
+            .await
+            .map_err(|_| assessment_failure(self.runtime))?;
+        Ok(())
+    }
 }
 
 /// Read-only e-invoice list and document reads.
@@ -1784,6 +1815,12 @@ fn program_failure(runtime: &CampusRuntime) -> Error {
 /// be told that the questionnaire window is closed, and that is not a read
 /// failure.  Everything else falls back to the account state, so an expired
 /// session is never reported as a changed page.
+///
+/// The two write outcomes are kept apart on purpose.  A caller-supplied answer
+/// the service refuses is `InvalidInput` and may be corrected and sent again
+/// with the same form; a submission whose effect is unknown is
+/// `OutcomeUnconfirmed` and must never be repeated — only a fresh list read
+/// can say what the service now holds.
 fn assessment_failure(runtime: &CampusRuntime) -> Error {
     if let Some(diagnostic) = runtime.last_assessment_failure_code() {
         let code = match diagnostic {
@@ -1792,6 +1829,25 @@ fn assessment_failure(runtime: &CampusRuntime) -> Error {
             "assessment_network" => ErrorCode::NetworkUnavailable,
             "assessment_origin" | "assessment_path" => ErrorCode::RedirectRefused,
             "assessment_http" => ErrorCode::ServiceUnavailable,
+            // The row or the form a caller presented no longer matches what
+            // this session holds.  It is a local state mismatch, not a service
+            // answer, so a caller must re-read rather than retry.
+            "assessment_form_stale" | "assessment_form_foreign" | "assessment_form_unknown" => {
+                ErrorCode::ContextMismatch
+            }
+            "assessment_form_missing" => ErrorCode::NotAvailable,
+            // Every one of these is a caller-supplied value that the service's
+            // own accepted range refuses.
+            "assessment_input_score"
+            | "assessment_input_value"
+            | "assessment_input_comment"
+            | "assessment_input_question" => ErrorCode::InvalidInput,
+            "assessment_submit_replayed" => ErrorCode::ContextMismatch,
+            // The submission left and the service has not confirmed it.  It is
+            // its own code because the outcome is unknown: not a failure the
+            // caller may retry, and not a success.
+            "assessment_submit_unconfirmed" => ErrorCode::OutcomeUnconfirmed,
+            "assessment_submit_size" => ErrorCode::InvalidInput,
             _ => ErrorCode::InvalidResponse,
         };
         return Error::new(Service::Assessment, code);

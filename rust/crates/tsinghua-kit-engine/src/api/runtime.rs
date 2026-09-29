@@ -30,7 +30,10 @@ use super::{
     service_catalog::ServiceCatalogDto,
 };
 use crate::{
-    assessment_read::{AssessmentAdapter, AssessmentBusinessProof, AssessmentRef},
+    assessment_read::{
+        AssessmentAdapter, AssessmentAdapterError, AssessmentAnswers, AssessmentBusinessProof,
+        AssessmentEvaluation, AssessmentFormView, AssessmentPersonRole, AssessmentRef,
+    },
     bank_read::{
         BankLedger, BankPaymentAdapter, BankPaymentBusinessProof, GraduateIncomeAdapter,
         GraduateIncomeBusinessProof, GraduateIncomeProfile,
@@ -529,6 +532,79 @@ fn learn_failure_code(error: &crate::learn_client::LearnClientError) -> &'static
         Error::Transport(_) => "learn_transport",
         Error::Csrf(_) => "learn_csrf_invalid",
         _ => "learn_response_format",
+    }
+}
+
+/// Arranges one questionnaire's display copy for the bridge.
+///
+/// The engine view is the value the SDK layer returns, so the runtime converts
+/// it rather than rebuilding it: the copy is display values only, and the
+/// submission state stays with the runtime-resident form, so nothing here can
+/// be posted back.
+fn form_view_dto(view: &AssessmentFormView, field_count: usize) -> AssessmentFormViewDto {
+    AssessmentFormViewDto {
+        course: view.course().to_owned(),
+        reference: view.reference(),
+        score: view.score(),
+        comment: view.suggestion().map(str::to_owned),
+        comment_editable: view.suggestion().is_some(),
+        teachers: view.teachers().iter().map(person_dto).collect(),
+        assistants: view.assistants().iter().map(person_dto).collect(),
+        field_count,
+    }
+}
+
+/// Rebuilds the engine view from a bridge DTO so both layers describe the same
+/// questionnaire with the same type.
+pub(crate) fn form_view_from_dto(dto: AssessmentFormViewDto) -> AssessmentFormView {
+    AssessmentFormView::from_parts(
+        dto.reference,
+        dto.course,
+        dto.score,
+        dto.comment,
+        dto.teachers.into_iter().map(person_view_from_dto).collect(),
+        dto.assistants
+            .into_iter()
+            .map(person_view_from_dto)
+            .collect(),
+        usize::try_from(dto.field_count).unwrap_or(usize::MAX),
+    )
+}
+
+fn person_view_from_dto(dto: AssessmentPersonDto) -> crate::assessment_read::AssessmentPersonView {
+    crate::assessment_read::AssessmentPersonView::from_parts(
+        dto.name,
+        if dto.assistant {
+            AssessmentPersonRole::Assistant
+        } else {
+            AssessmentPersonRole::Teacher
+        },
+        dto.questions
+            .into_iter()
+            .map(|question| {
+                crate::assessment_read::AssessmentQuestionView::from_parts(
+                    question.text,
+                    question.score,
+                    question.comment,
+                )
+            })
+            .collect(),
+    )
+}
+
+fn person_dto(person: &crate::assessment_read::AssessmentPersonView) -> AssessmentPersonDto {
+    AssessmentPersonDto {
+        name: person.name().to_owned(),
+        assistant: person.role() == AssessmentPersonRole::Assistant,
+        questions: person
+            .questions()
+            .iter()
+            .map(|question| AssessmentQuestionDto {
+                text: question.text().to_owned(),
+                score: question.score(),
+                comment: question.suggestion().map(str::to_owned),
+            })
+            .collect(),
     }
 }
 
@@ -1321,6 +1397,81 @@ pub struct AssessmentListItemDto {
     pub name: String,
     pub evaluated: bool,
     pub reference: AssessmentRef,
+}
+
+/// One questionnaire the account may fill in, as the runtime hands it to an
+/// editor.
+///
+/// It is a display copy: the service's submission state is not part of it, and
+/// nothing here can be posted back.  A caller authors an answer set and the
+/// runtime applies it to the form it holds, so the values that reach the
+/// service are always the service's own text with these answers filled in.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AssessmentFormViewDto {
+    pub course: String,
+    /// The opaque row reference these answers must name again.
+    pub reference: AssessmentRef,
+    /// The overall score the service currently holds.
+    pub score: u32,
+    /// The overall comment the service currently holds, when it rendered one.
+    pub comment: Option<String>,
+    /// Whether the service rendered an overall comment field at all.
+    pub comment_editable: bool,
+    pub teachers: Vec<AssessmentPersonDto>,
+    pub assistants: Vec<AssessmentPersonDto>,
+    /// The number of name/value pairs a submission of this questionnaire will
+    /// carry.  It is a shape check for the caller, not a body.
+    pub field_count: usize,
+}
+
+/// One person of one questionnaire, with their questions in page order.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AssessmentPersonDto {
+    pub name: String,
+    /// `true` for a teaching assistant, `false` for a teacher.
+    pub assistant: bool,
+    pub questions: Vec<AssessmentQuestionDto>,
+}
+
+/// One question and the answer the service currently holds for it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AssessmentQuestionDto {
+    pub text: String,
+    pub score: u32,
+    /// The comment the service currently holds, or `None` when this question
+    /// rendered no comment field.
+    pub comment: Option<String>,
+}
+
+/// One caller-supplied answer for one question.
+///
+/// A `None` comment leaves the value the service already holds; an empty
+/// string clears it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AssessmentQuestionAnswerDto {
+    pub score: u32,
+    pub comment: Option<String>,
+}
+
+/// One person's answers, in the order that person's questions were listed.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AssessmentPersonAnswersDto {
+    pub questions: Vec<AssessmentQuestionAnswerDto>,
+}
+
+/// The answers a caller fills in for one questionnaire.
+///
+/// Every score is bounded by the service's own accepted range, and the answer
+/// shape must match the form position by position: an answer set built against
+/// a different questionnaire is refused rather than partially applied.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AssessmentAnswersDto {
+    /// The overall score.
+    pub score: u32,
+    /// The overall comment, or `None` to leave the current one.
+    pub comment: Option<String>,
+    pub teachers: Vec<AssessmentPersonAnswersDto>,
+    pub assistants: Vec<AssessmentPersonAnswersDto>,
 }
 
 /// Source-aware e-invoice page.
@@ -2698,6 +2849,11 @@ pub struct CampusRuntime {
     // Its route table holds the per-row form paths, which never leave Rust.
     assessment_adapter: Option<AssessmentAdapter>,
     assessment_proof: Option<AssessmentBusinessProof>,
+    // The questionnaire form most recently read from the list, with its
+    // answers.  It is held so a submission sends the service's own page rather
+    // than a body a caller built, and it is dropped whenever the session or
+    // the list generation it belongs to is replaced.
+    pending_assessment_form: Option<AssessmentEvaluation>,
     // The e-invoice adapter is prepared per confirmed INFO session.  Its
     // document identifiers stay in the adapter, so a superseded list read
     // leaves no resolvable reference behind.
@@ -3438,6 +3594,7 @@ impl CampusRuntime {
             program_proof: None,
             assessment_adapter: None,
             assessment_proof: None,
+            pending_assessment_form: None,
             invoice_adapter: None,
             invoice_proof: None,
             bank_payment_adapter: None,
@@ -14898,6 +15055,126 @@ impl CampusRuntime {
         .await
     }
 
+    /// Reads the questionnaire form one list row named, so a caller can show
+    /// its questions and fill in answers.
+    /// The row is addressed through the opaque reference the list handed out,
+    /// which the adapter resolves against its own retained route table: a
+    /// caller never names a service path.  The form that comes back is held by
+    /// this runtime until it is submitted or a newer read replaces it, and the
+    /// service's submission state stays inside it.
+    pub async fn load_assessment_form_result(
+        &mut self,
+        reference: &AssessmentRef,
+    ) -> Result<AssessmentFormViewDto, String> {
+        crate::telemetry::observe("assessment", "load_assessment_form_result", async {
+            self.allow_live_operation()?;
+            self.ensure_identity_user_for_live_read().await?;
+            if !self.assessment_service_is_proven() {
+                return self.fail("教学评估服务会话未建立，请先刷新教学评估列表");
+            }
+            let Some(adapter) = self.assessment_adapter.as_ref() else {
+                return self.fail("教学评估服务会话未建立，请先刷新教学评估列表");
+            };
+            let result = adapter.read_form(reference).await;
+            match result {
+                Ok(evaluation) => {
+                    // A form is retained with the list generation it was read
+                    // from, so a later list read makes this one unusable rather
+                    // than posting answers against a superseded questionnaire.
+                    let view = evaluation.view();
+                    let field_count = evaluation.form().field_count();
+                    self.pending_assessment_form = Some(evaluation);
+                    self.last_error = None;
+                    self.last_assessment_failure_code = None;
+                    Ok(form_view_dto(&view, field_count))
+                }
+                Err(error) => {
+                    let reason = error.diagnostic_code();
+                    self.last_assessment_failure_code = Some(reason);
+                    if error.is_session_expired()
+                        || matches!(
+                            reason,
+                            "assessment_form_stale"
+                                | "assessment_form_foreign"
+                                | "assessment_form_unknown"
+                        )
+                    {
+                        self.invalidate_assessment_session();
+                    }
+                    Err(self.record_business_failure("assessment", "assessment_form", reason))
+                }
+            }
+        })
+        .await
+    }
+
+    /// Stores one filled-in questionnaire.
+    ///
+    /// The answers are applied to the form this runtime read, so the body that
+    /// leaves is the service's own page with the caller's scores and comments
+    /// filled in; there is no path by which a caller can supply a body, a
+    /// route, or the transaction state a submission carries.
+    ///
+    /// This is a one-shot write.  It is dispatched exactly once: if the
+    /// service did not answer with its own success result, the outcome is
+    /// reported as unconfirmed and is never replayed.  A submission for a row
+    /// already dispatched from this session is refused until a fresh list read
+    /// replaces the generation.
+    pub async fn submit_assessment_form(
+        &mut self,
+        answers: &AssessmentAnswers,
+    ) -> Result<CampusRuntimeStatusDto, String> {
+        crate::telemetry::observe("assessment", "submit_assessment_form", async {
+            self.allow_live_operation()?;
+            self.ensure_identity_user_for_live_read().await?;
+            if !self.assessment_service_is_proven() {
+                return self.fail("教学评估服务会话未建立，请先刷新教学评估列表");
+            }
+            let Some(mut evaluation) = self.pending_assessment_form.take() else {
+                return self.fail("请先打开该课程的教学评估问卷");
+            };
+            if evaluation.reference() != answers.reference() {
+                return self.fail("评估问卷与提交内容不一致，请重新打开问卷");
+            }
+            if let Err(error) = answers.apply_to(evaluation.form_mut()) {
+                // The answers never reached the client, so the form is put back
+                // rather than consumed: a caller that mis-sizes an answer set
+                // can correct it without re-reading the questionnaire.
+                self.pending_assessment_form = Some(evaluation);
+                let reason = AssessmentAdapterError::Input(error).diagnostic_code();
+                self.last_assessment_failure_code = Some(reason);
+                return Err(self.record_business_failure(
+                    "assessment",
+                    "assessment_answers",
+                    reason,
+                ));
+            }
+            let Some(adapter) = self.assessment_adapter.as_ref() else {
+                return self.fail("教学评估服务会话未建立，请先刷新教学评估列表");
+            };
+            match adapter.submit_form(&evaluation).await {
+                Ok(()) => {
+                    self.last_assessment_failure_code = None;
+                    self.last_error = None;
+                    Ok(self.status())
+                }
+                Err(error) => {
+                    let reason = error.diagnostic_code();
+                    self.last_assessment_failure_code = Some(reason);
+                    // A dispatched submission is never retried here or
+                    // anywhere above: the adapter has already refused a second
+                    // dispatch of this row, so the only safe next step is a
+                    // fresh list read, which is what the reported state tells
+                    // the user to do.  `error.is_unconfirmed()` is the case
+                    // where the service may already hold the answers.
+                    self.invalidate_assessment_session();
+                    Err(self.record_business_failure("assessment", "assessment_submit", reason))
+                }
+            }
+        })
+        .await
+    }
+
     /// Prepares the e-invoice adapter inside the already-confirmed INFO
     /// session.  Like the other INFO-hosted readers it performs no business
     /// read here: the list request that follows owns its own expiry
@@ -16812,9 +17089,12 @@ impl CampusRuntime {
 
     fn invalidate_assessment_session(&mut self) {
         // Dropping the adapter also drops its route table, so every reference
-        // handed out by the previous list read stops resolving.
+        // handed out by the previous list read stops resolving; dropping the
+        // pending form keeps a submission from being built out of a page whose
+        // session no longer exists.
         self.assessment_adapter = None;
         self.assessment_proof = None;
+        self.pending_assessment_form = None;
     }
 
     fn invalidate_invoice_session(&mut self) {
@@ -17685,6 +17965,7 @@ impl CampusRuntime {
         self.program_proof = None;
         self.assessment_adapter = None;
         self.assessment_proof = None;
+        self.pending_assessment_form = None;
         self.invoice_adapter = None;
         self.invoice_proof = None;
         self.card_client = None;

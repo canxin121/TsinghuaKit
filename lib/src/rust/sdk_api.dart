@@ -6,8 +6,8 @@
 import 'frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `academic_term_dto`, `access_method_dto`, `access_method`, `article_detail_result`, `assessment_list_result`, `bank_payment_ledger_result`, `campus_card_account_result`, `campus_card_transactions_result`, `classroom_availability_result`, `classroom_buildings_result`, `clear_library_availability_descendants`, `clear_library_descendants`, `clear_library_section_descendants`, `clear_library_window_descendants`, `context_mismatch`, `course_score_result`, `daily_overview_result`, `electricity_payment_history_result`, `electricity_remainder_result`, `exam_report_result`, `grade_report_result`, `graduate_income_result`, `invalid_input`, `invalidate_auth_bound_references`, `invoice_document_result`, `invoice_page_result`, `learn_announcements_result`, `learn_course_catalog_result`, `learn_course_discussions_result`, `learn_course_file_categories_result`, `learn_course_files_result`, `learn_homework_detail_result`, `learn_homework_list_result`, `learn_term_calendar_result`, `library_availability_result`, `library_directory_result`, `library_floors_result`, `library_sections_result`, `library_sockets_result`, `library_time_windows_result`, `map_account_status`, `map_auth_status`, `map_identity_outcome`, `news_article_dto`, `news_catalog_result`, `news_favorites_result`, `news_page_result`, `news_subscriptions_result`, `overview_schedule_dto`, `overview_todo_dto`, `physical_exam_result`, `portal_connection_result`, `program_completion_result`, `saved_learn_course_file`, `schedule_event_dto`, `school_calendar_image_result`, `self_service_account_result`, `self_service_devices_result`, `self_service_usage_result`, `semester_schedule_result`, `service_hall_directory_result`, `service_hall_pending_result`, `service_hall_phase_details_result`, `service_hall_task_list_result`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `try_from`, `try_from`
+// These functions are ignored because they are not marked as `pub`: `academic_term_dto`, `access_method_dto`, `access_method`, `article_detail_result`, `assessment_form_dto`, `assessment_list_result`, `assessment_person_dto`, `bank_payment_ledger_result`, `campus_card_account_result`, `campus_card_transactions_result`, `classroom_availability_result`, `classroom_buildings_result`, `clear_library_availability_descendants`, `clear_library_descendants`, `clear_library_section_descendants`, `clear_library_window_descendants`, `context_mismatch`, `course_score_result`, `daily_overview_result`, `electricity_payment_history_result`, `electricity_remainder_result`, `exam_report_result`, `grade_report_result`, `graduate_income_result`, `invalid_input`, `invalidate_auth_bound_references`, `invoice_document_result`, `invoice_page_result`, `learn_announcements_result`, `learn_course_catalog_result`, `learn_course_discussions_result`, `learn_course_file_categories_result`, `learn_course_files_result`, `learn_homework_detail_result`, `learn_homework_list_result`, `learn_term_calendar_result`, `library_availability_result`, `library_directory_result`, `library_floors_result`, `library_sections_result`, `library_sockets_result`, `library_time_windows_result`, `map_account_status`, `map_auth_status`, `map_identity_outcome`, `news_article_dto`, `news_catalog_result`, `news_favorites_result`, `news_page_result`, `news_subscriptions_result`, `overview_schedule_dto`, `overview_todo_dto`, `person_answers`, `physical_exam_result`, `portal_connection_result`, `program_completion_result`, `saved_learn_course_file`, `schedule_event_dto`, `school_calendar_image_result`, `self_service_account_result`, `self_service_devices_result`, `self_service_usage_result`, `semester_schedule_result`, `service_hall_directory_result`, `service_hall_pending_result`, `service_hall_phase_details_result`, `service_hall_task_list_result`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `try_from`, `try_from`
 
 /// Suggests the Identity login-stage preference without creating a Client or
 /// performing authentication/network I/O.
@@ -17,10 +17,38 @@ Future<LoginStageDto?> suggestIdentityLoginStage({required String username}) =>
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<ClientHandle>>
 abstract class ClientHandle implements RustOpaqueInterface {
+  /// Reads one questionnaire's questions and the answers the service
+  /// currently holds for them.
+  ///
+  /// `reference_index` must come from the most recent
+  /// [`ClientHandle::assessment_list_result`] call on this handle.  A
+  /// superseded index is refused before any request, and an index a caller
+  /// invents does not address anything.
+  ///
+  /// The result is a display copy: it carries no submission state and cannot
+  /// be posted back.
+  Future<AssessmentFormDto> assessmentFormResult({required String referenceId});
+
   /// Reads the teaching-evaluation questionnaires the account may fill in.
   /// A closed questionnaire window is the service's own "not available"
   /// state, never a validated empty list.
+  ///
+  /// Every row's `reference_index` is an opaque handle into this call's list
+  /// generation; it is refreshed by each list read and cleared whenever the
+  /// handle's account context changes.
   Future<AssessmentListResultDto> assessmentListResult();
+
+  /// Stores one filled-in questionnaire.
+  ///
+  /// The answers are applied inside Rust to the questionnaire this handle
+  /// read, so only scores and comments cross the bridge: no body, no route,
+  /// and no transaction state is ever supplied by the caller.
+  ///
+  /// This is a one-shot write.  The selection is consumed before dispatch, so
+  /// an unconfirmed outcome — reported as `outcome_unconfirmed` — cannot be
+  /// submitted again through this handle, and the service's own success is
+  /// the only accepted completion.
+  Future<void> assessmentSubmit({required AssessmentAnswersDto answers});
 
   /// Returns the two independent Auth slots owned by this Client.
   Future<AuthStatusDto> authStatus();
@@ -554,6 +582,112 @@ class ArticleDetailResultDto {
           metadata == other.metadata;
 }
 
+/// The answers a caller fills in for one questionnaire.
+///
+/// It carries scores and comments only: no field here names a submission
+/// field, so the body a submission sends is the service's own page with these
+/// answers applied.
+class AssessmentAnswersDto {
+  /// The row these answers are for, as the list handed it out.
+  final String referenceId;
+  final int score;
+
+  /// The overall comment, or `None` to leave the current one.
+  final String? comment;
+  final List<AssessmentPersonAnswersDto> teachers;
+  final List<AssessmentPersonAnswersDto> assistants;
+
+  const AssessmentAnswersDto({
+    required this.referenceId,
+    required this.score,
+    this.comment,
+    required this.teachers,
+    required this.assistants,
+  });
+
+  @override
+  int get hashCode =>
+      referenceId.hashCode ^
+      score.hashCode ^
+      comment.hashCode ^
+      teachers.hashCode ^
+      assistants.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is AssessmentAnswersDto &&
+          runtimeType == other.runtimeType &&
+          referenceId == other.referenceId &&
+          score == other.score &&
+          comment == other.comment &&
+          teachers == other.teachers &&
+          assistants == other.assistants;
+}
+
+/// One questionnaire's questions and current answers, as an editor sees them.
+///
+/// It is a display copy: the service's submission state is not part of it, and
+/// nothing here can be posted back.  The `reference_index` is the row the
+/// answers must name again when they are submitted.
+class AssessmentFormDto {
+  final String course;
+
+  /// The opaque row handle these answers must name again when submitted.
+  final String referenceId;
+
+  /// The overall score the service currently holds.
+  final int score;
+
+  /// The overall comment the service currently holds, when it rendered one.
+  final String? comment;
+
+  /// Whether the service rendered an overall comment field at all.
+  final bool commentEditable;
+  final List<AssessmentPersonDto> teachers;
+  final List<AssessmentPersonDto> assistants;
+
+  /// The number of name/value pairs a submission of this questionnaire will
+  /// carry.  It is a shape check for the caller, not a body.
+  final int fieldCount;
+
+  const AssessmentFormDto({
+    required this.course,
+    required this.referenceId,
+    required this.score,
+    this.comment,
+    required this.commentEditable,
+    required this.teachers,
+    required this.assistants,
+    required this.fieldCount,
+  });
+
+  @override
+  int get hashCode =>
+      course.hashCode ^
+      referenceId.hashCode ^
+      score.hashCode ^
+      comment.hashCode ^
+      commentEditable.hashCode ^
+      teachers.hashCode ^
+      assistants.hashCode ^
+      fieldCount.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is AssessmentFormDto &&
+          runtimeType == other.runtimeType &&
+          course == other.course &&
+          referenceId == other.referenceId &&
+          score == other.score &&
+          comment == other.comment &&
+          commentEditable == other.commentEditable &&
+          teachers == other.teachers &&
+          assistants == other.assistants &&
+          fieldCount == other.fieldCount;
+}
+
 /// The questionnaires the account may currently fill in.
 class AssessmentListDataDto {
   final List<AssessmentListItemDto> items;
@@ -573,22 +707,21 @@ class AssessmentListDataDto {
           items == other.items;
 }
 
-/// One questionnaire row.  `reference_index` addresses the form inside the
-/// Rust session that produced this list; it is not a service route.
+/// One questionnaire row.  `reference_id` addresses the form inside the Rust
+/// session that produced this list; it is not a service route.
 class AssessmentListItemDto {
   final String name;
   final bool evaluated;
-  final int referenceIndex;
+  final String referenceId;
 
   const AssessmentListItemDto({
     required this.name,
     required this.evaluated,
-    required this.referenceIndex,
+    required this.referenceId,
   });
 
   @override
-  int get hashCode =>
-      name.hashCode ^ evaluated.hashCode ^ referenceIndex.hashCode;
+  int get hashCode => name.hashCode ^ evaluated.hashCode ^ referenceId.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -597,7 +730,7 @@ class AssessmentListItemDto {
           runtimeType == other.runtimeType &&
           name == other.name &&
           evaluated == other.evaluated &&
-          referenceIndex == other.referenceIndex;
+          referenceId == other.referenceId;
 }
 
 class AssessmentListResultDto {
@@ -619,6 +752,105 @@ class AssessmentListResultDto {
           runtimeType == other.runtimeType &&
           data == other.data &&
           metadata == other.metadata;
+}
+
+/// One person's answers, in the order that person's questions were listed.
+class AssessmentPersonAnswersDto {
+  final List<AssessmentQuestionAnswerDto> questions;
+
+  const AssessmentPersonAnswersDto({
+    required this.questions,
+  });
+
+  @override
+  int get hashCode => questions.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is AssessmentPersonAnswersDto &&
+          runtimeType == other.runtimeType &&
+          questions == other.questions;
+}
+
+/// One person of one questionnaire.
+class AssessmentPersonDto {
+  final String name;
+
+  /// `true` for a teaching assistant, `false` for a teacher.
+  final bool assistant;
+  final List<AssessmentQuestionDto> questions;
+
+  const AssessmentPersonDto({
+    required this.name,
+    required this.assistant,
+    required this.questions,
+  });
+
+  @override
+  int get hashCode => name.hashCode ^ assistant.hashCode ^ questions.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is AssessmentPersonDto &&
+          runtimeType == other.runtimeType &&
+          name == other.name &&
+          assistant == other.assistant &&
+          questions == other.questions;
+}
+
+/// One caller-supplied answer for one question.
+///
+/// A `None` comment leaves the value the service already holds; an empty
+/// string clears it.
+class AssessmentQuestionAnswerDto {
+  final int score;
+  final String? comment;
+
+  const AssessmentQuestionAnswerDto({
+    required this.score,
+    this.comment,
+  });
+
+  @override
+  int get hashCode => score.hashCode ^ comment.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is AssessmentQuestionAnswerDto &&
+          runtimeType == other.runtimeType &&
+          score == other.score &&
+          comment == other.comment;
+}
+
+/// One question and the answer the service currently holds for it.
+class AssessmentQuestionDto {
+  final String text;
+  final int score;
+
+  /// The comment the service currently holds, or `None` when this question
+  /// rendered no comment field.
+  final String? comment;
+
+  const AssessmentQuestionDto({
+    required this.text,
+    required this.score,
+    this.comment,
+  });
+
+  @override
+  int get hashCode => text.hashCode ^ score.hashCode ^ comment.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is AssessmentQuestionDto &&
+          runtimeType == other.runtimeType &&
+          text == other.text &&
+          score == other.score &&
+          comment == other.comment;
 }
 
 /// Independent unified Identity and network SelfService account status.

@@ -1282,3 +1282,54 @@ test/public_entrypoints_test.dart | 1 +
 需要真实只读验收才可能推进的动作：用真实账号观测一次该 selector 的第一跳页面（拿到图表元素的真实 `src` 形状与主机名/协议），判定是否值得为一个"只能以图片形式呈现"的能力开放第二条映射。**在此之前不得**用空结果、占位序列或前端自绘图表伪装成已实现。
 
 本轮验证：`cargo fmt --check` 与 `git diff --check` 通过；本小节只改注释与文档，未改动任何可执行代码，因此未重跑引擎测试。线上可用性未验证。
+
+## 59. 2026-09-29 教学评估提交（一次性写操作）
+
+本轮在 §54 的**只读问卷列表**之上补上 `thu_reference` 已有、TsinghuaKit 缺失的两项写能力：读取某一行问卷的表单（`read_form`）与提交填好的问卷（`submit_form`）。两者与 §54 共用同一个 selector `0D8B99BA23FD2BA22428D9C8AA0AB508` 与同一个 jxgl WebVPN 映射，因此**本轮不新增任何 selector、映射或主机名**，全部落在既有 INFO/WebVPN 会话、既有 `CampusHttpTransport` 与既有 request gate 内。这是本仓库第一个**非只读**学校服务调用，所以本节的重点是"写操作凭什么可以安全暴露"，而不是路径。
+
+**不可伪造的提交体是本域的核心设计**
+
+参考实现让调用方把整张表单（含隐藏字段）发回去。引擎侧不能照搬：那等于把事务状态与提交路由一起交给调用方。于是把"事务状态"与"显示副本"拆成两个类型：
+
+- `AssessmentForm`（引擎内部）由解析器 `parse_assessment_form_html` **唯一**产生，携带服务自己渲染的隐藏 name/value 对（含一次性事务标识）。它的字段是私有的，`Clone` 只复制答案而不复制提交权。
+- `AssessmentFormView` 是给调用方的**显示副本**，只带课程名、当前分数与评语、每位教师/助教的每道题的题干与当前答案、以及 `field_count`。它**不带**事务字段，也不带任何可以提交回去的 body。
+- 调用方据此构造 `AssessmentAnswers`（`AssessmentAnswers::new(reference, score)` + `set_score` / `set_suggestion` / `set_people`），Rust 侧再通过 crate-private 的 `AssessmentAnswers::apply_to` 把答案**写到 runtime 自己持有的那张表单上**。因此 POST 出去的那个 body 永远是"服务自己的页面 + 调用方填的分数与评语"，构造不出第二个 body。
+
+**逐位置匹配，不是"没提到就跳过"**
+
+`apply_person_answers` 要求人数与题数**逐位置完全相等**，否则 `AssessmentInputError::UnknownQuestion`。理由写在代码注释里："我没提到的答案"和"我想保持原样的答案"不是同一个请求——把少送的人静默留在服务原值上，会让一份按另一张问卷构造的答案集半途生效。`comment` 为 `None` 才是"保持服务原值"，空串是"清空"。
+
+**两套失败码必须分开**
+
+- 调用方送出的分数/评语/形状被服务自己的接受范围或本模块的形状检查拒绝 ⇒ `assessment_input_*`，SDK 层是 `ErrorCode::InvalidInput`。此时 runtime 把表单**放回** `pending_assessment_form`，所以改正后的答案可以直接重送同一张表单，不必重新读取。
+- 请求**已经发出**而服务没有给出 `result == "success"` ⇒ `assessment_submit_unconfirmed`，SDK 层是 `ErrorCode::OutcomeUnconfirmed`。这是一次写动作结果不明，**绝不重放**；只有重新读一次列表才能弄清服务到底存了什么。
+
+这两者不能合并成一个错误，否则"你填错了"和"我不知道发生了什么"在调用方看来会是同一件事。
+
+**一次性：三个层次都拦得住**
+
+1. 适配器在**构造请求之前**就把该行标成 `submitted`（`routes.submitted.push(index)`），随后的传输失败无法与"服务其实已经处理"区分，因此第二次提交同一行返回 `AssessmentAdapterError::SubmitAlreadyAttempted`，直到一次新的列表读取推进 generation。
+2. runtime 的 `submit_assessment_form` 不重试，失败即 `invalidate_assessment_session()` 并记录业务失败。
+3. FFI 句柄在派发前就被 `remove()`，同一个 `reference_id` 用第二次直接落到未知句柄。
+
+**Runtime 接线**
+
+新增状态字段 `pending_assessment_form: Option<AssessmentEvaluation>`（`direct_state_field_count` 109 → 110）：它是"最近一次从列表行读到的、已经过解析与校验的表单"。`load_assessment_form_result(reference)` 走 `allow_live_operation` → `ensure_identity_user_for_live_read` → 要求 `assessment_service_is_proven()` → `adapter.read_form(reference)`，成功后把求值对象存进 `pending_assessment_form` 并清空失败码；失败时按 `diagnostic_code()` 记录，会话失效或 `StaleForm`/`ForeignForm`/`UnknownForm` 一律作废该会话。`submit_assessment_form(answers)` 先取出持有的表单，reference 不符即拒（不消耗表单），再 `apply_to`，失败时把表单放回；成功或结果不明都清空，避免同一张表单被写第二次。`invalidate_assessment_session()` 与 `logout` 都会清掉它——未保存的内存会话在进程退出后不作任何"仍可复用"的声明。
+
+**SDK / FFI / Dart**
+
+- SDK：`pub mod assessment` 增列 `ASSESSMENT_MIN_SCORE`(1) / `ASSESSMENT_MAX_SCORE`(7)、`AssessmentAnswers`、`AssessmentPersonAnswers`、`AssessmentQuestionAnswer`、`AssessmentFormView`、`AssessmentPersonView`、`AssessmentQuestionView`、`AssessmentPersonRole`、`AssessmentInputError`，`AssessmentClient` 新增 `form(&AssessmentRef)` 与 `submit(&AssessmentAnswers)`。
+- FFI：新增 `AssessmentFormDto` / `AssessmentPersonDto` / `AssessmentQuestionDto` / `AssessmentQuestionAnswerDto` / `AssessmentPersonAnswersDto` / `AssessmentAnswersDto`，`AssessmentListItemDto.reference_index: u32` 改为 `reference_id: String`——行引用沿用 usereg 设备与发票文档的既有做法：`ClientHandle` 持 `HashMap<String, AssessmentRef>`，每次列表读取开始前清空、在 `invalidate_auth_bound_references` 里清空，对每行发出一个新的 UUID；引擎的 `AssessmentRef::index` 不出现在公开 surface 上。所有新 DTO 的 `Debug` 手工脱敏（只打印 `reference_present` / 计数 / `has_comment` / `comment_editable`），因为课程名、题干与评语都是账号相关的服务文本。`AssessmentAnswersDto` 同样手工实现 `Debug`，否则 derive 会把 `reference_id` 原样打印出来。FRB 2.13.0 重新生成，生成物未手工编辑。
+- Dart：`lib/src/assessment.dart` 补齐 `AssessmentForm` / `AssessmentQuestion` / `AssessmentPerson` / `AssessmentQuestionAnswer` / `AssessmentPersonAnswers` / `AssessmentAnswers`，`AssessmentClient` 增 `form({referenceId})` 与 `submit({answers})`，`lib/assessment.dart` 入口同步导出。
+
+**验证**
+
+`cargo test -p tsinghua_kit_engine --lib -- assessment` **43 项通过**（`assessment_tests` 34 项 + `api::runtime::assessment_tests` 9 项）：列表解析与拒绝未知层级、表单解析（事务字段、整体评语、每人每题）、显示副本携带服务当前答案、答案集被应用到它所对应的那张表单、形状不符的答案集被拒、视图与答案的 `Debug` 都不含提交状态、一次性提交被确认/被拒/被不重放、未确认提交不重放、被拒答案集在**发送之前**就返回且表单可复用、行引用跨会话不作废他人、adapter `Debug` 不含路由或账号文本；Runtime 9 项覆盖：列表读取落在既有 jxgl 映射根内、按行引用读表单（断言 GET 落在 `/http/{ASSESSMENT_MAPPING}/jxpg/f/jxpg/wj/xs/pgkcForm?wjid=1001&kcbh=1` 且不带 `ticket`）、提交把答案写进服务自己的表单并只派发一次（断言 body 含 `wjid=1001`、`pjfs_1=7`、`jtjy_1=%E8%AE%B2%E5%BE%97%E5%BE%88%E5%A5%BD`，且第二次提交**零请求**）、未确认提交不被重放、对未打开的行提交答案被拒、未证明账号零请求。
+
+SDK `cargo test -p tsinghua_kit --all-targets` 28 项通过（`client_api` 12 + `public_api` 16；其中 `tests/public_api.rs` 新增两项：`assessment_reads_require_identity_without_hiding_the_service` 断言无身份时是 `Service::Assessment` + `SessionRequired`；`assessment_answers_are_bounded_and_redact_their_comments` 断言越界分数被拒、评语原文不出现在 `Debug`），`rust_consumers_can_import_curated_domain_modules_without_ffi` 增补全部新公开类型的导入与 `ASSESSMENT_MIN_SCORE == 1` / `ASSESSMENT_MAX_SCORE == 7` 断言。FFI `cargo test -p tsinghua_kit_ffi --features ffi-bridge --lib` 38 项通过，其中两项为本轮新增：`assessment_writes_reject_unknown_row_handles_before_reading`（伪造 UUID 的表单与提交都在读之前以 `assessment`/`context_mismatch` 被拒，且账号仍是 `SignedOut`）与 `assessment_bridge_debug_omits_questions_comments_and_handles`（两种 `Debug` 渲染都不含课程名/教师名/题干/评语/答案/句柄原文）。
+
+`cargo check --workspace --all-targets` 退出 0（engine lib 的 warning 数与 HEAD 逐条相同，均为 71 条既有无关项，无新增；本轮新增的 `SUGGESTION_INPUT_MARKER` 未使用警告在收尾时删除了该常量，因为题干里的评语输入实际是按 `class` 属性而非按这个字面量识别的，留着它只会误导后来者）；严格 `RUSTDOCFLAGS="-D warnings" cargo doc -p tsinghua_kit` 通过；`cargo fmt --all -- --check` 与 `git diff --check` 干净；`flutter analyze lib test` 无问题；`flutter test test/public_entrypoints_test.dart` 通过并覆盖 `AssessmentForm` / `AssessmentQuestion` / `AssessmentPerson` / `AssessmentAnswers` / `AssessmentPersonAnswers` / `AssessmentQuestionAnswer` 与 `minScore == 1`、`maxScore == 7`。`docs/api-surface-baseline.json` 已按本节源码与重新渲染的 Rustdoc 刷新：`source_revision` 前进、模块列表仍 61、根 `pub use` 计数仍 51、`rendered_crate_root_item_counts` 为 struct 301 / enum 143 / constant 45（新增的正是本轮 9 个 struct、2 个 enum、3 个常量）、DTO 清单新增 6 项、方法清单新增 3 项（含 §57 的 `load_course_score_result`）、`direct_state_field_count` 110。同时修掉三处本轮新引入的 rustdoc 断链（`campus_html`、`AssessmentQuestion`、`parse_assessment_form_html` 与 `apply_to` 指向私有项），并把 §57/§58 遗留的文档一致性问题一并更正：`ThosCourseScoreDto` 定义在 `api/thos.rs` 而不在 `runtime.rs`，baseline 的方法行号此前取自 §55 的源码状态，现已按当前源码重新抽取（行号、签名、顺序全部与 `struct.CampusRuntime` 的 Rustdoc 源码锚点逐一核对一致）。
+
+**边界**
+
+本轮**未执行任何真实账号登录或学校服务请求**；本域的线上可用性仍未验证，需另行真实只读验收（且当前只读验收口径**不覆盖**提交动作：写路径只能靠 fixture 证据）。真实提交表单、评语与分数都不进 DTO、日志、台账与 Git；`thu_reference` 侧的相关实现仅作为路径/字段/选择器/可观察行为的证据使用，未复制其源码、夹具或资源。

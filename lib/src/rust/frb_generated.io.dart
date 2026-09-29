@@ -97,6 +97,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ArticleDetailResultDto dco_decode_article_detail_result_dto(dynamic raw);
 
   @protected
+  AssessmentAnswersDto dco_decode_assessment_answers_dto(dynamic raw);
+
+  @protected
+  AssessmentFormDto dco_decode_assessment_form_dto(dynamic raw);
+
+  @protected
   AssessmentListDataDto dco_decode_assessment_list_data_dto(dynamic raw);
 
   @protected
@@ -104,6 +110,20 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   AssessmentListResultDto dco_decode_assessment_list_result_dto(dynamic raw);
+
+  @protected
+  AssessmentPersonAnswersDto dco_decode_assessment_person_answers_dto(
+      dynamic raw);
+
+  @protected
+  AssessmentPersonDto dco_decode_assessment_person_dto(dynamic raw);
+
+  @protected
+  AssessmentQuestionAnswerDto dco_decode_assessment_question_answer_dto(
+      dynamic raw);
+
+  @protected
+  AssessmentQuestionDto dco_decode_assessment_question_dto(dynamic raw);
 
   @protected
   AuthStatusDto dco_decode_auth_status_dto(dynamic raw);
@@ -131,6 +151,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   NetworkProfilePasswordHandle
       dco_decode_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerNetworkProfilePasswordHandle(
           dynamic raw);
+
+  @protected
+  AssessmentAnswersDto dco_decode_box_autoadd_assessment_answers_dto(
+      dynamic raw);
 
   @protected
   bool dco_decode_box_autoadd_bool(dynamic raw);
@@ -468,6 +492,21 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<AssessmentListItemDto> dco_decode_list_assessment_list_item_dto(
+      dynamic raw);
+
+  @protected
+  List<AssessmentPersonAnswersDto>
+      dco_decode_list_assessment_person_answers_dto(dynamic raw);
+
+  @protected
+  List<AssessmentPersonDto> dco_decode_list_assessment_person_dto(dynamic raw);
+
+  @protected
+  List<AssessmentQuestionAnswerDto>
+      dco_decode_list_assessment_question_answer_dto(dynamic raw);
+
+  @protected
+  List<AssessmentQuestionDto> dco_decode_list_assessment_question_dto(
       dynamic raw);
 
   @protected
@@ -977,6 +1016,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
       SseDeserializer deserializer);
 
   @protected
+  AssessmentAnswersDto sse_decode_assessment_answers_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  AssessmentFormDto sse_decode_assessment_form_dto(
+      SseDeserializer deserializer);
+
+  @protected
   AssessmentListDataDto sse_decode_assessment_list_data_dto(
       SseDeserializer deserializer);
 
@@ -986,6 +1033,22 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   AssessmentListResultDto sse_decode_assessment_list_result_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  AssessmentPersonAnswersDto sse_decode_assessment_person_answers_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  AssessmentPersonDto sse_decode_assessment_person_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  AssessmentQuestionAnswerDto sse_decode_assessment_question_answer_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  AssessmentQuestionDto sse_decode_assessment_question_dto(
       SseDeserializer deserializer);
 
   @protected
@@ -1016,6 +1079,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   NetworkProfilePasswordHandle
       sse_decode_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerNetworkProfilePasswordHandle(
           SseDeserializer deserializer);
+
+  @protected
+  AssessmentAnswersDto sse_decode_box_autoadd_assessment_answers_dto(
+      SseDeserializer deserializer);
 
   @protected
   bool sse_decode_box_autoadd_bool(SseDeserializer deserializer);
@@ -1405,6 +1472,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<AssessmentListItemDto> sse_decode_list_assessment_list_item_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  List<AssessmentPersonAnswersDto>
+      sse_decode_list_assessment_person_answers_dto(
+          SseDeserializer deserializer);
+
+  @protected
+  List<AssessmentPersonDto> sse_decode_list_assessment_person_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  List<AssessmentQuestionAnswerDto>
+      sse_decode_list_assessment_question_answer_dto(
+          SseDeserializer deserializer);
+
+  @protected
+  List<AssessmentQuestionDto> sse_decode_list_assessment_question_dto(
       SseDeserializer deserializer);
 
   @protected
@@ -1990,6 +2075,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
       ArticleDetailResultDto self, SseSerializer serializer);
 
   @protected
+  void sse_encode_assessment_answers_dto(
+      AssessmentAnswersDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_assessment_form_dto(
+      AssessmentFormDto self, SseSerializer serializer);
+
+  @protected
   void sse_encode_assessment_list_data_dto(
       AssessmentListDataDto self, SseSerializer serializer);
 
@@ -2000,6 +2093,22 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_assessment_list_result_dto(
       AssessmentListResultDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_assessment_person_answers_dto(
+      AssessmentPersonAnswersDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_assessment_person_dto(
+      AssessmentPersonDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_assessment_question_answer_dto(
+      AssessmentQuestionAnswerDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_assessment_question_dto(
+      AssessmentQuestionDto self, SseSerializer serializer);
 
   @protected
   void sse_encode_auth_status_dto(AuthStatusDto self, SseSerializer serializer);
@@ -2030,6 +2139,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void
       sse_encode_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerNetworkProfilePasswordHandle(
           NetworkProfilePasswordHandle self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_box_autoadd_assessment_answers_dto(
+      AssessmentAnswersDto self, SseSerializer serializer);
 
   @protected
   void sse_encode_box_autoadd_bool(bool self, SseSerializer serializer);
@@ -2431,6 +2544,22 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_assessment_list_item_dto(
       List<AssessmentListItemDto> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_assessment_person_answers_dto(
+      List<AssessmentPersonAnswersDto> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_assessment_person_dto(
+      List<AssessmentPersonDto> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_assessment_question_answer_dto(
+      List<AssessmentQuestionAnswerDto> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_assessment_question_dto(
+      List<AssessmentQuestionDto> self, SseSerializer serializer);
 
   @protected
   void sse_encode_list_bank_receipt_dto(

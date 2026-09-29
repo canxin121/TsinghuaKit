@@ -4,7 +4,11 @@ use std::{fmt, path::PathBuf};
 
 use tsinghua_kit_engine::{
     CourseScore,
-    assessment_read::AssessmentList as EngineAssessmentList,
+    assessment_read::{
+        AssessmentAnswers as EngineAssessmentAnswers,
+        AssessmentFormView as EngineAssessmentFormView, AssessmentList as EngineAssessmentList,
+        AssessmentRef,
+    },
     auth::{AccountAuthStatus, AuthStatus, SecondFactorMethod, SelfServiceLoginPhase},
     bank_read::{BankLedger, BankPaymentLedger, GraduateIncomePage},
     calendar_api::{LearnTermCalendar, SchoolCalendarImage, SchoolCalendarQuery},
@@ -739,6 +743,33 @@ impl AssessmentClient<'_> {
     /// state, never as a validated empty list.
     pub async fn list(&mut self) -> Result<ReadResult<EngineAssessmentList>, Error> {
         self.inner.list().await
+    }
+
+    /// Reads one questionnaire's questions and the answers the service
+    /// currently holds for them.
+    ///
+    /// The reference must come from this Client's latest [`Self::list`] result.
+    /// The returned value is a display copy: it carries no submission state and
+    /// cannot be posted back.
+    pub async fn form(
+        &mut self,
+        reference: &AssessmentRef,
+    ) -> Result<EngineAssessmentFormView, Error> {
+        self.inner.form(reference).await
+    }
+
+    /// Stores one filled-in questionnaire.
+    ///
+    /// The answers are applied to the questionnaire this runtime read, so the
+    /// caller supplies scores and comments only — never a body, a route, or the
+    /// transaction state the submission carries.
+    ///
+    /// This is a one-shot write: an unconfirmed outcome is reported as
+    /// [`ErrorCode::OutcomeUnconfirmed`](crate::error::ErrorCode::OutcomeUnconfirmed)
+    /// and is never replayed, and the same row cannot be submitted twice until
+    /// a fresh list read replaces it.
+    pub async fn submit(&mut self, answers: &EngineAssessmentAnswers) -> Result<(), Error> {
+        self.inner.submit(answers).await
     }
 }
 

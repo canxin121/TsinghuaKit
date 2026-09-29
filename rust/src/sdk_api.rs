@@ -8,7 +8,10 @@ use std::{collections::HashMap, fmt, path::PathBuf};
 
 use tsinghua_kit_sdk::{
     Client as SdkClient, ClientBuilder, Error as SdkError,
-    assessment::AssessmentList,
+    assessment::{
+        AssessmentAnswers, AssessmentFormView, AssessmentList, AssessmentPersonAnswers,
+        AssessmentPersonRole, AssessmentPersonView, AssessmentQuestionAnswer, AssessmentRef,
+    },
     auth::{
         AccountAuthState, AccountAuthStatus, AuthStatus, IdentityLoginOutcome,
         IdentityLoginRequest, LoginStage, SecondFactorMethod, SelfServiceLoginOutcome,
@@ -1187,22 +1190,82 @@ fn program_completion_result(value: ReadResult<ProgramCompletion>) -> ProgramCom
 
 /// Flattens the questionnaire list into bridge-safe rows.  Each row carries
 /// the questionnaire's name, whether it was already filled in, and an opaque
-/// reference index; the service's own route never crosses the bridge.
-fn assessment_list_result(value: ReadResult<AssessmentList>) -> AssessmentListResultDto {
+/// handle; the service's own route never crosses the bridge.
+fn assessment_list_result(
+    value: ReadResult<AssessmentList>,
+    references: &mut HashMap<String, AssessmentRef>,
+) -> AssessmentListResultDto {
     let (list, metadata) = value.into_parts();
+    references.clear();
     let items = list
         .items
         .iter()
-        .map(|item| AssessmentListItemDto {
-            name: item.name.clone(),
-            evaluated: item.evaluated,
-            reference_index: item.reference.index(),
+        .map(|item| {
+            let reference_id = uuid::Uuid::new_v4().to_string();
+            references.insert(reference_id.clone(), item.reference.clone());
+            AssessmentListItemDto {
+                name: item.name.clone(),
+                evaluated: item.evaluated,
+                reference_id,
+            }
         })
         .collect();
     AssessmentListResultDto {
         data: AssessmentListDataDto { items },
         metadata: ReadMetadataDto::from(&metadata),
     }
+}
+
+/// Flattens one questionnaire's display copy into its bridge shape.
+///
+/// Only display values and the row's opaque handle cross; the handle is the
+/// same one the list handed out, so the answers a caller authors name the row
+/// they were read from.
+fn assessment_form_dto(view: AssessmentFormView, reference_id: String) -> AssessmentFormDto {
+    AssessmentFormDto {
+        course: view.course().to_owned(),
+        reference_id,
+        score: view.score(),
+        comment: view.suggestion().map(str::to_owned),
+        comment_editable: view.suggestion().is_some(),
+        teachers: view.teachers().iter().map(assessment_person_dto).collect(),
+        assistants: view
+            .assistants()
+            .iter()
+            .map(assessment_person_dto)
+            .collect(),
+        field_count: u32::try_from(view.field_count()).unwrap_or(u32::MAX),
+    }
+}
+
+fn assessment_person_dto(person: &AssessmentPersonView) -> AssessmentPersonDto {
+    AssessmentPersonDto {
+        name: person.name().to_owned(),
+        assistant: person.role() == AssessmentPersonRole::Assistant,
+        questions: person
+            .questions()
+            .iter()
+            .map(|question| AssessmentQuestionDto {
+                text: question.text().to_owned(),
+                score: question.score(),
+                comment: question.suggestion().map(str::to_owned),
+            })
+            .collect(),
+    }
+}
+
+/// Translates one person's bridge answers into the SDK's own answer type.
+///
+/// A score outside the service's accepted range is refused here rather than
+/// becoming a request the service has to reject.
+fn person_answers(dto: AssessmentPersonAnswersDto) -> Result<AssessmentPersonAnswers, SdkErrorDto> {
+    let questions = dto
+        .questions
+        .into_iter()
+        .map(|question| AssessmentQuestionAnswer::new(question.score, question.comment))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| invalid_input("assessment"))?;
+    Ok(AssessmentPersonAnswers::new(questions))
 }
 
 /// Flattens one invoice page into bridge-safe rows.  Each row carries only the
@@ -2529,13 +2592,13 @@ pub struct ProgramCompletionResultDto {
     pub metadata: ReadMetadataDto,
 }
 
-/// One questionnaire row.  `reference_index` addresses the form inside the
-/// Rust session that produced this list; it is not a service route.
+/// One questionnaire row.  `reference_id` addresses the form inside the Rust
+/// session that produced this list; it is not a service route.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AssessmentListItemDto {
     pub name: String,
     pub evaluated: bool,
-    pub reference_index: u32,
+    pub reference_id: String,
 }
 
 /// The questionnaires the account may currently fill in.
@@ -2559,6 +2622,121 @@ impl fmt::Debug for AssessmentListDataDto {
 pub struct AssessmentListResultDto {
     pub data: AssessmentListDataDto,
     pub metadata: ReadMetadataDto,
+}
+
+/// One questionnaire's questions and current answers, as an editor sees them.
+///
+/// It is a display copy: the service's submission state is not part of it, and
+/// nothing here can be posted back.  The `reference_index` is the row the
+/// answers must name again when they are submitted.
+#[derive(Clone, PartialEq)]
+pub struct AssessmentFormDto {
+    pub course: String,
+    /// The opaque row handle these answers must name again when submitted.
+    pub reference_id: String,
+    /// The overall score the service currently holds.
+    pub score: u32,
+    /// The overall comment the service currently holds, when it rendered one.
+    pub comment: Option<String>,
+    /// Whether the service rendered an overall comment field at all.
+    pub comment_editable: bool,
+    pub teachers: Vec<AssessmentPersonDto>,
+    pub assistants: Vec<AssessmentPersonDto>,
+    /// The number of name/value pairs a submission of this questionnaire will
+    /// carry.  It is a shape check for the caller, not a body.
+    pub field_count: u32,
+}
+
+impl fmt::Debug for AssessmentFormDto {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let questions = self
+            .teachers
+            .iter()
+            .chain(self.assistants.iter())
+            .map(|person| person.questions.len())
+            .sum::<usize>();
+        formatter
+            .debug_struct("AssessmentFormDto")
+            .field("reference_present", &!self.reference_id.is_empty())
+            .field("teacher_count", &self.teachers.len())
+            .field("assistant_count", &self.assistants.len())
+            .field("question_count", &questions)
+            .field("comment_editable", &self.comment_editable)
+            .finish()
+    }
+}
+
+/// One person of one questionnaire.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AssessmentPersonDto {
+    pub name: String,
+    /// `true` for a teaching assistant, `false` for a teacher.
+    pub assistant: bool,
+    pub questions: Vec<AssessmentQuestionDto>,
+}
+
+/// One question and the answer the service currently holds for it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AssessmentQuestionDto {
+    pub text: String,
+    pub score: u32,
+    /// The comment the service currently holds, or `None` when this question
+    /// rendered no comment field.
+    pub comment: Option<String>,
+}
+
+/// One caller-supplied answer for one question.
+///
+/// A `None` comment leaves the value the service already holds; an empty
+/// string clears it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AssessmentQuestionAnswerDto {
+    pub score: u32,
+    pub comment: Option<String>,
+}
+
+/// One person's answers, in the order that person's questions were listed.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AssessmentPersonAnswersDto {
+    pub questions: Vec<AssessmentQuestionAnswerDto>,
+}
+
+/// The answers a caller fills in for one questionnaire.
+///
+/// It carries scores and comments only: no field here names a submission
+/// field, so the body a submission sends is the service's own page with these
+/// answers applied.
+#[derive(Clone, PartialEq)]
+pub struct AssessmentAnswersDto {
+    /// The row these answers are for, as the list handed it out.
+    pub reference_id: String,
+    pub score: u32,
+    /// The overall comment, or `None` to leave the current one.
+    pub comment: Option<String>,
+    pub teachers: Vec<AssessmentPersonAnswersDto>,
+    pub assistants: Vec<AssessmentPersonAnswersDto>,
+}
+
+impl fmt::Debug for AssessmentAnswersDto {
+    /// Redacted: the handle, every comment and every per-person answer stay
+    /// out of diagnostics, so only the answer's shape is printable.
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let questions = self
+            .teachers
+            .iter()
+            .chain(self.assistants.iter())
+            .map(|person| person.questions.len())
+            .sum::<usize>();
+        formatter
+            .debug_struct("AssessmentAnswersDto")
+            .field("reference_present", &!self.reference_id.is_empty())
+            .field("score", &self.score)
+            .field("has_comment", &self.comment.is_some())
+            .field("teacher_count", &self.teachers.len())
+            .field("assistant_count", &self.assistants.len())
+            .field("question_count", &questions)
+            .finish()
+    }
 }
 
 /// One issued e-invoice as it crosses the bridge.
@@ -4212,6 +4390,7 @@ pub struct ClientHandle {
     learn_course_file_references: HashMap<String, CourseFileRef>,
     library_references: HashMap<String, LibraryRef>,
     invoice_references: HashMap<String, InvoiceRef>,
+    assessment_references: HashMap<String, AssessmentRef>,
     library_floor_references: HashMap<String, FloorRef>,
     library_section_references: HashMap<String, SectionRef>,
     library_window_references: HashMap<String, SeatWindowRef>,
@@ -4306,6 +4485,7 @@ impl ClientHandle {
             learn_course_file_references: HashMap::new(),
             library_references: HashMap::new(),
             invoice_references: HashMap::new(),
+            assessment_references: HashMap::new(),
             library_floor_references: HashMap::new(),
             library_section_references: HashMap::new(),
             library_window_references: HashMap::new(),
@@ -4978,9 +5158,81 @@ impl ClientHandle {
     /// Reads the teaching-evaluation questionnaires the account may fill in.
     /// A closed questionnaire window is the service's own "not available"
     /// state, never a validated empty list.
+    ///
+    /// Every row's `reference_id` is an opaque handle into this call's list
+    /// generation; it is refreshed by each list read and cleared whenever the
+    /// handle's account context changes.
     pub async fn assessment_list_result(&mut self) -> Result<AssessmentListResultDto, SdkErrorDto> {
+        self.assessment_references.clear();
         let result = self.inner.assessment().list().await?;
-        Ok(assessment_list_result(result))
+        Ok(assessment_list_result(
+            result,
+            &mut self.assessment_references,
+        ))
+    }
+
+    /// Reads one questionnaire's questions and the answers the service
+    /// currently holds for them.
+    ///
+    /// `reference_id` must come from the most recent
+    /// [`ClientHandle::assessment_list_result`] call on this handle.  A
+    /// superseded or unknown id is refused before any request, and an id a
+    /// caller invents does not address anything.
+    ///
+    /// The result is a display copy: it carries no submission state and cannot
+    /// be posted back.
+    pub async fn assessment_form_result(
+        &mut self,
+        reference_id: String,
+    ) -> Result<AssessmentFormDto, SdkErrorDto> {
+        let Some(reference) = self.assessment_references.get(&reference_id).cloned() else {
+            return Err(context_mismatch("assessment"));
+        };
+        let view = self.inner.assessment().form(&reference).await?;
+        Ok(assessment_form_dto(view, reference_id))
+    }
+
+    /// Stores one filled-in questionnaire.
+    ///
+    /// The answers are applied inside Rust to the questionnaire this handle
+    /// read, so only scores and comments cross the bridge: no body, no route,
+    /// and no transaction state is ever supplied by the caller.
+    ///
+    /// This is a one-shot write.  The selection is consumed before dispatch, so
+    /// an unconfirmed outcome — reported as `outcome_unconfirmed` — cannot be
+    /// submitted again through this handle, and the service's own success is
+    /// the only accepted completion.
+    pub async fn assessment_submit(
+        &mut self,
+        answers: AssessmentAnswersDto,
+    ) -> Result<(), SdkErrorDto> {
+        let Some(reference) = self.assessment_references.remove(&answers.reference_id) else {
+            return Err(context_mismatch("assessment"));
+        };
+        let mut translated = AssessmentAnswers::new(reference, answers.score)
+            .map_err(|_| invalid_input("assessment"))?;
+        if let Some(comment) = answers.comment {
+            translated
+                .set_suggestion(&comment)
+                .map_err(|_| invalid_input("assessment"))?;
+        }
+        translated.set_people(
+            answers
+                .teachers
+                .into_iter()
+                .map(person_answers)
+                .collect::<Result<Vec<_>, _>>()?,
+            answers
+                .assistants
+                .into_iter()
+                .map(person_answers)
+                .collect::<Result<Vec<_>, _>>()?,
+        );
+        self.inner
+            .assessment()
+            .submit(&translated)
+            .await
+            .map_err(SdkErrorDto::from)
     }
 
     /// Looks up one course result by the caller's course number.
@@ -5177,6 +5429,7 @@ impl ClientHandle {
         self.library_references.clear();
         self.clear_library_descendants();
         self.invoice_references.clear();
+        self.assessment_references.clear();
         self.classroom_building_references.clear();
     }
 
@@ -6027,6 +6280,88 @@ mod tests {
             client.auth_status().self_service.state,
             AccountStateDto::SignedOut
         );
+    }
+
+    #[tokio::test]
+    async fn assessment_writes_reject_unknown_row_handles_before_reading() {
+        let mut client = client();
+        // An invented row handle addresses nothing: no session is touched and
+        // the failure is a local context mismatch, not a service answer.
+        let form = client
+            .assessment_form_result(uuid::Uuid::new_v4().to_string())
+            .await
+            .unwrap_err();
+        assert_eq!(form.service, "assessment");
+        assert_eq!(form.code, "context_mismatch");
+
+        let submit = client
+            .assessment_submit(AssessmentAnswersDto {
+                reference_id: uuid::Uuid::new_v4().to_string(),
+                score: 7,
+                comment: None,
+                teachers: Vec::new(),
+                assistants: Vec::new(),
+            })
+            .await
+            .unwrap_err();
+        assert_eq!(submit.service, "assessment");
+        assert_eq!(submit.code, "context_mismatch");
+
+        assert_eq!(
+            client.auth_status().identity.state,
+            AccountStateDto::SignedOut
+        );
+    }
+
+    #[test]
+    fn assessment_bridge_debug_omits_questions_comments_and_handles() {
+        let form = AssessmentFormDto {
+            course: "private-course".into(),
+            reference_id: "private-handle".into(),
+            score: 7,
+            comment: Some("private-comment".into()),
+            comment_editable: true,
+            teachers: vec![AssessmentPersonDto {
+                name: "private-teacher".into(),
+                assistant: false,
+                questions: vec![AssessmentQuestionDto {
+                    text: "private-question".into(),
+                    score: 7,
+                    comment: Some("private-answer".into()),
+                }],
+            }],
+            assistants: Vec::new(),
+            field_count: 12,
+        };
+        let rendered = format!("{form:?}");
+        assert!(rendered.contains("AssessmentFormDto"));
+        assert!(!rendered.contains("private-handle"));
+        assert!(!rendered.contains("private-course"));
+        assert!(!rendered.contains("private-teacher"));
+        assert!(!rendered.contains("private-question"));
+        assert!(!rendered.contains("private-comment"));
+        assert!(!rendered.contains("private-answer"));
+        assert!(rendered.contains("question_count"));
+
+        let answers = AssessmentAnswersDto {
+            reference_id: "private-handle".into(),
+            score: 7,
+            comment: Some("private-comment".into()),
+            teachers: vec![AssessmentPersonAnswersDto {
+                questions: vec![AssessmentQuestionAnswerDto {
+                    score: 7,
+                    comment: Some("private-answer".into()),
+                }],
+            }],
+            assistants: Vec::new(),
+        };
+        let rendered = format!("{answers:?}");
+        assert!(rendered.contains("AssessmentAnswersDto"));
+        assert!(rendered.contains("reference_present"));
+        assert!(rendered.contains("question_count"));
+        assert!(!rendered.contains("private-handle"));
+        assert!(!rendered.contains("private-comment"));
+        assert!(!rendered.contains("private-answer"));
     }
 
     #[tokio::test]

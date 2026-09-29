@@ -104,9 +104,19 @@ pub mod program {
 /// Teaching-evaluation questionnaires the account may currently fill in.
 /// Each item carries an opaque reference; no service route or form value is
 /// exposed to the caller.
+///
+/// A form is a display copy and an answer set carries scores and comments
+/// only: the service's own submission state never leaves Rust, so the body a
+/// submission sends is always the service's page with the caller's answers
+/// filled in.
 pub mod assessment {
     pub use crate::client::AssessmentClient;
-    pub use tsinghua_kit_engine::assessment_read::{AssessmentItem, AssessmentList};
+    pub use tsinghua_kit_engine::assessment_read::{
+        ASSESSMENT_MAX_SCORE, ASSESSMENT_MIN_SCORE, AssessmentAnswers, AssessmentFormView,
+        AssessmentInputError, AssessmentItem, AssessmentList, AssessmentPersonAnswers,
+        AssessmentPersonRole, AssessmentPersonView, AssessmentQuestionAnswer,
+        AssessmentQuestionView, AssessmentRef,
+    };
 }
 
 /// Issued e-invoices and their documents.  Each row carries an opaque document

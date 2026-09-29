@@ -8,7 +8,7 @@
 
 use super::*;
 
-use crate::assessment_read::ASSESSMENT_LIST_PATH;
+use crate::assessment_read::{ASSESSMENT_LIST_PATH, ASSESSMENT_MIN_SCORE};
 use crate::info::OpaqueUrl;
 use crate::info_session::{InfoSessionAdapter, InfoWebVpnConfig};
 use crate::protocol::CsrfToken;
@@ -94,6 +94,201 @@ fn assessment_handoff_replies(page: &str) -> Vec<Reply> {
         Reply::html("<html>session handoff</html>"),
         Reply::html(page),
     ]
+}
+
+/// A form page shaped like the legacy one: the transaction container, the
+/// overall comment and score, and one person pane repeated so both the teacher
+/// and the assistant group are populated.
+fn form_page() -> String {
+    let question = |label: &str, score: &str, comment: &str| {
+        format!(
+            "<tr><td>1</td><td>{label}</td><td>3</td><td>\
+             <input name=\"{comment}\" class=\"suggest\" value=\"\">\
+             <ul><input name=\"{score}\" value=\"5\"></ul>\
+             <input name=\"avg_{score}\" avgfs value=\"5\"></td></tr>"
+        )
+    };
+    let rows = format!(
+        "{}{}",
+        question("老师教学态度认真负责", "pjfs_1", "jtjy_1"),
+        question("老师讲解清楚", "pjfs_2", "jtjy_2")
+    );
+    let table = format!(
+        "<table><tbody><tr><td>张老师</td><td></td><td></td><td></td></tr>{rows}</tbody></table>"
+    );
+    let pane = format!("<div class=\"tab-pane\">{table}</div>");
+    format!(
+        "<html><body><div id=\"xswjtxFormid\"><input name=\"wjid\" value=\"1001\"></div>\
+         <div id=\"kcpgjgDtos[0].jtjy\">课程内容充实</div>\
+         <input id=\"kcpjfs\" name=\"kcpjfs\" value=\"6\">{pane}\
+         <div class=\"tab-pane\"></div>{pane}</body></html>"
+    )
+}
+
+/// The answers the fixture form's shape accepts: one teacher and one assistant,
+/// two questions each.
+fn fixture_answers(reference: crate::assessment_read::AssessmentRef) -> AssessmentAnswers {
+    use crate::assessment_read::{AssessmentPersonAnswers, AssessmentQuestionAnswer};
+    let questions = || {
+        AssessmentPersonAnswers::new(vec![
+            AssessmentQuestionAnswer::new(7, Some("讲得很好".to_owned())).expect("answer"),
+            AssessmentQuestionAnswer::new(7, None).expect("answer"),
+        ])
+    };
+    let mut answers = AssessmentAnswers::new(reference, 7).expect("overall score");
+    answers.set_people(vec![questions()], vec![questions()]);
+    answers
+}
+
+#[tokio::test]
+async fn backend_repair_assessment_form_reads_through_the_row_reference() {
+    let mut replies = assessment_handoff_replies(&list_page());
+    replies.push(Reply::html(&form_page()));
+    let server = FixtureServer::new(replies);
+    let mut runtime = assessment_runtime(&server);
+
+    let list = runtime
+        .load_assessment_list_result()
+        .await
+        .expect("assessment list reads");
+    let form = runtime
+        .load_assessment_form_result(&list.items[0].reference)
+        .await
+        .expect("assessment form reads");
+
+    assert_eq!(form.course, "微积分A(2)");
+    assert_eq!(form.score, 6);
+    assert_eq!(form.comment.as_deref(), Some("课程内容充实"));
+    assert!(form.comment_editable);
+    assert_eq!(form.teachers.len(), 1);
+    assert_eq!(form.assistants.len(), 1);
+    assert!(!form.teachers[0].assistant);
+    assert!(form.assistants[0].assistant);
+    assert_eq!(form.teachers[0].questions.len(), 2);
+    assert_eq!(form.teachers[0].questions[0].text, "老师教学态度认真负责");
+    assert_eq!(form.teachers[0].questions[0].score, ASSESSMENT_MIN_SCORE);
+    assert!(form.field_count > 0);
+
+    // The form read uses the route the list row named, inside the mapping.
+    let requests = server.requests();
+    assert_eq!(requests.len(), 5);
+    assert!(
+        requests[4].starts_with(&format!(
+            "GET /http/{ASSESSMENT_MAPPING}/jxpg/f/jxpg/wj/xs/pgkcForm?wjid=1001&kcbh=1 "
+        )),
+        "unexpected form request: {}",
+        requests[4]
+    );
+    assert!(!requests[4].contains("ticket=FIXTURE"));
+}
+
+#[tokio::test]
+async fn backend_repair_assessment_submission_applies_answers_and_is_one_shot() {
+    let mut replies = assessment_handoff_replies(&list_page());
+    replies.push(Reply::html(&form_page()));
+    replies.push(Reply::json("{\"result\":\"success\"}"));
+    let server = FixtureServer::new(replies);
+    let mut runtime = assessment_runtime(&server);
+
+    let list = runtime
+        .load_assessment_list_result()
+        .await
+        .expect("assessment list reads");
+    runtime
+        .load_assessment_form_result(&list.items[0].reference)
+        .await
+        .expect("assessment form reads");
+
+    let answers = fixture_answers(list.items[0].reference.clone());
+    runtime
+        .submit_assessment_form(&answers)
+        .await
+        .expect("submission confirmed");
+
+    let requests = server.requests();
+    assert_eq!(requests.len(), 6);
+    let post = &requests[5];
+    assert!(
+        post.starts_with(&format!(
+            "POST /http/{ASSESSMENT_MAPPING}{} ",
+            crate::assessment_read::ASSESSMENT_SUBMIT_PATH
+        )),
+        "unexpected submit request: {post}"
+    );
+    // The service's own transaction state and the caller's answers are both
+    // in the body; neither came from the caller's side of the bridge.
+    assert!(
+        post.contains("wjid=1001"),
+        "unexpected submit request: {post}"
+    );
+    assert!(
+        post.contains("pjfs_1=7"),
+        "unexpected submit request: {post}"
+    );
+    assert!(
+        post.contains("jtjy_1=%E8%AE%B2%E5%BE%97%E5%BE%88%E5%A5%BD"),
+        "unexpected submit request: {post}"
+    );
+
+    // The dispatched form is consumed: a second submission has nothing to
+    // send and makes no request at all.
+    runtime
+        .submit_assessment_form(&answers)
+        .await
+        .expect_err("the dispatched questionnaire is not available again");
+    assert_eq!(server.requests().len(), 6);
+}
+
+#[tokio::test]
+async fn backend_repair_assessment_unconfirmed_submission_is_not_replayed() {
+    let mut replies = assessment_handoff_replies(&list_page());
+    replies.push(Reply::html(&form_page()));
+    replies.push(Reply::json("{\"result\":\"error\",\"msg\":\"问卷已提交\"}"));
+    let server = FixtureServer::new(replies);
+    let mut runtime = assessment_runtime(&server);
+
+    let list = runtime
+        .load_assessment_list_result()
+        .await
+        .expect("assessment list reads");
+    runtime
+        .load_assessment_form_result(&list.items[0].reference)
+        .await
+        .expect("assessment form reads");
+
+    let answers = fixture_answers(list.items[0].reference.clone());
+    let error = runtime
+        .submit_assessment_form(&answers)
+        .await
+        .expect_err("a declined submission is not a success");
+    assert!(!error.contains("ticket"), "error echoed a ticket: {error}");
+    assert_eq!(
+        runtime.last_assessment_failure_code(),
+        Some("assessment_submit_unconfirmed")
+    );
+
+    // The one dispatched POST is the only one: the outcome is unknown, so it
+    // is reported rather than repeated.
+    assert_eq!(server.requests().len(), 6);
+}
+
+#[tokio::test]
+async fn backend_repair_assessment_rejects_answers_for_a_row_that_is_not_open() {
+    let server = FixtureServer::new(assessment_handoff_replies(&list_page()));
+    let mut runtime = assessment_runtime(&server);
+
+    let list = runtime
+        .load_assessment_list_result()
+        .await
+        .expect("assessment list reads");
+    // Answers authored for a row, but no form was read for it: nothing is
+    // submitted and no request is made.
+    let answers = fixture_answers(list.items[0].reference.clone());
+    runtime
+        .submit_assessment_form(&answers)
+        .await
+        .expect_err("a questionnaire that was never opened is not submitted");
+    assert_eq!(server.requests().len(), 4);
 }
 
 #[tokio::test]

@@ -112,11 +112,15 @@ pub use api::service_catalog::{
     ServicePresentationDto, list_service_catalog,
 };
 pub use assessment_read::{
-    ASSESSMENT_LIST_PATH, ASSESSMENT_NOT_OPEN_MARKER, ASSESSMENT_WEBVPN_TARGET, AssessmentAdapter,
-    AssessmentAdapterConfig, AssessmentAdapterError, AssessmentBusinessProof, AssessmentItem,
-    AssessmentList, AssessmentListRows, AssessmentMethod, AssessmentOperation,
-    AssessmentParseError, AssessmentProfile, AssessmentRead, AssessmentRef, AssessmentRequestPlan,
-    AssessmentRow, AssessmentSessionPrerequisite, parse_assessment_list_html,
+    ASSESSMENT_LIST_PATH, ASSESSMENT_MAX_SCORE, ASSESSMENT_MIN_SCORE, ASSESSMENT_NOT_OPEN_MARKER,
+    ASSESSMENT_SUBMIT_PATH, ASSESSMENT_WEBVPN_TARGET, AssessmentAdapter, AssessmentAdapterConfig,
+    AssessmentAdapterError, AssessmentAnswers, AssessmentBusinessProof, AssessmentEvaluation,
+    AssessmentForm, AssessmentFormView, AssessmentInputError, AssessmentItem, AssessmentList,
+    AssessmentListRows, AssessmentMethod, AssessmentOperation, AssessmentParseError,
+    AssessmentPerson, AssessmentPersonAnswers, AssessmentPersonRole, AssessmentPersonView,
+    AssessmentProfile, AssessmentQuestionAnswer, AssessmentQuestionView, AssessmentRead,
+    AssessmentRef, AssessmentRequestPlan, AssessmentRow, AssessmentSessionPrerequisite,
+    parse_assessment_list_html,
 };
 pub use bank_read::{
     BANK_SEARCH_PATH, BANK_WEBVPN_TARGET, BankLedger, BankPaymentAdapter, BankPaymentAdapterConfig,

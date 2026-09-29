@@ -92,6 +92,32 @@ void main() {
     expect(_publicType<assessment.AssessmentClient>(), isNull);
     expect(_publicType<assessment.AssessmentList>(), isNull);
     expect(_publicType<assessment.AssessmentItem>(), isNull);
+    expect(_publicType<assessment.AssessmentForm>(), isNull);
+    expect(_publicType<assessment.AssessmentQuestion>(), isNull);
+    expect(_publicType<assessment.AssessmentPerson>(), isNull);
+    expect(_publicType<assessment.AssessmentAnswers>(), isNull);
+    expect(_publicType<assessment.AssessmentPersonAnswers>(), isNull);
+    expect(_publicType<assessment.AssessmentQuestionAnswer>(), isNull);
+    expect(assessment.AssessmentClient.minScore, 1);
+    expect(assessment.AssessmentClient.maxScore, 7);
+    // A display question is a copy of service values, not a body: the answer
+    // types a caller builds carry scores and comments only.
+    expect(
+      assessment.AssessmentQuestionAnswer(score: 7, comment: '讲得很好'),
+      isA<assessment.AssessmentQuestionAnswer>(),
+    );
+    final answers = assessment.AssessmentAnswers(
+      referenceId: 'row-handle',
+      score: 7,
+      teachers: [
+        assessment.AssessmentPersonAnswers(
+          questions: [assessment.AssessmentQuestionAnswer(score: 7)],
+        ),
+      ],
+      assistants: const [],
+    );
+    expect(answers.referenceId, 'row-handle');
+    expect(answers.teachers.single.questions.single.comment, isNull);
     expect(_publicType<invoice.InvoiceClient>(), isNull);
     expect(_publicType<invoice.InvoicePage>(), isNull);
     expect(_publicType<invoice.InvoiceRecord>(), isNull);
