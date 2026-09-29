@@ -163,7 +163,6 @@ impl SeatWindowRef {
         }
     }
 }
-
 impl fmt::Debug for SeatWindowRef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("SeatWindowRef(<redacted>)")
@@ -752,6 +751,130 @@ pub(crate) fn merge_socket_statuses(
             })
             .collect(),
     ))
+}
+
+/// One reservation row of the current account, and the reference the
+/// cancellation route needs if the row can still be cancelled.
+///
+/// The row is read from the service's own reservation table, so its position,
+/// time and status are the service's own words.  The cancellation selector is
+/// kept inside this type as an opaque reference: a caller selects a reservation
+/// by the reference this Client returned for it, never by a value it could
+/// compose.
+#[derive(Clone, PartialEq, Eq)]
+pub struct LibraryReservation {
+    reference: Option<LibraryReservationRef>,
+    position: String,
+    time: String,
+    status: String,
+}
+
+impl LibraryReservation {
+    pub(crate) fn new(
+        reference: Option<LibraryReservationRef>,
+        position: String,
+        time: String,
+        status: String,
+    ) -> Self {
+        Self {
+            reference,
+            position,
+            time,
+            status,
+        }
+    }
+
+    /// Returns a cancellation selector only when the row carried one.
+    pub fn reference(&self) -> Option<&LibraryReservationRef> {
+        self.reference.as_ref()
+    }
+
+    /// Returns the location text the service printed.
+    pub fn position(&self) -> &str {
+        &self.position
+    }
+
+    /// Returns the reservation time as the service printed it.
+    pub fn time(&self) -> &str {
+        &self.time
+    }
+
+    /// Returns the service's own status wording, verbatim.
+    pub fn status(&self) -> &str {
+        &self.status
+    }
+}
+
+impl fmt::Debug for LibraryReservation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LibraryReservation")
+            .field("cancellable", &self.reference.is_some())
+            .field("position", &self.position)
+            .field("time", &self.time)
+            .field("status", &self.status)
+            .finish()
+    }
+}
+
+/// The account's reservation list as one read returned it.
+#[derive(Clone, PartialEq, Eq)]
+pub struct LibraryReservations {
+    reservations: Vec<LibraryReservation>,
+}
+
+impl LibraryReservations {
+    pub(crate) fn new(reservations: Vec<LibraryReservation>) -> Self {
+        Self { reservations }
+    }
+
+    /// Returns every reservation the read reported, in the service's own order.
+    pub fn reservations(&self) -> &[LibraryReservation] {
+        &self.reservations
+    }
+}
+
+impl fmt::Debug for LibraryReservations {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LibraryReservations")
+            .field("reservation_count", &self.reservations.len())
+            .finish()
+    }
+}
+
+/// A reference to one reservation of this Client's latest reservation read.
+///
+/// It carries the client and the read generation as well as the Runtime's own
+/// opaque selector, so a reference returned for another client or an older read
+/// cannot be used to cancel a reservation.
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub struct LibraryReservationRef {
+    owner: uuid::Uuid,
+    generation: u64,
+    selector: String,
+}
+
+impl LibraryReservationRef {
+    pub(crate) fn new(owner: uuid::Uuid, generation: u64, selector: String) -> Self {
+        Self {
+            owner,
+            generation,
+            selector,
+        }
+    }
+
+    pub(crate) fn selector(&self) -> &str {
+        &self.selector
+    }
+
+    pub(crate) fn belongs_to(&self, owner: uuid::Uuid, generation: u64) -> bool {
+        self.owner == owner && self.generation == generation
+    }
+}
+
+impl fmt::Debug for LibraryReservationRef {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("LibraryReservationRef(<redacted>)")
+    }
 }
 
 #[cfg(test)]

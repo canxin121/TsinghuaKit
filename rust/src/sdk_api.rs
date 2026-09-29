@@ -49,8 +49,8 @@ use tsinghua_kit_sdk::{
     },
     library::{
         FloorRef, LibraryAvailability, LibraryDay, LibraryDirectory, LibraryRef,
-        LibrarySocketAvailability, LibrarySocketState, LibraryTimeWindows, SeatRef, SeatWindowRef,
-        SectionRef,
+        LibraryReservationRef, LibraryReservations, LibrarySocketAvailability, LibrarySocketState,
+        LibraryTimeWindows, SeatRef, SeatWindowRef, SectionRef,
     },
     network::{
         NetworkAccessMethod, NetworkProfileId, NetworkProfileInput, NetworkProfilePassword,
@@ -3418,6 +3418,84 @@ pub struct LibrarySocketsResultDto {
     pub metadata: ReadMetadataDto,
 }
 
+/// One reservation row of the account's own list.
+///
+/// `reference_id` is an opaque handle this Client minted for this read: it is
+/// present only when the service's own row still carries a cancellation
+/// control, so `None` means the service no longer lets this account cancel that
+/// reservation rather than that the row could not be read.
+#[derive(Clone, PartialEq, Eq)]
+pub struct LibraryReservationDto {
+    pub reference_id: Option<String>,
+    pub position: String,
+    pub time: String,
+    pub status: String,
+}
+
+impl fmt::Debug for LibraryReservationDto {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("LibraryReservationDto")
+            .field("cancellable", &self.reference_id.is_some())
+            .field("position", &self.position)
+            .field("time", &self.time)
+            .field("status", &self.status)
+            .finish()
+    }
+}
+
+/// The account's reservation list as one read returned it.
+#[derive(Clone, PartialEq, Eq)]
+pub struct LibraryReservationsDto {
+    pub reservations: Vec<LibraryReservationDto>,
+}
+
+impl fmt::Debug for LibraryReservationsDto {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("LibraryReservationsDto")
+            .field("reservation_count", &self.reservations.len())
+            .finish()
+    }
+}
+
+/// Reservation rows and live-source metadata.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LibraryReservationsResultDto {
+    pub data: LibraryReservationsDto,
+    pub metadata: ReadMetadataDto,
+}
+
+fn library_reservations_result(
+    value: ReadResult<LibraryReservations>,
+    references: &mut HashMap<String, LibraryReservationRef>,
+) -> LibraryReservationsResultDto {
+    let (reservations, metadata) = value.into_parts();
+    let mut next_references = HashMap::new();
+    let rows = reservations
+        .reservations()
+        .iter()
+        .map(|row| {
+            let reference_id = row.reference().map(|reference| {
+                let reference_id = uuid::Uuid::new_v4().to_string();
+                next_references.insert(reference_id.clone(), reference.clone());
+                reference_id
+            });
+            LibraryReservationDto {
+                reference_id,
+                position: row.position().to_owned(),
+                time: row.time().to_owned(),
+                status: row.status().to_owned(),
+            }
+        })
+        .collect();
+    *references = next_references;
+    LibraryReservationsResultDto {
+        data: LibraryReservationsDto { reservations: rows },
+        metadata: ReadMetadataDto::from(&metadata),
+    }
+}
+
 /// One building returned by the current classroom directory.
 #[derive(Clone, PartialEq, Eq)]
 pub struct ClassroomBuildingDto {
@@ -4575,6 +4653,7 @@ pub struct ClientHandle {
     library_window_references: HashMap<String, SeatWindowRef>,
     library_availability_references: HashMap<String, LibraryAvailability>,
     library_seat_reference_ids: HashMap<SeatRef, String>,
+    library_reservation_references: HashMap<String, LibraryReservationRef>,
     classroom_building_references: HashMap<String, BuildingRef>,
 }
 
@@ -4670,6 +4749,7 @@ impl ClientHandle {
             library_window_references: HashMap::new(),
             library_availability_references: HashMap::new(),
             library_seat_reference_ids: HashMap::new(),
+            library_reservation_references: HashMap::new(),
             classroom_building_references: HashMap::new(),
         })
     }
@@ -5301,6 +5381,84 @@ impl ClientHandle {
         };
         let result = self.inner.library().sockets(&availability).await?;
         library_sockets_result(result, &self.library_seat_reference_ids)
+    }
+
+    /// Reads the account's own reservation list and replaces its handles.
+    ///
+    /// A returned handle is usable for one cancellation through this Client.
+    /// A row the service printed without a cancellation control has no handle,
+    /// which is the service's own statement about that reservation rather than
+    /// a read failure.
+    pub async fn library_reservations(
+        &mut self,
+    ) -> Result<LibraryReservationsResultDto, SdkErrorDto> {
+        let result = self.inner.library().reservations().await?;
+        Ok(library_reservations_result(
+            result,
+            &mut self.library_reservation_references,
+        ))
+    }
+
+    /// Reserves one seat of a current opening window.
+    ///
+    /// Both handles must come from this Client's latest reads of the same
+    /// section: the Runtime re-checks the window against the section it
+    /// confirmed and the seat against the inventory it read for that window.
+    ///
+    /// The seat handle is consumed before dispatch, so a reservation whose
+    /// outcome is unconfirmed — reported as `outcome_unconfirmed` — cannot be
+    /// sent again through this Client. Only a fresh seat read makes the seat
+    /// reservable again, and the account's own reservation list says what it now
+    /// holds.
+    pub async fn library_reserve(
+        &mut self,
+        window_reference_id: String,
+        seat_reference_id: String,
+    ) -> Result<(), SdkErrorDto> {
+        let Some(window) = self
+            .library_window_references
+            .get(&window_reference_id)
+            .cloned()
+        else {
+            return Err(context_mismatch("library"));
+        };
+        // The seat handle is taken out of the map rather than borrowed: after
+        // this call the same handle can never dispatch a second reservation.
+        let Some(seat) = self
+            .library_seat_reference_ids
+            .iter()
+            .find_map(|(seat, id)| (*id == seat_reference_id).then(|| seat.clone()))
+        else {
+            return Err(context_mismatch("library"));
+        };
+        self.library_seat_reference_ids.remove(&seat);
+        self.inner
+            .library()
+            .reserve(&window, &seat)
+            .await
+            .map_err(SdkErrorDto::from)
+    }
+
+    /// Cancels one reservation from this Client's latest reservation list.
+    ///
+    /// The handle is consumed before dispatch for the same reason
+    /// [`Self::library_reserve`] consumes the seat: a cancellation whose result
+    /// is unconfirmed must not be sent twice.
+    pub async fn library_cancel(
+        &mut self,
+        reservation_reference_id: String,
+    ) -> Result<(), SdkErrorDto> {
+        let Some(reference) = self
+            .library_reservation_references
+            .remove(&reservation_reference_id)
+        else {
+            return Err(context_mismatch("library"));
+        };
+        self.inner
+            .library()
+            .cancel(&reference)
+            .await
+            .map_err(SdkErrorDto::from)
     }
 
     /// Reads the classroom building directory and replaces its references.
@@ -7022,6 +7180,67 @@ mod tests {
             client.auth_status().identity.state,
             AccountStateDto::SignedOut
         );
+    }
+
+    #[tokio::test]
+    async fn library_writes_only_accept_handles_this_client_returned() {
+        // A seat or a reservation is named only by a handle this Client minted
+        // from one of its own reads, and both writes are dispatched through the
+        // same account proof the reads used.  An invented handle is therefore a
+        // local context mismatch: no request is built and the account is still
+        // signed out afterwards.
+        let mut client = client();
+        let invented = || uuid::Uuid::new_v4().to_string();
+
+        let reserve = client
+            .library_reserve(invented(), invented())
+            .await
+            .unwrap_err();
+        assert_eq!(reserve.service, "library");
+        assert_eq!(reserve.code, "context_mismatch");
+
+        let cancel = client.library_cancel(invented()).await.unwrap_err();
+        assert_eq!(cancel.service, "library");
+        assert_eq!(cancel.code, "context_mismatch");
+
+        // A window handle this Client never handed out is refused even when the
+        // seat handle could not be one either: the pair must come from the same
+        // Client, so the refusal never depends on which of the two is checked
+        // first.
+        let window = client
+            .library_reserve(invented(), String::new())
+            .await
+            .unwrap_err();
+        assert_eq!(window.service, "library");
+        assert_eq!(window.code, "context_mismatch");
+
+        assert_eq!(
+            client.auth_status().identity.state,
+            AccountStateDto::SignedOut
+        );
+    }
+
+    #[test]
+    fn library_reservation_bridge_debug_omits_the_cancellation_handle() {
+        // The reservation DTO carries the service's own row.  Its Debug reports
+        // whether a cancellation handle exists rather than the handle itself,
+        // so a logged DTO can never be replayed as a cancellation.
+        let row = LibraryReservationDto {
+            reference_id: Some("private-cancellation-handle".into()),
+            position: "文科图书馆-四层-C区:F4C083".into(),
+            time: "2020-09-11 12:15:52".into(),
+            status: "已使用".into(),
+        };
+        let rendered = format!("{row:?}");
+        assert!(rendered.contains("cancellable: true"));
+        assert!(!rendered.contains("private-cancellation-handle"));
+
+        let list = LibraryReservationsDto {
+            reservations: vec![row],
+        };
+        let rendered = format!("{list:?}");
+        assert!(rendered.contains("reservation_count"));
+        assert!(!rendered.contains("private-cancellation-handle"));
     }
 
     #[test]

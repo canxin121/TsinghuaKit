@@ -60,9 +60,10 @@ use crate::{
     },
     library_api::{
         FloorRef, LibraryAvailability, LibraryDay, LibraryDirectory, LibraryFloor, LibraryFloors,
-        LibraryPlace, LibraryRef, LibrarySeat, LibrarySection, LibrarySections,
-        LibrarySocketAvailability, LibraryTimeWindow, LibraryTimeWindows, SeatRef, SeatWindowRef,
-        SectionRef, merge_socket_statuses, safe_label, validate_areas,
+        LibraryPlace, LibraryRef, LibraryReservation, LibraryReservationRef, LibraryReservations,
+        LibrarySeat, LibrarySection, LibrarySections, LibrarySocketAvailability, LibraryTimeWindow,
+        LibraryTimeWindows, SeatRef, SeatWindowRef, SectionRef, merge_socket_statuses, safe_label,
+        validate_areas,
     },
     network::{
         NetworkAccessMethod, NetworkProfileId, NetworkProfileInput, NetworkProfilePassword,
@@ -295,6 +296,7 @@ pub struct Client {
     library_directory_generation: u64,
     library_floor_generation: u64,
     library_section_generation: u64,
+    library_reservation_generation: u64,
     classroom_generation: u64,
     network_profiles: NetworkProfileStore,
 }
@@ -482,6 +484,7 @@ impl ClientBuilder {
             library_directory_generation: 0,
             library_floor_generation: 0,
             library_section_generation: 0,
+            library_reservation_generation: 0,
             classroom_generation: 0,
             network_profiles,
         })
@@ -887,6 +890,7 @@ impl Client {
             directory_generation: &mut self.library_directory_generation,
             floor_generation: &mut self.library_floor_generation,
             section_generation: &mut self.library_section_generation,
+            reservation_generation: &mut self.library_reservation_generation,
         }
     }
 
@@ -1054,6 +1058,10 @@ impl Client {
         self.library_directory_generation = self.library_directory_generation.wrapping_add(1);
         self.library_floor_generation = self.library_floor_generation.wrapping_add(1);
         self.library_section_generation = self.library_section_generation.wrapping_add(1);
+        // A reservation selector is scoped to the reservation read that minted
+        // it, and a session change is exactly when that read stops describing
+        // the account in front of this client.
+        self.library_reservation_generation = self.library_reservation_generation.wrapping_add(1);
     }
 
     fn invalidate_classroom_references(&mut self) {
@@ -2183,12 +2191,17 @@ fn map_classroom_availability(
     ))
 }
 
-/// Read-only library operations backed by this client's shared runtime.
+/// Library operations backed by this client's shared runtime.
 ///
 /// The root directory and opening windows use the Runtime's account-bound
 /// cache behavior. Floors, sections, seats, and socket states require live
 /// reads. The public API accepts only context-bound references, never raw
 /// service identifiers.
+///
+/// Reserving and cancelling a seat are the two state-changing operations
+/// here. Each is dispatched exactly once and an unconfirmed outcome is never
+/// replayed, so a caller learns what the account now holds by reading the
+/// reservation list again rather than by asking this client to try again.
 pub struct LibraryClient<'client> {
     runtime: &'client mut CampusRuntime,
     owner: uuid::Uuid,
@@ -2196,6 +2209,7 @@ pub struct LibraryClient<'client> {
     directory_generation: &'client mut u64,
     floor_generation: &'client mut u64,
     section_generation: &'client mut u64,
+    reservation_generation: &'client mut u64,
 }
 
 impl LibraryClient<'_> {
@@ -2449,6 +2463,89 @@ impl LibraryClient<'_> {
         ))
     }
 
+    /// Reads the account's own reservation list.
+    ///
+    /// Each row that the service still lets this account cancel is given a
+    /// reference scoped to this client and this read; a reference from another
+    /// client or from an earlier read is refused by [`Self::cancel`] before any
+    /// request exists. A row the service printed without a cancellation
+    /// control has no reference, which is the service's own statement that it
+    /// can no longer be cancelled.
+    pub async fn reservations(&mut self) -> Result<ReadResult<LibraryReservations>, Error> {
+        let dto = self
+            .runtime
+            .load_library_reservations()
+            .await
+            .map_err(|_| library_failure(self.runtime))?;
+        *self.reservation_generation = self.reservation_generation.wrapping_add(1);
+        let generation = *self.reservation_generation;
+        let owner = self.owner;
+        let reservations = dto
+            .reservations
+            .into_iter()
+            .map(|record| {
+                LibraryReservation::new(
+                    record
+                        .selector
+                        .map(|selector| LibraryReservationRef::new(owner, generation, selector)),
+                    record.position,
+                    record.time,
+                    record.status,
+                )
+            })
+            .collect();
+        Ok(ReadResult::new(
+            LibraryReservations::new(reservations),
+            live_read_metadata(),
+        ))
+    }
+
+    /// Reserves the seat that `seat` names in the window `window` was read for.
+    ///
+    /// The seat must be one of this client's own latest availability result for
+    /// that window's section, and the window must be one the Runtime confirmed
+    /// for that section: both were checked before this call, and the Runtime
+    /// re-checks them against its own inventory. The seat's category and the
+    /// account's student id are read inside Rust and never passed here.
+    ///
+    /// The reservation is dispatched at most once. An outcome the service does
+    /// not confirm is reported as [`ErrorCode::OutcomeUnconfirmed`] and is
+    /// never resolved by sending it again, so the caller must read
+    /// [`Self::reservations`] to learn what the account now holds.
+    pub async fn reserve(&mut self, window: &SeatWindowRef, seat: &SeatRef) -> Result<(), Error> {
+        if !self.section_is_current(&window.section) || !seat.belongs_to(&window.section) {
+            return Err(Error::new(Service::Library, ErrorCode::ContextMismatch));
+        }
+        let section_id = window.section.id;
+        let segment_id = window.segment_id;
+        let seat_id = seat.id;
+        self.runtime.clear_library_failure_code();
+        self.runtime
+            .book_library_seat(section_id, segment_id, seat_id)
+            .await
+            .map_err(|_| library_failure(self.runtime))?;
+        Ok(())
+    }
+
+    /// Cancels the reservation that `reference` names.
+    ///
+    /// A reference from another client or from an earlier reservation read is
+    /// refused before any request. The cancellation is dispatched at most once
+    /// and an unconfirmed outcome is never replayed, exactly as
+    /// [`Self::reserve`] is not.
+    pub async fn cancel(&mut self, reference: &LibraryReservationRef) -> Result<(), Error> {
+        if !reference.belongs_to(self.owner, *self.reservation_generation) {
+            return Err(Error::new(Service::Library, ErrorCode::ContextMismatch));
+        }
+        let selector = reference.selector().to_owned();
+        self.runtime.clear_library_failure_code();
+        self.runtime
+            .cancel_library_booking(selector)
+            .await
+            .map_err(|_| library_failure(self.runtime))?;
+        Ok(())
+    }
+
     fn section_is_current(&self, section: &SectionRef) -> bool {
         section.belongs_to(
             self.owner,
@@ -2460,6 +2557,13 @@ impl LibraryClient<'_> {
 }
 
 fn library_failure(runtime: &CampusRuntime) -> Error {
+    // A recorded business failure code is the runtime's own statement about
+    // what went wrong, and it is the only place a write's outcome is decided:
+    // a refused or unreadable dispatch is unknown rather than failed, and a
+    // caller must be told to check the list rather than to try again.
+    if let Some(code) = runtime.last_library_failure_code() {
+        return Error::new(Service::Library, library_error_code(code));
+    }
     let code = match runtime.auth_status().identity().state() {
         AccountAuthState::SignedOut | AccountAuthState::RestoredUnverified => {
             ErrorCode::SessionRequired
@@ -2470,6 +2574,42 @@ fn library_failure(runtime: &CampusRuntime) -> Error {
         AccountAuthState::Authenticated => ErrorCode::ServiceUnavailable,
     };
     Error::new(Service::Library, code)
+}
+
+fn library_error_code(diagnostic: &str) -> ErrorCode {
+    match diagnostic {
+        // A booking or cancellation that left this process without a service
+        // answer is unknown, not failed, and must not be repeated.
+        "library_write_unconfirmed" => ErrorCode::OutcomeUnconfirmed,
+        "library_session_expired" | "library_auth_required" => ErrorCode::SessionExpired,
+        "library_network" | "library_news_transport" => ErrorCode::NetworkUnavailable,
+        "library_account_changed" => ErrorCode::ContextMismatch,
+        // A seat or a window that is no longer part of a result this Runtime
+        // returned is a stale selection, not a broken service.
+        "library_section_unconfirmed"
+        | "library_segment_unconfirmed"
+        | "library_seat_unconfirmed" => ErrorCode::ContextMismatch,
+        "library_seat_unavailable" => ErrorCode::NotAvailable,
+        "library_write_request" => ErrorCode::InvalidInput,
+        "library_booking_token" => ErrorCode::Unsupported,
+        value
+            if value.starts_with("library_")
+                && (value.starts_with("library_origin")
+                    || value.starts_with("library_path")
+                    || value.starts_with("library_request")
+                    || value.starts_with("library_config")
+                    || value.starts_with("library_collection")
+                    || value.starts_with("library_data")
+                    || value.starts_with("library_record")
+                    || value.starts_with("library_segment")
+                    || value.starts_with("library_booking")
+                    || value.starts_with("library_parse")
+                    || value.starts_with("library_html")) =>
+        {
+            ErrorCode::InvalidResponse
+        }
+        _ => ErrorCode::ServiceUnavailable,
+    }
 }
 
 fn invalid_library_response() -> Error {

@@ -84,6 +84,33 @@ void main() {
     expect(learn.LearnHomeworkState.pending.name, 'pending');
     expect(calendar.AcademicStage.undergraduate.name, 'undergraduate');
     expect(library_api.LibraryDay.today.name, 'today');
+    // The booking and cancellation entries consume the same opaque references
+    // the seat and reservation reads hand out, and both reference types have a
+    // private constructor, so a caller can only obtain one from this Client's
+    // own reads.
+    expect(_publicType<library_api.LibrarySeatReference>(), isNull);
+    expect(_publicType<library_api.LibraryReservationReference>(), isNull);
+    expect(_publicType<library_api.LibraryReservation>(), isNull);
+    expect(_publicType<library_api.LibraryReservations>(), isNull);
+    // A row the service printed without its own cancellation control carries no
+    // reference: an absent reference is the service's answer, not a read error.
+    const reservation = library_api.LibraryReservation(
+      position: '文科图书馆-四层-C区:F4C083',
+      time: '2020-09-11 12:15:52',
+      status: '已使用',
+    );
+    expect(reservation.reference, isNull);
+    expect(reservation.time, '2020-09-11 12:15:52');
+    final reservations = library_api.LibraryReservations(
+      reservations: const [reservation],
+    );
+    expect(reservations.reservations, hasLength(1));
+    // The list is unmodifiable, so a caller cannot present a row the service
+    // did not send.
+    expect(
+      () => reservations.reservations.add(reservation),
+      throwsUnsupportedError,
+    );
     expect(classrooms.ClassroomSlotStatus.unknown.name, 'unknown');
     expect(campus_card.CampusCardTransactionType.any.name, 'any');
     expect(_publicType<self_service.SelfServiceClient>(), isNull);

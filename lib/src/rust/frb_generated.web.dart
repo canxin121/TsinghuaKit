@@ -476,6 +476,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   LibraryPlaceDto dco_decode_library_place_dto(dynamic raw);
 
   @protected
+  LibraryReservationDto dco_decode_library_reservation_dto(dynamic raw);
+
+  @protected
+  LibraryReservationsDto dco_decode_library_reservations_dto(dynamic raw);
+
+  @protected
+  LibraryReservationsResultDto dco_decode_library_reservations_result_dto(
+      dynamic raw);
+
+  @protected
   LibrarySeatDto dco_decode_library_seat_dto(dynamic raw);
 
   @protected
@@ -617,6 +627,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<LibraryPlaceDto> dco_decode_list_library_place_dto(dynamic raw);
+
+  @protected
+  List<LibraryReservationDto> dco_decode_list_library_reservation_dto(
+      dynamic raw);
 
   @protected
   List<LibrarySeatDto> dco_decode_list_library_seat_dto(dynamic raw);
@@ -1517,6 +1531,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   LibraryPlaceDto sse_decode_library_place_dto(SseDeserializer deserializer);
 
   @protected
+  LibraryReservationDto sse_decode_library_reservation_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  LibraryReservationsDto sse_decode_library_reservations_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  LibraryReservationsResultDto sse_decode_library_reservations_result_dto(
+      SseDeserializer deserializer);
+
+  @protected
   LibrarySeatDto sse_decode_library_seat_dto(SseDeserializer deserializer);
 
   @protected
@@ -1688,6 +1714,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<LibraryPlaceDto> sse_decode_list_library_place_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  List<LibraryReservationDto> sse_decode_list_library_reservation_dto(
       SseDeserializer deserializer);
 
   @protected
@@ -2672,6 +2702,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
       LibraryPlaceDto self, SseSerializer serializer);
 
   @protected
+  void sse_encode_library_reservation_dto(
+      LibraryReservationDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_library_reservations_dto(
+      LibraryReservationsDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_library_reservations_result_dto(
+      LibraryReservationsResultDto self, SseSerializer serializer);
+
+  @protected
   void sse_encode_library_seat_dto(
       LibrarySeatDto self, SseSerializer serializer);
 
@@ -2840,6 +2882,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_library_place_dto(
       List<LibraryPlaceDto> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_library_reservation_dto(
+      List<LibraryReservationDto> self, SseSerializer serializer);
 
   @protected
   void sse_encode_list_library_seat_dto(

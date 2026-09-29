@@ -167,6 +167,9 @@ mod learn_homework_runtime;
 #[path = "runtime_news_write.rs"]
 mod news_write_runtime;
 
+#[path = "runtime_library_write.rs"]
+mod library_write_runtime;
+
 #[cfg(test)]
 #[path = "runtime_audit_tests.rs"]
 mod api_audit_tests;
@@ -1323,6 +1326,42 @@ pub struct LibraryDaySegmentsResultDto {
     pub source: String,
     pub status: String,
     pub error: Option<String>,
+}
+
+/// One seat of a section's live inventory, reduced to the two facts a booking
+/// is decided on.
+///
+/// It is produced only by this Runtime's own seat read, so a booking can never
+/// name a seat the service did not return, and the category can never be chosen
+/// by a caller.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ConfirmedLibrarySeat {
+    is_available: bool,
+    area_type: i64,
+}
+
+/// The account's own reservation list.
+///
+/// A row carries a selector only when the service's row also carried a
+/// cancellation control; `selector: None` is the service's own statement that
+/// this reservation can no longer be cancelled, and is deliberately distinct
+/// from a row that is missing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LibraryReservationsDto {
+    pub reservations: Vec<LibraryReservationDto>,
+    pub generated_at: String,
+    pub source: String,
+    pub status: String,
+}
+
+/// One reservation row.  The selector is a per-Runtime opaque handle and the
+/// service's own cancellation identifier is never part of this DTO.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LibraryReservationDto {
+    pub selector: Option<String>,
+    pub position: String,
+    pub time: String,
+    pub status: String,
 }
 
 /// Source-aware classroom directory.  The weekly availability matrix remains
@@ -2867,6 +2906,15 @@ pub struct CampusRuntime {
     library_seat_section_ids: HashSet<u64>,
     library_seat_hierarchy_active: bool,
     library_confirmed_seat_windows: HashMap<u64, Vec<crate::library_read::LibraryDaySegmentDto>>,
+    // The live seat inventory of one section's opening window, reduced to what
+    // a booking needs and nothing else.  It is keyed by the section *and* the
+    // window, so the seat proof and the window proof come from the same read: a
+    // seat the inventory marked free at 08:00 must not be bookable against a
+    // window read for 20:00.  A seat is bookable only if this exact read
+    // returned it as available, and the category is that read's own
+    // `area_type`, so neither the seat nor its category can be supplied by a
+    // caller.
+    library_confirmed_seats: HashMap<(u64, u64), HashMap<u64, ConfirmedLibrarySeat>>,
     // Area/section ids are server-provided context. They are repopulated by
     // a live or cached area-tree read before a day-segment cache is reused.
     library_section_ids: HashSet<u64>,
@@ -3061,6 +3109,16 @@ pub struct CampusRuntime {
     // its own shape, so both are mapped from a stable code here rather than
     // from the recorded message text.
     last_sports_failure_code: Option<&'static str>,
+    // The library's booking, reservation and cancellation paths have their own
+    // account-bound boundary: a refused dispatch is unconfirmed rather than
+    // failed, and a caller must be able to tell that from a read failure.
+    last_library_failure_code: Option<&'static str>,
+    // One reservation read at a time is what makes a cancellation selector
+    // meaningful, so the selectors, their account and their age are kept
+    // together exactly as the INFO subscription rules are.
+    library_reservation_selectors: HashMap<String, String>,
+    library_reservation_owner: Option<String>,
+    library_reservation_at: Option<std::time::Instant>,
     // The WebVPN/OAuth/Identity origin graph is part of the Rust runtime's
     // authenticated transport boundary. Production uses the current THU
     // deployment; loopback fixtures may inject a fully validated graph so
@@ -3636,6 +3694,7 @@ impl CampusRuntime {
             library_seat_section_ids: HashSet::new(),
             library_seat_hierarchy_active: false,
             library_confirmed_seat_windows: HashMap::new(),
+            library_confirmed_seats: HashMap::new(),
             library_section_ids: HashSet::new(),
             classroom_adapter: None,
             classroom_buildings: None,
@@ -3735,6 +3794,10 @@ impl CampusRuntime {
             last_graduate_income_failure_code: None,
             last_course_score_failure_code: None,
             last_sports_failure_code: None,
+            last_library_failure_code: None,
+            library_reservation_selectors: HashMap::new(),
+            library_reservation_owner: None,
+            library_reservation_at: None,
             webvpn_identity_config,
         };
 
@@ -7893,6 +7956,58 @@ impl CampusRuntime {
         .await
     }
 
+    /// Reads the current account's own library reservation list.
+    ///
+    /// This is a read, so it may be repeated.  It is also the only operation
+    /// that produces a cancellation selector: every row that still carries the
+    /// service's own cancellation control is given a fresh opaque handle bound
+    /// to this account and this read, and the service's identifier stays inside
+    /// this Runtime.
+    pub async fn load_library_reservations(&mut self) -> Result<LibraryReservationsDto, String> {
+        crate::telemetry::observe("library", "load_library_reservations", async {
+            library_write_runtime::load_reservations(self).await
+        })
+        .await
+    }
+
+    /// Books one seat of a section whose opening window this Runtime confirmed.
+    ///
+    /// The seat and its category both come from this Runtime's own inventory
+    /// read for that same section and window, so a caller cannot name a seat the
+    /// service never returned nor choose a seat category.  The booking is
+    /// dispatched exactly once: an outcome the service did not confirm is
+    /// reported as `library_write_unconfirmed` and is never sent again, so a
+    /// caller must re-read the reservation list to learn what the account now
+    /// holds.
+    pub async fn book_library_seat(
+        &mut self,
+        section_id: u64,
+        segment_id: u64,
+        seat_id: u64,
+    ) -> Result<CampusRuntimeStatusDto, String> {
+        crate::telemetry::observe("library", "book_library_seat", async {
+            library_write_runtime::book_seat(self, section_id, segment_id, seat_id).await
+        })
+        .await
+    }
+
+    /// Cancels one reservation selected from this Runtime's latest reservation
+    /// read.
+    ///
+    /// The caller names only a selector this Runtime minted for the same
+    /// account; the service's own cancellation identifier never leaves this
+    /// Runtime.  The cancellation is dispatched exactly once and an unconfirmed
+    /// outcome is never replayed.
+    pub async fn cancel_library_booking(
+        &mut self,
+        selector: String,
+    ) -> Result<CampusRuntimeStatusDto, String> {
+        crate::telemetry::observe("library", "cancel_library_booking", async {
+            library_write_runtime::cancel_booking(self, selector).await
+        })
+        .await
+    }
+
     pub async fn load_info_news(
         &mut self,
         page: u32,
@@ -9204,6 +9319,7 @@ impl CampusRuntime {
                 .collect();
             self.library_seat_section_ids.clear();
             self.library_confirmed_seat_windows.clear();
+            self.library_confirmed_seats.clear();
             self.extend_library_section_ids(&floors.areas);
             self.library_area_tree_prefetch = None;
             self.last_error = None;
@@ -9272,6 +9388,7 @@ impl CampusRuntime {
             let sections = self.accept_library_discovery(result)?;
             self.library_seat_section_ids = valid_library_area_ids(&sections.areas);
             self.library_confirmed_seat_windows.clear();
+            self.library_confirmed_seats.clear();
             self.extend_library_section_ids(&sections.areas);
             self.library_area_tree_prefetch = None;
             self.last_error = None;
@@ -9673,6 +9790,27 @@ impl CampusRuntime {
             }
             match result {
                 Ok(seats) => {
+                    // The read is this Runtime's only source of truth about
+                    // which seats of this exact window are free, so it is
+                    // retained under the section *and* the window.  A booking
+                    // can then only ever name a seat and an opening window that
+                    // the same inventory read returned.
+                    self.library_confirmed_seats.insert(
+                        (area_id, segment_id),
+                        seats
+                            .seats
+                            .iter()
+                            .map(|seat| {
+                                (
+                                    seat.id,
+                                    ConfirmedLibrarySeat {
+                                        is_available: seat.is_valid,
+                                        area_type: seat.area_type,
+                                    },
+                                )
+                            })
+                            .collect(),
+                    );
                     self.last_error = None;
                     self.persist_identity_resume_state_after_live_read("library");
                     Ok(seats)
@@ -17368,6 +17506,7 @@ impl CampusRuntime {
                 self.library_floor_ids.clear();
                 self.library_seat_section_ids.clear();
                 self.library_confirmed_seat_windows.clear();
+                self.library_confirmed_seats.clear();
                 self.library_section_ids.clear();
             }
             ServiceId::CampusCard => self.card_session = None,
@@ -17815,6 +17954,9 @@ impl CampusRuntime {
         if service == "info" {
             self.last_info_failure_code = Some(reason);
         }
+        if service == "library" {
+            self.last_library_failure_code = Some(reason);
+        }
         tracing::warn!(target:"tsinghua_kit::api",event="business_read_failure",service,business_stage=stage,reason);
         let message = format!("服务读取未确认（{reason}），详情见脱敏日志");
         self.last_error = Some(message.clone());
@@ -17829,6 +17971,11 @@ impl CampusRuntime {
     #[cfg_attr(feature = "ffi-bridge", frb(ignore))]
     pub(crate) fn last_info_failure_code(&self) -> Option<&'static str> {
         self.last_info_failure_code
+    }
+
+    #[cfg_attr(feature = "ffi-bridge", frb(ignore))]
+    pub(crate) fn clear_library_failure_code(&mut self) {
+        self.last_library_failure_code = None;
     }
 
     fn record_usereg_failure(
@@ -17887,6 +18034,15 @@ impl CampusRuntime {
     /// The sports venue's own failure code from the last read.
     pub(crate) fn last_sports_failure_code(&self) -> Option<&'static str> {
         self.last_sports_failure_code
+    }
+
+    /// The library booking boundary's own failure code from the last action.
+    ///
+    /// It exists so the SDK can map a refused or unconfirmed write to its own
+    /// code instead of reading the recorded message, which is what keeps an
+    /// unknown outcome from ever reading as a retryable read failure.
+    pub(crate) fn last_library_failure_code(&self) -> Option<&'static str> {
+        self.last_library_failure_code
     }
 
     fn record_error(&mut self, error: impl std::fmt::Display) -> String {
@@ -18303,6 +18459,7 @@ impl CampusRuntime {
         self.library_floor_ids.clear();
         self.library_seat_section_ids.clear();
         self.library_confirmed_seat_windows.clear();
+        self.library_confirmed_seats.clear();
         self.library_seat_hierarchy_active = false;
         self.library_section_ids.clear();
         self.classroom_adapter = None;

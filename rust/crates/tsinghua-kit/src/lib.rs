@@ -160,9 +160,9 @@ pub mod library {
     pub use chrono::{NaiveDate, NaiveTime};
     pub use tsinghua_kit_engine::library_api::{
         FloorRef, LibraryAvailability, LibraryDay, LibraryDirectory, LibraryFloor, LibraryFloors,
-        LibraryPlace, LibraryRef, LibrarySeat, LibrarySeatSocket, LibrarySection, LibrarySections,
-        LibrarySocketAvailability, LibraryTimeWindow, LibraryTimeWindows, SeatRef, SeatWindowRef,
-        SectionRef,
+        LibraryPlace, LibraryRef, LibraryReservation, LibraryReservationRef, LibraryReservations,
+        LibrarySeat, LibrarySeatSocket, LibrarySection, LibrarySections, LibrarySocketAvailability,
+        LibraryTimeWindow, LibraryTimeWindows, SeatRef, SeatWindowRef, SectionRef,
     };
     pub use tsinghua_kit_engine::library_read::LibrarySocketState;
 }

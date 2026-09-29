@@ -99,6 +99,9 @@ pub enum LibraryRequestError {
 
     #[error("start_time must be earlier than end_time")]
     InvalidTimeRange,
+
+    #[error("cancellation identifier is not one this client will send")]
+    InvalidCancellationId,
 }
 
 /// Fixed route profile for the observed library seat read endpoints.
@@ -432,6 +435,15 @@ pub enum LibraryAdapterError {
 
     #[error("library response could not be parsed: {0}")]
     Parse(#[source] LibraryReadParseError),
+
+    #[error("library write is not one this client will dispatch")]
+    WriteOperation,
+
+    // The write parsers live in the sibling `library_write` module, but their
+    // failures are classified here so a caller reads one error type and one set
+    // of diagnostic codes whichever library operation it asked for.
+    #[error("library write response could not be parsed: {0}")]
+    WriteParse(#[source] crate::library_write::LibraryWriteParseError),
 }
 
 impl LibraryAdapterError {
@@ -446,6 +458,27 @@ impl LibraryAdapterError {
             Self::ForeignSocketContext => "library_foreign_context",
             Self::SessionExpired => "library_auth_required",
             Self::UnexpectedDeployment => "library_html",
+            Self::WriteOperation => "library_write_request",
+            Self::WriteParse(error) => match error {
+                crate::library_write::LibraryWriteParseError::LoginHtml
+                | crate::library_write::LibraryWriteParseError::ExpiredHtml => {
+                    "library_auth_required"
+                }
+                crate::library_write::LibraryWriteParseError::UnexpectedHtml => "library_html",
+                crate::library_write::LibraryWriteParseError::MissingAccessToken
+                | crate::library_write::LibraryWriteParseError::InvalidAccessToken => {
+                    "library_booking_token"
+                }
+                crate::library_write::LibraryWriteParseError::MissingTable
+                | crate::library_write::LibraryWriteParseError::InvalidRecord { .. } => {
+                    "library_booking_records"
+                }
+                crate::library_write::LibraryWriteParseError::TooLarge
+                | crate::library_write::LibraryWriteParseError::TooManyRecords => {
+                    "library_booking_records_limit"
+                }
+                crate::library_write::LibraryWriteParseError::EmptyBody => "library_parse",
+            },
             Self::Parse(error) => match error {
                 LibraryReadParseError::LoginHtml => "library_auth_required",
                 LibraryReadParseError::FailureEnvelope => "library_business_failure",
@@ -475,6 +508,12 @@ impl LibraryAdapterError {
         matches!(
             self,
             Self::SessionExpired | Self::Parse(LibraryReadParseError::LoginHtml)
+        ) || matches!(
+            self,
+            Self::WriteParse(
+                crate::library_write::LibraryWriteParseError::LoginHtml
+                    | crate::library_write::LibraryWriteParseError::ExpiredHtml
+            )
         )
     }
 
@@ -648,6 +687,22 @@ impl LibraryReadAdapter {
         let base_url = Url::parse(LIBRARY_SOCKET_STATUS_ORIGIN)
             .map_err(|_| LibraryAdapterError::InvalidBaseUrl)?;
         self.socket_status_adapter(base_url)
+    }
+
+    /// Creates the booking and cancellation writer from this adapter's own
+    /// mapping and transport.
+    ///
+    /// The writer therefore shares the INFO/WebVPN Cookie jar that the seat
+    /// reads used, which is the contract the booking route needs: its form is
+    /// only accepted for the account that established the session, and the
+    /// runtime derives the account's own user id from that same proof.
+    pub fn write_adapter(
+        &self,
+    ) -> Result<crate::library_write::LibraryWriteAdapter, LibraryAdapterError> {
+        crate::library_write::LibraryWriteAdapter::try_with_transport(
+            self.base_url.clone(),
+            self.transport.clone(),
+        )
     }
 
     pub async fn read_area_tree(&self) -> Result<LibraryAreaTreeDto, LibraryAdapterError> {
@@ -1137,7 +1192,7 @@ fn map_socket_status(statuses: LibrarySocketStatuses) -> LibrarySocketStatusesDt
     }
 }
 
-fn validate_library_base_url(base_url: Url) -> Result<Url, LibraryAdapterError> {
+pub(crate) fn validate_library_base_url(base_url: Url) -> Result<Url, LibraryAdapterError> {
     if !matches!(base_url.scheme(), "http" | "https")
         || base_url.host_str().is_none()
         || !base_url.username().is_empty()
@@ -1194,7 +1249,7 @@ fn hex_value(value: u8) -> Option<u8> {
     }
 }
 
-fn normalize_library_base_url(mut base_url: Url) -> Result<Url, LibraryAdapterError> {
+pub(crate) fn normalize_library_base_url(mut base_url: Url) -> Result<Url, LibraryAdapterError> {
     let path = base_url.path().trim_end_matches('/');
     if let Some(root) = path.strip_suffix(LIBRARY_HOME_PATH) {
         let normalized = if root.is_empty() {
@@ -2294,21 +2349,21 @@ fn invalid_record(
     }
 }
 
-fn is_library_login_response(response: &CampusTextResponse) -> bool {
+pub(crate) fn is_library_login_response(response: &CampusTextResponse) -> bool {
     let body_signal = looks_like_login_html(&response.body);
     let url_signal = looks_like_login_url(&response.final_url);
 
     body_signal || url_signal
 }
 
-fn looks_like_login_location(base_url: &Url, location: &str) -> bool {
+pub(crate) fn looks_like_login_location(base_url: &Url, location: &str) -> bool {
     let Ok(url) = Url::parse(location).or_else(|_| base_url.join(location)) else {
         return false;
     };
     looks_like_login_url(&url)
 }
 
-fn same_origin(base_url: &Url, candidate: &Url) -> bool {
+pub(crate) fn same_origin(base_url: &Url, candidate: &Url) -> bool {
     base_url.scheme() == candidate.scheme()
         && base_url.host_str() == candidate.host_str()
         && base_url.port_or_known_default() == candidate.port_or_known_default()
@@ -2316,14 +2371,14 @@ fn same_origin(base_url: &Url, candidate: &Url) -> bool {
         && candidate.password().is_none()
 }
 
-fn redirect_leaves_origin(base_url: &Url, response_url: &Url, location: &str) -> bool {
+pub(crate) fn redirect_leaves_origin(base_url: &Url, response_url: &Url, location: &str) -> bool {
     let Some(candidate) = resolve_location(response_url, location) else {
         return true;
     };
     !same_origin(base_url, &candidate)
 }
 
-fn resolve_location(response_url: &Url, location: &str) -> Option<Url> {
+pub(crate) fn resolve_location(response_url: &Url, location: &str) -> Option<Url> {
     if invalid_percent_encoding(location) {
         return None;
     }
@@ -2342,7 +2397,7 @@ fn invalid_percent_encoding(value: &str) -> bool {
     })
 }
 
-fn path_within_base(base_url: &Url, candidate: &Url) -> bool {
+pub(crate) fn path_within_base(base_url: &Url, candidate: &Url) -> bool {
     let base_path = base_url.path().trim_end_matches('/');
     base_path.is_empty()
         || base_path == "/"
@@ -2350,7 +2405,7 @@ fn path_within_base(base_url: &Url, candidate: &Url) -> bool {
         || candidate.path().starts_with(&format!("{base_path}/"))
 }
 
-fn query_matches(expected: &[(String, String)], candidate: &Url) -> bool {
+pub(crate) fn query_matches(expected: &[(String, String)], candidate: &Url) -> bool {
     let mut expected = expected
         .iter()
         .map(|(key, value)| (key.as_str().to_owned(), value.as_str().to_owned()))
@@ -2438,7 +2493,7 @@ fn strip_utf8_bom(body: &str) -> &str {
     body.strip_prefix('\u{feff}').unwrap_or(body)
 }
 
-fn looks_like_html(body: &str) -> bool {
+pub(crate) fn looks_like_html(body: &str) -> bool {
     let lower = strip_utf8_bom(body).trim_start().to_ascii_lowercase();
     lower.starts_with("<!doctype html")
         || lower.starts_with("<html")
@@ -2448,7 +2503,19 @@ fn looks_like_html(body: &str) -> bool {
         || lower.starts_with("<input")
         || lower.starts_with("<meta")
         || lower.starts_with("<title")
+        // A fragment response — the reservation list is a full page, but a
+        // truncated or partial answer begins at a table or row instead. Reading
+        // one of those as JSON would mean reporting a parse error where the page
+        // itself was never the service's answer.
+        || lower.starts_with("<table")
+        || lower.starts_with("<tbody")
+        || lower.starts_with("<tr")
+        || lower.starts_with("<div")
 }
+
+#[cfg(test)]
+#[path = "library_write_tests.rs"]
+mod library_write_tests;
 
 #[cfg(test)]
 mod tests {

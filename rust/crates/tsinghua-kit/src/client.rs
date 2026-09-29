@@ -45,7 +45,8 @@ use tsinghua_kit_engine::{
     },
     library_api::{
         FloorRef, LibraryAvailability, LibraryDay, LibraryDirectory, LibraryFloors, LibraryRef,
-        LibrarySections, LibrarySocketAvailability, LibraryTimeWindows, SeatWindowRef, SectionRef,
+        LibraryReservationRef, LibraryReservations, LibrarySections, LibrarySocketAvailability,
+        LibraryTimeWindows, SeatRef, SeatWindowRef, SectionRef,
     },
     network::{
         NetworkProfileId, NetworkProfileInput, NetworkProfilePassword, NetworkProfileStoragePolicy,
@@ -995,6 +996,40 @@ impl LibraryClient<'_> {
         availability: &LibraryAvailability,
     ) -> Result<ReadResult<LibrarySocketAvailability>, Error> {
         self.inner.sockets(availability).await
+    }
+
+    /// Reads the account's own reservation list.
+    ///
+    /// This read is what makes a cancellation possible: every row the service
+    /// still lets this account cancel is returned with a reference scoped to
+    /// this client and this read. The service's own cancellation identifier
+    /// never leaves Rust.
+    pub async fn reservations(&mut self) -> Result<ReadResult<LibraryReservations>, Error> {
+        self.inner.reservations().await
+    }
+
+    /// Reserves one seat of a window returned by [`Self::time_windows`].
+    ///
+    /// The seat must be one of this client's latest [`Self::seats`] result for
+    /// the same section. Both the seat and the opening window are re-checked
+    /// against the Runtime's own inventory before the request is built, so a
+    /// stale or foreign selection is refused rather than sent.
+    ///
+    /// This is a single dispatch. An outcome the service does not confirm is
+    /// reported as `outcome_unconfirmed` and is never retried here or by the
+    /// service layer, so the caller must re-read [`Self::reservations`] to learn
+    /// what the account now holds.
+    pub async fn reserve(&mut self, window: &SeatWindowRef, seat: &SeatRef) -> Result<(), Error> {
+        self.inner.reserve(window, seat).await
+    }
+
+    /// Cancels one reservation returned by [`Self::reservations`].
+    ///
+    /// A reference from another client or from an earlier reservation read is
+    /// refused before any request. The cancellation is dispatched at most once
+    /// and an unconfirmed outcome is never replayed.
+    pub async fn cancel(&mut self, reference: &LibraryReservationRef) -> Result<(), Error> {
+        self.inner.cancel(reference).await
     }
 }
 

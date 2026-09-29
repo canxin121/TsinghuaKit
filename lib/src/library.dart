@@ -197,6 +197,47 @@ class LibrarySockets {
   final List<LibrarySocketStatus> statuses;
 }
 
+/// Opaque cancellation selector from this Client's latest reservation read.
+///
+/// A reference exists only for a row the service itself still allows this
+/// account to cancel, so an absent reference is the service's own statement
+/// about that reservation rather than a read failure. A reference is spent by
+/// one [LibraryClient.cancel] call.
+class LibraryReservationReference {
+  const LibraryReservationReference._(this._id);
+
+  final String _id;
+}
+
+/// One reservation the account holds, as the service printed it.
+class LibraryReservation {
+  const LibraryReservation({
+    this.reference,
+    required this.position,
+    required this.time,
+    required this.status,
+  });
+
+  /// Present only when the service's own row carried a cancellation control.
+  final LibraryReservationReference? reference;
+
+  final String position;
+
+  /// Campus-local display time as the service printed it; no timezone is
+  /// inferred, and no format is asserted beyond what was received.
+  final String time;
+
+  final String status;
+}
+
+/// The account's reservation list as one read returned it.
+class LibraryReservations {
+  LibraryReservations({required List<LibraryReservation> reservations})
+      : reservations = List.unmodifiable(reservations);
+
+  final List<LibraryReservation> reservations;
+}
+
 /// Library reads using the Client's shared Runtime, transport, and account.
 class LibraryClient {
   LibraryClient._(this._handle);
@@ -257,6 +298,35 @@ class LibraryClient {
               availabilityReferenceId: availability._id,
             ),
           ));
+
+  /// Reads the account's own reservation list.
+  ///
+  /// A successful read replaces every [LibraryReservationReference] this Client
+  /// handed out before, because the previous list no longer describes the
+  /// account.
+  Future<ReadResult<LibraryReservations>> reservations() => _sdkCall(
+        () async => _libraryReservationsResult(
+          await _handle.libraryReservations(),
+        ),
+      );
+
+  /// Reserves one seat of a window from this Client's latest [seats] result.
+  ///
+  /// Dispatched at most once: after this call the seat reference cannot be
+  /// used again, so a result reported as unconfirmed is not sent a second time.
+  /// Read [reservations] to learn what the account now holds.
+  Future<void> reserve(LibraryTimeWindowReference window, LibrarySeat seat) =>
+      _sdkCall(() => _handle.libraryReserve(
+            windowReferenceId: window._id,
+            seatReferenceId: seat.reference._id,
+          ));
+
+  /// Cancels one reservation returned by this Client's latest [reservations].
+  ///
+  /// The reference is spent exactly as in [reserve].
+  Future<void> cancel(LibraryReservationReference reference) => _sdkCall(
+        () => _handle.libraryCancel(reservationReferenceId: reference._id),
+      );
 }
 
 ReadResult<LibraryDirectory> _libraryDirectoryResult(
@@ -383,6 +453,29 @@ ReadResult<LibrarySockets> _librarySocketsResult(
                   native.LibrarySocketStateDto.unknown =>
                     LibrarySocketState.unknown,
                 },
+              ),
+            )
+            .toList(growable: false),
+      ),
+      metadata: _readMetadata(value.metadata),
+    );
+
+ReadResult<LibraryReservations> _libraryReservationsResult(
+  native.LibraryReservationsResultDto value,
+) =>
+    ReadResult(
+      data: LibraryReservations(
+        reservations: value.data.reservations
+            .map(
+              (row) => LibraryReservation(
+                // The service decides whether a row can still be cancelled:
+                // only a row with its own control gets a reference.
+                reference: row.referenceId == null
+                    ? null
+                    : LibraryReservationReference._(row.referenceId!),
+                position: row.position,
+                time: row.time,
+                status: row.status,
               ),
             )
             .toList(growable: false),

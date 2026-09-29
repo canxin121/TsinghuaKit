@@ -45,6 +45,7 @@ pub mod learn_session;
 pub mod learn_todos;
 pub mod library_api;
 pub mod library_read;
+pub mod library_write;
 mod money;
 pub mod network;
 mod network_profile_store;
@@ -247,6 +248,14 @@ pub use library_read::{
     LibrarySocketState, LibrarySocketStatusAdapter, LibrarySocketStatusRecord,
     LibrarySocketStatusRecordDto, LibrarySocketStatuses, LibrarySocketStatusesDto, parse_area_tree,
     parse_day_segments, parse_seat_availability, parse_socket_status,
+};
+pub use library_write::{
+    LIBRARY_BOOK_PATH_PREFIX, LIBRARY_BOOK_PATH_SUFFIX, LIBRARY_BOOKING_RECORD_PATH,
+    LIBRARY_CANCEL_BOOKING_PATH_PREFIX, LibraryAccessToken, LibraryBookingRecord,
+    LibraryBookingRecords, LibraryWriteAdapter, LibraryWriteMethod, LibraryWriteOperation,
+    LibraryWriteOutcome, LibraryWriteParseError, LibraryWritePlan, LibraryWriteProfile,
+    LibraryWriteSessionPrerequisite, classify_library_write, extract_access_token,
+    parse_booking_records,
 };
 pub use physical_exam_read::{
     PHYSICAL_EXAM_PATH, PHYSICAL_EXAM_QUERY, PHYSICAL_EXAM_WEBVPN_TARGET, PhysicalExamAdapter,

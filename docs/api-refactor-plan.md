@@ -1491,3 +1491,59 @@ SDK `public_api` 增补 `compile_sports_api` 编译检查与两项活动断言�
 同一 `news` 过滤器下另有 **5 项 HEAD 既有失败**（`backend_repair_business_news_ui_id_uses_the_returned_article_link`、`backend_repair_info_news_cache_miss_lazily_establishes_info`、`backend_repair_info_news_stale_cache_attempts_lazy_refresh_then_falls_back`、`info_session::tests::fixture_promotes_after_cookie_handoff_probe_and_executes_news`、`info_session::tests::news_read_rejects_a_valid_envelope_from_another_target_route`）：用 `git stash push -u` 在**同一 fixture 环境**下重建并重跑，失败集合逐项相同，逐字确认与本轮无关。
 
 **未验证**：四条新闻写路由的线上可用性**未验证**，需要另行真实只读验收——写路由本轮**未对任何真实账号发起**（§59 的写操作约定不变：写操作只做本地验收，真实账号只读验收另行进行）；在此之前不得用 fixture 或空结果冒充线上证据。
+
+## 64. 2026-09-29 图书馆座位预约、预约记录与取消（一次性写）
+
+计划阶段 3 的第一个子域：图书馆**座位预约 / 预约记录 / 取消预约**。三条路由分别来自参考实现 `thu-info-lib/src/lib/library.ts` 的观测值：预约 `POST /api.php/spaces/<seatId>/book`（表单 `segment` / `type` / `operateChannel=2`），预约记录 `GET /user/index/book`（16 列表格），取消 `POST /api.php/profile/books/<id>`（表单 `_method=delete` / `id` / `operateChannel=2`）。**未新增 selector、未新增映射、未新增 `ServiceId`**：三条路由都落在既有的 seat.lib 映射（`e3f24088…`）与既有 `Service::Library` 上，因此这个子域不需要任何新的认证或允许名单条目，也不存在第二套请求路径。
+
+**唯一的预约凭据来自本 Runtime 自己的读**
+
+预约表单里的 `access_token` 是服务自己放在 `/home/web/f_second` 页面里的一次性令牌。它**只**在 `LibraryWriteAdapter::execute_write` 内、在那一次请求之前被读出，随后：
+
+- 不进 `LibraryWritePlan`（`form_parameters()` 里没有它，`Debug` 只打印字段名）；
+- 不缓存在 adapter 上，也不跨调用存活；
+- 不跨 FFI 边界（`LibraryAccessToken` 的 `Debug` 打印 `[redacted]`，只有 `expose()` 在 Rust 内可取用）；
+- 读不到或读不成时**拒绝发请求**（`MissingAccessToken` / `InvalidAccessToken` ⇒ SDK `unsupported`），而不是发一个空令牌。
+
+**座位类目由 Rust 自己保管，不是调用方参数**
+
+预约表单的 `type` 是座位可预约数据里的 `area_type`。它来自本 Runtime 刚读到的座位清单，保存在**按 `(section_id, segment_id)` 双键**的运行时状态 `library_confirmed_seats` 里（每条记录只含 `is_available` 与 `area_type` 两个值）。双键是刻意的：客户端 `seats()` 会同时推进窗口引用，若只按 section 存，客户端就可能拿一个**它从未读过的窗口**去预约。
+
+于是 `book_library_seat(section_id, segment_id, seat_id)` 的三项证据必须**同源**：
+
+1. section ∈ 当前已验证目录发出的 section 集合（`library_seat_hierarchy_active` 打开时）；
+2. segment ∈ 本 Runtime 为该 section 确认过的开放时段；
+3. seat ∈ 本 Runtime 为**同一** (section, segment) 读到的座位清单，且 `is_available` 为真。
+
+任一不成立即在**任何请求存在之前**以 `library_section_unconfirmed` / `library_segment_unconfirmed` / `library_seat_unconfirmed` / `library_seat_unavailable` 拒绝（分别映射到 SDK 的 `ContextMismatch` / `NotAvailable`）。`area_type` 因此不是 FFI、SDK 或 runtime API 的参数——`LibrarySeat` 也已随之不再携带该字段。
+
+**取消只能来自本 Runtime 自己的预约记录读**
+
+`load_library_reservations` 是**唯一**能产生取消选择器的操作。它读取预约记录后，为每一行**仍带服务自己的取消控件**的记录铸一个 `Uuid` 选择器，runtime 存 `selector → cancellation_id`，并**同时**记录 owner 与 `Instant::now()`（复用既有 `selected_info_subscription_rule` 的 owner + 300 秒双重校验）。于是别的账号的选择器、过期的选择器与未知选择器一律拒绝且**零请求**，服务侧的取消标识符（`menuDel(...)` 的参数）从不离开 Rust。不含取消控件的行不铸选择器——那是**服务自己**对该行的表态，不是读取失败。
+
+**"只发一次" 的三层落点**
+
+1. **适配器层**：`execute_write` 只接受写计划（`WriteOperation`，零请求），只经统一 transport 发一次，且必须经 `execute_once_exclusive` **显式取整个 gate、不跟随重定向**（一次重定向就是一次结果已不确定的写的重放）。传输失败被归类为 `Unrecognized`，**错误文本被丢弃**（reqwest 的失败信息可能带上带令牌的请求 URL）。
+2. **分类层**：只有 `Accepted` 是成功。`Refused`（业务失败包）与 `Unrecognized`（空体、超限、非 JSON/HTML、结构不符、跨源或越界重定向、非 2xx）都记 `library_write_unconfirmed` ⇒ SDK `OutcomeUnconfirmed`；`LoginRequired`（WebVPN 登录页 / HTTP 200 的会话过期页 / 401 / 403）作废 LIBRARY 会话记 `library_session_expired` ⇒ SDK `SessionExpired`。**两者都不重放**。
+3. **桥接层**：`ClientHandle` 为座位与预约各维护自己的 handle 表，**只认自己发过的 handle**（伪造 ⇒ `context_mismatch`）；`library_reserve` 与 `library_cancel` 都在 **dispatch 之前**把 handle 从表里移除，所以一次结果不确定的写不能经同一个 Client 再发一次。一次新的座位读或预约记录读才会产出新的 handle。
+
+**必须固定的两条拒绝文案**
+
+`record_business_failure("library", …)` 会把失败码写进 `last_library_failure_code`，`library_failure` 先查该字段再谈别的，映射表把 `library_write_unconfirmed` 归到 `OutcomeUnconfirmed`（**不可重试**）、把 `library_session_expired` / `library_auth_required` 归到 `SessionExpired`、把 `library_account_changed` 与三类 `*_unconfirmed` 归到 `ContextMismatch`、把 `library_seat_unavailable` 归到 `NotAvailable`、把 `library_booking_token` 归到 `Unsupported`、把 `library_write_request` 归到 `InvalidInput`。
+
+**SDK / FFI / Dart**
+
+- 引擎：新增 `library_write.rs`（路径常量 + `LibraryWriteProfile` + `LibraryWritePlan` + `LibraryAccessToken` + `classify_library_write` + `parse_booking_records` + `LibraryWriteAdapter`）与 `api/runtime_library_write.rs`（`ensure_library_write_session` / `finish_write` / 三个入口）；新增 `library_write_tests.rs`（22 项。其中 `read_booking_records` 与预约/取消各覆盖正常、空表、会话过期、拒答、不可读答复五个分支，另有"非学生账号在**零请求**前被拒"与"预约计划不能走取消入口"两条）。runtime 新增三个公开方法（`load_library_reservations` / `book_library_seat` / `cancel_library_booking`）、`LibraryReservationsDto` / `LibraryReservationDto` / `ConfirmedLibrarySeat` 三个类型与五个状态字段（`library_confirmed_seats`、`last_library_failure_code`、`library_reservation_selectors` / `_owner` / `_at`）。`LibraryReservationRef` 改为 opaque 选择器 + owner + 客户端代数；`LibraryBookingRecord` 的 `Debug` 改为只打印 `cancellable: bool`；`LibrarySeat` 去掉 `area_type`，`LibraryBookingRequest` / `bind_booking` 删除。
+- SDK：`LibraryClient` 新增 `reservations` / `reserve(&SeatWindowRef, &SeatRef)` / `cancel(&LibraryReservationRef)`，`library` 模块 re-export 三个新类型。
+- FFI：`ClientHandle` 新增 `library_reservations` / `library_reserve` / `library_cancel`；`LibraryReservationDto` 的 `Debug` 只留 `cancellable`；FRB 2.13.0 重新生成，生成物未手工编辑。
+- Dart：`lib/src/library.dart` 新增 `LibraryReservationReference` / `LibraryReservation` / `LibraryReservations` 与三个同名方法，`lib/library.dart` 导出三个新类型。
+
+**验证**
+
+引擎定向（loopback fixture，无任何真实账号 / Cookie / 令牌值）：`library_write` **22 项通过**——预约恰好 2 次请求（令牌读 + 写）且断言线上形状含 `POST /api.php/spaces/701/book`、`access_token=fa-9b7c`、`userid=<fixture>`、`segment=9001`、`type=2`、`operateChannel=2`，而 `LibraryWritePlan` 的 `Debug` 既不出现令牌也不出现账号；取消恰好 2 次请求且断言 `POST /api.php/profile/books/202009111837`、`_method=delete`、`id=202009111837`；拒答与不可读答复各**只发一次**；缺令牌时零写请求且错误文本不含 `access_token`；16 列布局被换掉时以 `InvalidRecord` 拒绝而不是把相邻列当成预约；`Debug` 断言预约记录不泄露 `menuDel` 的参数但保留 `cancellable: true`。runtime 层 `a_selector_from_an_older_read_is_not_accepted` 通过（别的账号 / 未知 / 301 秒三种失效）。桥接层新增 2 项（`library_writes_only_accept_handles_this_client_returned` 与 `library_reservation_bridge_debug_omits_the_cancellation_handle`），`cargo test -p tsinghua_kit_ffi --lib --features ffi-bridge` **47 项通过**。SDK `public_api` **20 项通过**（新增 `compile_library_api` 里的预约/记录/取消编译检查与 `library_reservation_entries_report_the_missing_session_instead_of_an_outcome`），`client_api` 12 项通过。`cargo check --workspace --all-targets` 退出 0；`cargo fmt --all -- --check` 干净；严格 `RUSTDOCFLAGS="-D warnings" cargo doc -p tsinghua_kit` 退出 0；`flutter analyze lib test` 无问题；`flutter test test/public_entrypoints_test.dart` 通过并覆盖三个新类型与"服务未给取消控件时引用为 null"这一语义。THYou 侧新增 `('library', …)` 七条文案（其中 `outcome_unconfirmed` 明确读作"请勿重复提交、可刷新预约记录查看"），`flutter test test/tsinghua_kit_failure_test.dart` 10 项通过。
+
+同一 `library` 过滤器下另有 **4 项 HEAD 既有失败**（`backend_repair_cached_library_read_uses_existing_expiry_gate`、`backend_repair_proven_library_action_survives_unavailable_info_bootstrap`、`backend_repair_runtime_library_segments_and_seats_reach_safe_dtos`、`backend_repair_binding_library_timestamp_date_must_match_segment_day`）：用 `git stash push -u` 在**同一 fixture 环境**下重建并重跑，失败集合逐项相同（HEAD 58 通过 / 4 失败，本轮 80 通过 / 4 失败），逐字确认与本轮无关——它们直接安装 library 证明却从不填充 `library_section_ids`，因此 `load_library_day_segments` 会以 `library_section_unconfirmed` 拒绝该 section。本轮**未修**这四项：它们与本次新增的写路径无关，改动它们会掩盖真正的原因。
+
+`docs/api-surface-baseline.json` 已按本节源码与重新渲染的 Rustdoc 刷新：模块列表 65 → 66（新增 `library_write`）、引擎根 `pub use` 52 → 53、渲染项计数 `struct 313→320` / `enum 151→155` / `fn 55→58` / `constant 51→55`（`trait` 与 `type` 不变）、`runtime.line_count` 28278 → 28436、`direct_state_field_count` 115 → 120、runtime DTO 74 → 76、runtime 公开方法 98 → 101。本次刷新同时更正两处**本次之前就存在**的记录错误：上一版的 `runtime.line_count` 记成 28279，而该文件在上一版修订上实测 28278（本文件因此看起来移动了 157 行，实际是 158 行）；上一版 98 条方法的行号取自更早的源码状态，本次按当前源码**逐条重新抽取**（98 条全部右移 63 行），因此行号与签名现在与 `struct.CampusRuntime` 的当前源码一致。
+
+**未验证**：三条路由的线上可用性**未验证**，需要另行真实只读验收——预约与取消本轮**未对任何真实账号发起**（§59 的写操作约定不变）；预约记录这一条读也尚未在真实账号上执行过。在此之前不得用 fixture 或空结果冒充线上证据。

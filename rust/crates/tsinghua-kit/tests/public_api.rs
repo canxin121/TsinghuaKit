@@ -31,8 +31,8 @@ use tsinghua_kit::{
     },
     learn::{CourseCatalog, CourseRef, HomeworkDetail, HomeworkList, HomeworkRef, HomeworkState},
     library::{
-        LibraryAvailability, LibraryDay, LibraryDirectory, LibrarySocketAvailability,
-        LibraryTimeWindows,
+        LibraryAvailability, LibraryDay, LibraryDirectory, LibraryReservation,
+        LibraryReservationRef, LibraryReservations, LibrarySocketAvailability, LibraryTimeWindows,
     },
     network::{
         NetworkAccessMethod, NetworkProfileId, NetworkProfileInput, NetworkProfilePassword,
@@ -238,6 +238,18 @@ async fn compile_library_api(client: &mut tsinghua_kit::Client) -> Result<()> {
         let _: &LibraryAvailability = availability.data();
         let sockets = library.sockets(availability.data()).await?;
         let _: &LibrarySocketAvailability = sockets.data();
+        if let Some(seat) = availability.data().seats().first() {
+            let _ = library.reserve(window.reference(), seat.reference()).await;
+        }
+    }
+    let reservations = library.reservations().await?;
+    let _: &LibraryReservations = reservations.data();
+    if let Some(row) = reservations.data().reservations().first() {
+        let _: &LibraryReservation = row;
+        if let Some(reference) = row.reference() {
+            let _: &LibraryReservationRef = reference;
+            let _ = library.cancel(reference).await;
+        }
     }
     Ok(())
 }
@@ -649,6 +661,26 @@ async fn news_writes_report_the_missing_session_instead_of_an_outcome() {
     assert_eq!(favorites.service(), Service::News);
     assert_eq!(favorites.code(), ErrorCode::SessionRequired);
     drop(news);
+
+    assert_eq!(
+        client.auth().status().identity().state(),
+        AccountAuthState::SignedOut
+    );
+}
+
+/// A seat and a reservation are named by references a seat read and a
+/// reservation read handed out, and both writes go through the same account
+/// proof those reads used. With no Identity session neither read can happen, so
+/// each library entry refuses with the session that is missing rather than
+/// inventing a booking outcome — and the account is still signed out afterwards.
+#[tokio::test]
+async fn library_reservation_entries_report_the_missing_session_instead_of_an_outcome() {
+    let mut client = tsinghua_kit::Client::builder().build().unwrap();
+    let mut library = client.library();
+    let reservations = library.reservations().await.unwrap_err();
+    assert_eq!(reservations.service(), Service::Library);
+    assert_eq!(reservations.code(), ErrorCode::SessionRequired);
+    drop(library);
 
     assert_eq!(
         client.auth().status().identity().state(),
