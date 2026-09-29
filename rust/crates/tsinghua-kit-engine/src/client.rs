@@ -3514,6 +3514,117 @@ impl NewsClient<'_> {
         );
         Ok(ReadResult::new(detail, metadata))
     }
+
+    /// Adds one article selected from this client's current news result to the
+    /// account's favorites.
+    ///
+    /// A foreign, stale, or replaced reference is refused before any request.
+    /// The write is dispatched at most once; an outcome the service does not
+    /// confirm is reported as [`ErrorCode::OutcomeUnconfirmed`] and is never
+    /// resolved by sending it again, so the caller must read the favorites
+    /// list to learn what the account now holds.
+    pub async fn add_favorite(&mut self, reference: &ArticleRef) -> Result<(), Error> {
+        let (generation, article_id) = self.require_article(reference)?;
+        self.runtime.clear_info_failure_code();
+        self.runtime
+            .add_info_news_favorite(generation, article_id)
+            .await
+            .map_err(|_| news_failure(self.runtime, ErrorCode::ServiceUnavailable))?;
+        Ok(())
+    }
+
+    /// Removes one article selected from this client's current news result
+    /// from the account's favorites.
+    pub async fn remove_favorite(&mut self, reference: &ArticleRef) -> Result<(), Error> {
+        let (generation, article_id) = self.require_article(reference)?;
+        self.runtime.clear_info_failure_code();
+        self.runtime
+            .remove_info_news_favorite(generation, article_id)
+            .await
+            .map_err(|_| news_failure(self.runtime, ErrorCode::ServiceUnavailable))?;
+        Ok(())
+    }
+
+    fn require_article(&mut self, reference: &ArticleRef) -> Result<(u64, String), Error> {
+        if !reference.belongs_to(self.client_id) {
+            return Err(Error::new(Service::News, ErrorCode::ContextMismatch));
+        }
+        let (generation, article_id) = reference.selector();
+        if !self.runtime.info_news_link_snapshot_is_current(generation)
+            || !self
+                .runtime
+                .info_news_article_reference_is_current(generation, article_id)
+        {
+            return Err(Error::new(Service::News, ErrorCode::ContextMismatch));
+        }
+        Ok((generation, article_id.to_owned()))
+    }
+
+    /// Adds one subscription rule for a source or a channel, or both, from this
+    /// client's latest catalog read.
+    ///
+    /// At least one of them must be given: a rule with neither condition cannot
+    /// be expressed by the service, so it is refused locally and nothing is
+    /// sent.  The same condition is not sent twice without a fresh subscription
+    /// read in between, because the service stores a second rule rather than
+    /// deduplicating it.
+    pub async fn add_subscription(
+        &mut self,
+        channel: Option<&NewsChannelRef>,
+        source: Option<&NewsSourceRef>,
+        keyword: Option<&str>,
+    ) -> Result<(), Error> {
+        let generation = *self.filter_generation;
+        let channel_id = match channel {
+            Some(reference) if reference.belongs_to(self.client_id, generation) => {
+                Some(reference.id().to_owned())
+            }
+            Some(_) => return Err(Error::new(Service::News, ErrorCode::ContextMismatch)),
+            None => None,
+        };
+        let source_id = match source {
+            Some(reference) if reference.belongs_to(self.client_id, generation) => {
+                Some(reference.id().to_owned())
+            }
+            Some(_) => return Err(Error::new(Service::News, ErrorCode::ContextMismatch)),
+            None => None,
+        };
+        if channel_id.is_none() && source_id.is_none() {
+            return Err(Error::new(Service::News, ErrorCode::InvalidInput));
+        }
+        let keyword = keyword
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned);
+        self.runtime.clear_info_failure_code();
+        self.runtime
+            .add_info_news_subscription(channel_id, source_id, keyword)
+            .await
+            .map_err(|_| news_failure(self.runtime, ErrorCode::ServiceUnavailable))?;
+        Ok(())
+    }
+
+    /// Removes one subscription rule selected from this client's latest
+    /// subscription result.
+    pub async fn remove_subscription(
+        &mut self,
+        reference: &NewsSubscriptionRef,
+    ) -> Result<(), Error> {
+        if !reference.belongs_to(self.client_id, *self.subscription_generation)
+            || !self
+                .runtime
+                .info_news_subscription_reference_is_current(reference.selector())
+        {
+            return Err(Error::new(Service::News, ErrorCode::ContextMismatch));
+        }
+        let selector = reference.selector().to_owned();
+        self.runtime.clear_info_failure_code();
+        self.runtime
+            .remove_info_news_subscription(selector)
+            .await
+            .map_err(|_| news_failure(self.runtime, ErrorCode::ServiceUnavailable))?;
+        Ok(())
+    }
 }
 
 fn map_course_files(
@@ -4118,6 +4229,11 @@ fn info_error_code(diagnostic: &str) -> ErrorCode {
     match diagnostic {
         "info_news_cache_miss" => ErrorCode::CacheMiss,
         "info_news_account_changed" => ErrorCode::ContextMismatch,
+        // A write that left this process without a service answer is unknown,
+        // not failed, and must not be repeated.  It has its own code so a
+        // caller can say "check the list" instead of "try again".
+        "info_news_write_unconfirmed" => ErrorCode::OutcomeUnconfirmed,
+        "info_news_write_replayed" => ErrorCode::ContextMismatch,
         "info_session_expired" | "info_auth_required" => ErrorCode::SessionExpired,
         "info_transport" | "info_news_transport" => ErrorCode::NetworkUnavailable,
         "info_news_rate_limited" | "info_rate_limited" => ErrorCode::RateLimited,

@@ -1,8 +1,8 @@
 {
  "schema_version": 1,
- "source_revision": "7e8e1eac8a3e305f1114730a1746ba0813ec0e47",
+ "source_revision": "3e46c380948e8ee0817eaa80135d24601da7ee1b",
  "source_date": "2026-09-29",
- "scope": "Current source and the existing Rustdoc rendered from it; not an exhaustive semver API report or a live-validation result. The 2026-09-29 third refresh adds the read-only sports-venue resource and reservation boundaries (`体育场馆`) on top of the dormitory laundry and bottled-water third-party read boundaries, the teaching-evaluation form read and its one-shot submission, the per-course score lookup, bank-payroll and graduate-income, e-invoice, degree-program, physical-education, and teaching-evaluation list slices. A fourth refresh records the locally derived previous-policy grade point on the existing grade report: it adds a method and a constant, so no rendered item count, module count, or runtime line count moves with it. No live campus request was made for any of it.",
+ "scope": "Current source and the existing Rustdoc rendered from it; not an exhaustive semver API report or a live-validation result. The 2026-09-29 third refresh adds the read-only sports-venue resource and reservation boundaries (`体育场馆`) on top of the dormitory laundry and bottled-water third-party read boundaries, the teaching-evaluation form read and its one-shot submission, the per-course score lookup, bank-payroll and graduate-income, e-invoice, degree-program, physical-education, and teaching-evaluation list slices. A fourth refresh records the locally derived previous-policy grade point on the existing grade report: it adds a method and a constant, so no rendered item count, module count, or runtime line count moves with it. No live campus request was made for any of it. A fifth refresh records the four one-shot INFO news writes (favorite add/remove and subscription-rule add/remove) on the existing news surface: they add a module with no new DTO, four runtime methods, one draft struct and three enums, and two runtime state fields, so the module list and the root `pub use` count are unchanged while the rendered root item counts, the runtime method list, the runtime field count and the runtime line count move. This refresh also corrects two pre-existing recording errors that earlier refreshes carried, described in docs/api-refactor-plan.md section 63: the runtime `direct_state_field_count` recorded 112 while the true top-level field count at the previous revision was 113, and five names in `runtime.dto_structs` are not declared in runtime.rs at all (four live in the FFI crate and one in api/thos.rs). Four of the five entered the list with the sports refresh; the fifth has been there since before it. No live campus request was made for any of it, and no news write was sent to a live account.",
  "methodology": "Public module/method/DTO declarations are counted from source. Rustdoc item links are deduplicated by class and href on the rendered crate root. Counts include deprecated or compatibility items; source line counts include inline tests.",
  "root_public_modules": [
   "api",
@@ -73,8 +73,8 @@
  ],
  "root_pub_use_statement_count": 52,
  "rendered_crate_root_item_counts": {
-  "struct": 312,
-  "enum": 148,
+  "struct": 313,
+  "enum": 151,
   "fn": 55,
   "constant": 51,
   "trait": 2,
@@ -82,8 +82,8 @@
  },
  "runtime": {
   "path": "rust/crates/tsinghua-kit-engine/src/api/runtime.rs",
-  "line_count": 28148,
-  "direct_state_field_count": 112,
+  "line_count": 28277,
+  "direct_state_field_count": 115,
   "dto_structs": [
    "AssessmentAnswersDto",
    "AssessmentFormViewDto",
@@ -163,472 +163,492 @@
   "public_methods": [
    {
     "name": "status",
-    "line": 3753,
+    "line": 3811,
     "signature": "pub fn status(&self) -> CampusRuntimeStatusDto"
    },
    {
     "name": "auth_status",
-    "line": 3887,
+    "line": 3945,
     "signature": "pub fn auth_status(&self) -> crate::auth::AuthStatus"
    },
    {
     "name": "logout_self_service",
-    "line": 3948,
+    "line": 4006,
     "signature": "pub fn logout_self_service(&mut self) -> crate::auth::AuthStatus"
    },
    {
     "name": "logout_identity",
-    "line": 3957,
+    "line": 4015,
     "signature": "pub fn logout_identity(&mut self) -> Result<crate::auth::AuthStatus, String>"
    },
    {
     "name": "session_recovery_retry_seconds",
-    "line": 3976,
+    "line": 4034,
     "signature": "pub fn session_recovery_retry_seconds(&self) -> Option<u32>"
    },
    {
     "name": "resume_restored_session",
-    "line": 3982,
+    "line": 4040,
     "signature": "pub async fn resume_restored_session(&mut self) -> Result<CampusRuntimeStatusDto, String>"
    },
    {
     "name": "login",
-    "line": 4283,
+    "line": 4341,
     "signature": "pub async fn login( &mut self, username: String, password: String, graduate: Option<bool>, stage_selection_explicit: bool, trust_device: bool, remember_credentials: bool, ) -> Result<CampusRuntimeStatusDto, String>"
    },
    {
     "name": "send_second_factor_code",
-    "line": 4516,
+    "line": 4574,
     "signature": "pub async fn send_second_factor_code( &mut self, method: String, ) -> Result<CampusRuntimeStatusDto, String>"
    },
    {
     "name": "service_second_factor_methods",
-    "line": 4543,
+    "line": 4601,
     "signature": "pub fn service_second_factor_methods(&self) -> Vec<String>"
    },
    {
     "name": "send_service_second_factor_code",
-    "line": 4629,
+    "line": 4687,
     "signature": "pub async fn send_service_second_factor_code( &mut self, method: String, ) -> Result<CampusRuntimeStatusDto, String>"
    },
    {
     "name": "complete_service_second_factor",
-    "line": 4652,
+    "line": 4710,
     "signature": "pub async fn complete_service_second_factor( &mut self, verification_code: String, ) -> Result<CampusRuntimeStatusDto, String>"
    },
    {
     "name": "complete_second_factor",
-    "line": 4797,
+    "line": 4855,
     "signature": "pub async fn complete_second_factor( &mut self, method: String, verification_code: String, ) -> Result<CampusRuntimeStatusDto, String>"
    },
    {
     "name": "peek_overview",
-    "line": 4850,
+    "line": 4908,
     "signature": "pub fn peek_overview( &mut self, date: String, ) -> Result<Option<CampusOverviewFacadeDto>, String>"
    },
    {
     "name": "load_experience_preferences",
-    "line": 4882,
+    "line": 4940,
     "signature": "pub fn load_experience_preferences( &self, ) -> Result<super::experience::ExperiencePreferencesDto, String>"
    },
    {
     "name": "save_experience_preferences",
-    "line": 4902,
+    "line": 4960,
     "signature": "pub fn save_experience_preferences( &self, preferences: super::experience::ExperiencePreferencesDto, ) -> Result<super::experience::ExperiencePreferencesDto, String>"
    },
    {
     "name": "read_thos_pending",
-    "line": 4932,
+    "line": 4990,
     "signature": "pub async fn read_thos_pending( &mut self, force_refresh: bool, ) -> Result<crate::read::ReadResult<crate::service_hall::PendingTasks>, crate::error::Error>"
    },
    {
     "name": "load_thos_pending",
-    "line": 5035,
+    "line": 5093,
     "signature": "pub async fn load_thos_pending( &mut self, force_refresh: bool, ) -> Result<super::thos::ThosPendingDto, String>"
    },
    {
     "name": "load_thos_services",
-    "line": 5050,
+    "line": 5108,
     "signature": "pub async fn load_thos_services( &mut self, force_refresh: bool, ) -> Result<super::thos::ThosServicesDto, String>"
    },
    {
     "name": "load_thos_task_list",
-    "line": 5064,
+    "line": 5122,
     "signature": "pub async fn load_thos_task_list( &mut self, kind: String, force_refresh: bool, ) -> Result<super::thos::ThosTaskListDto, String>"
    },
    {
     "name": "load_thos_phase_steps",
-    "line": 5079,
+    "line": 5137,
     "signature": "pub async fn load_thos_phase_steps( &mut self, task_id: String, force_refresh: bool, ) -> Result<super::thos::ThosPhaseStepsDto, String>"
    },
    {
     "name": "load_course_score_result",
-    "line": 5097,
+    "line": 5155,
     "signature": "pub async fn load_course_score_result( &mut self, course_id: &str, ) -> Result<super::thos::ThosCourseScoreDto, String>"
    },
    {
     "name": "load_overview",
-    "line": 5109,
+    "line": 5167,
     "signature": "pub async fn load_overview(&mut self, date: String) -> Result<CampusOverviewFacadeDto, String>"
    },
    {
     "name": "refresh_overview",
-    "line": 5115,
+    "line": 5173,
     "signature": "pub async fn refresh_overview( &mut self, date: String, ) -> Result<CampusOverviewFacadeDto, String>"
    },
    {
     "name": "load_semester_schedule",
-    "line": 5369,
+    "line": 5427,
     "signature": "pub async fn load_semester_schedule(&mut self) -> Result<CampusSemesterScheduleDto, String>"
    },
    {
     "name": "load_grades",
-    "line": 5856,
+    "line": 5914,
     "signature": "pub async fn load_grades(&mut self) -> Result<CampusGradeReportDto, String>"
    },
    {
     "name": "load_learn_courses",
-    "line": 6151,
+    "line": 6209,
     "signature": "pub async fn load_learn_courses(&mut self) -> Result<LearnCourseListDto, String>"
    },
    {
     "name": "load_learn_files",
-    "line": 6501,
+    "line": 6559,
     "signature": "pub async fn load_learn_files( &mut self, course_id: String, ) -> Result<LearnFileListDto, String>"
    },
    {
     "name": "load_learn_file_categories",
-    "line": 6515,
+    "line": 6573,
     "signature": "pub async fn load_learn_file_categories( &mut self, course_id: String, ) -> Result<LearnFileCategoryListDto, String>"
    },
    {
     "name": "load_learn_discussions",
-    "line": 6529,
+    "line": 6587,
     "signature": "pub async fn load_learn_discussions( &mut self, course_id: String, ) -> Result<LearnDiscussionListDto, String>"
    },
    {
     "name": "download_learn_file",
-    "line": 6543,
+    "line": 6601,
     "signature": "pub async fn download_learn_file( &mut self, course_id: String, file_id: String, output_path: String, ) -> Result<LearnFileDownloadDto, String>"
    },
    {
     "name": "probe_learn_file_download",
-    "line": 6560,
+    "line": 6618,
     "signature": "pub async fn probe_learn_file_download( &mut self, course_id: String, file_id: String, ) -> Result<u64, String>"
    },
    {
     "name": "load_learn_term_calendar",
-    "line": 6575,
+    "line": 6633,
     "signature": "pub async fn load_learn_term_calendar(&mut self) -> Result<LearnTermCalendarDto, String>"
    },
    {
     "name": "load_school_calendar",
-    "line": 6587,
+    "line": 6645,
     "signature": "pub async fn load_school_calendar( &mut self, year: Option<u32>, semester: String, language: String, ) -> Result<SchoolCalendarDto, String>"
    },
    {
     "name": "load_learn_homework",
-    "line": 6601,
+    "line": 6659,
     "signature": "pub async fn load_learn_homework( &mut self, course_id: String, ) -> Result<LearnHomeworkListDto, String>"
    },
    {
     "name": "load_learn_homework_detail",
-    "line": 6613,
+    "line": 6671,
     "signature": "pub async fn load_learn_homework_detail( &mut self, selector: String, ) -> Result<LearnHomeworkDetailDto, String>"
    },
    {
     "name": "load_learn_announcement_list",
-    "line": 6630,
+    "line": 6688,
     "signature": "pub async fn load_learn_announcement_list( &mut self, course_id: String, ) -> Result<LearnAnnouncementListDto, String>"
    },
    {
     "name": "load_learn_announcements",
-    "line": 6984,
+    "line": 7042,
     "signature": "pub async fn load_learn_announcements( &mut self, course_id: String, ) -> Result<Vec<LearnAnnouncementDto>, String>"
    },
    {
     "name": "load_exams",
-    "line": 7003,
+    "line": 7061,
     "signature": "pub async fn load_exams( &mut self, start_date: String, end_date: String, ) -> Result<CampusExamReportDto, String>"
    },
    {
     "name": "load_info_news_catalog",
-    "line": 7330,
+    "line": 7388,
     "signature": "pub async fn load_info_news_catalog(&mut self) -> Result<InfoNewsCatalogDto, String>"
    },
    {
     "name": "load_info_news_subscriptions",
-    "line": 7468,
+    "line": 7526,
     "signature": "pub async fn load_info_news_subscriptions( &mut self, ) -> Result<InfoNewsSubscriptionsDto, String>"
    },
    {
     "name": "load_info_news_subscription_page",
-    "line": 7587,
+    "line": 7649,
     "signature": "pub async fn load_info_news_subscription_page( &mut self, selector: String, page: u32, ) -> Result<InfoNewsPageDto, String>"
    },
    {
     "name": "load_info_news_favorites",
-    "line": 7673,
+    "line": 7735,
     "signature": "pub async fn load_info_news_favorites(&mut self) -> Result<InfoNewsFavoritesDto, String>"
    },
    {
+    "name": "add_info_news_favorite",
+    "line": 7842,
+    "signature": "pub async fn add_info_news_favorite( &mut self, generation: u64, article_id: String, ) -> Result<CampusRuntimeStatusDto, String>"
+   },
+   {
+    "name": "remove_info_news_favorite",
+    "line": 7854,
+    "signature": "pub async fn remove_info_news_favorite( &mut self, generation: u64, article_id: String, ) -> Result<CampusRuntimeStatusDto, String>"
+   },
+   {
+    "name": "add_info_news_subscription",
+    "line": 7872,
+    "signature": "pub async fn add_info_news_subscription( &mut self, channel_id: Option<String>, source_id: Option<String>, keyword: Option<String>, ) -> Result<CampusRuntimeStatusDto, String>"
+   },
+   {
+    "name": "remove_info_news_subscription",
+    "line": 7886,
+    "signature": "pub async fn remove_info_news_subscription( &mut self, selector: String, ) -> Result<CampusRuntimeStatusDto, String>"
+   },
+   {
     "name": "load_info_news",
-    "line": 7772,
+    "line": 7896,
     "signature": "pub async fn load_info_news( &mut self, page: u32, page_size: u32, source_id: Option<String>, channel_id: Option<String>, ) -> Result<InfoNewsPageDto, String>"
    },
    {
     "name": "search_info_news",
-    "line": 8094,
+    "line": 8223,
     "signature": "pub async fn search_info_news( &mut self, page: u32, keyword: String, channel_filter_label: Option<String>, exact_match: bool, ) -> Result<InfoNewsPageDto, String>"
    },
    {
     "name": "load_info_news_detail",
-    "line": 8407,
+    "line": 8541,
     "signature": "pub async fn load_info_news_detail( &mut self, article_id: String, ) -> Result<InfoNewsDetailDto, String>"
    },
    {
     "name": "load_info_news_detail_result",
-    "line": 8426,
+    "line": 8560,
     "signature": "pub async fn load_info_news_detail_result( &mut self, article_id: String, ) -> Result<InfoNewsDetailResultDto, String>"
    },
    {
     "name": "load_library_area_tree",
-    "line": 8820,
+    "line": 8954,
     "signature": "pub async fn load_library_area_tree( &mut self, ) -> Result<crate::library_read::LibraryAreaTreeDto, String>"
    },
    {
     "name": "load_library_area_tree_result",
-    "line": 8833,
+    "line": 8967,
     "signature": "pub async fn load_library_area_tree_result( &mut self, ) -> Result<LibraryAreaTreeResultDto, String>"
    },
    {
     "name": "load_library_floors",
-    "line": 9040,
+    "line": 9174,
     "signature": "pub async fn load_library_floors( &mut self, library_id: u64, ) -> Result<crate::library_read::LibraryAreaTreeDto, String>"
    },
    {
     "name": "load_library_sections_for_day",
-    "line": 9084,
+    "line": 9218,
     "signature": "pub async fn load_library_sections_for_day( &mut self, floor_id: u64, day_offset: u8, ) -> Result<crate::library_read::LibraryAreaTreeDto, String>"
    },
    {
     "name": "load_library_day_segments",
-    "line": 9151,
+    "line": 9285,
     "signature": "pub async fn load_library_day_segments( &mut self, section_id: u64, ) -> Result<crate::library_read::LibraryDaySegmentsDto, String>"
    },
    {
     "name": "load_library_day_segments_result",
-    "line": 9164,
+    "line": 9298,
     "signature": "pub async fn load_library_day_segments_result( &mut self, section_id: u64, ) -> Result<LibraryDaySegmentsResultDto, String>"
    },
    {
     "name": "load_library_day_segments_for_day_result",
-    "line": 9175,
+    "line": 9309,
     "signature": "pub async fn load_library_day_segments_for_day_result( &mut self, section_id: u64, day_offset: u8, ) -> Result<LibraryDaySegmentsResultDto, String>"
    },
    {
     "name": "load_library_seats",
-    "line": 9463,
+    "line": 9597,
     "signature": "pub async fn load_library_seats( &mut self, area_id: u64, segment_id: u64, day: String, start_time: String, end_time: String, ) -> Result<crate::library_read::LibrarySeatAvailabilityDto, String>"
    },
    {
     "name": "load_library_socket_status",
-    "line": 9561,
+    "line": 9695,
     "signature": "pub async fn load_library_socket_status( &mut self, section_id: u64, ) -> Result<crate::library_read::LibrarySocketStatusesDto, String>"
    },
    {
     "name": "load_classroom_buildings",
-    "line": 9613,
+    "line": 9747,
     "signature": "pub async fn load_classroom_buildings(&mut self) -> Result<Vec<ClassroomBuildingDto>, String>"
    },
    {
     "name": "load_classroom_buildings_result",
-    "line": 9623,
+    "line": 9757,
     "signature": "pub async fn load_classroom_buildings_result( &mut self, ) -> Result<ClassroomBuildingsResultDto, String>"
    },
    {
     "name": "load_classroom_state",
-    "line": 9756,
+    "line": 9890,
     "signature": "pub async fn load_classroom_state( &mut self, building_index: u32, week_number: u32, ) -> Result<ClassroomStateResultDto, String>"
    },
    {
     "name": "load_physical_exam_result",
-    "line": 9830,
+    "line": 9964,
     "signature": "pub async fn load_physical_exam_result(&mut self) -> Result<PhysicalExamResultDto, String>"
    },
    {
     "name": "load_electricity_remainder",
-    "line": 9893,
+    "line": 10027,
     "signature": "pub async fn load_electricity_remainder(&mut self) -> Result<ElectricityRemainderDto, String>"
    },
    {
     "name": "load_electricity_remainder_result",
-    "line": 9907,
+    "line": 10041,
     "signature": "pub async fn load_electricity_remainder_result( &mut self, ) -> Result<ElectricityRemainderResultDto, String>"
    },
    {
     "name": "load_electricity_payment_history",
-    "line": 10150,
+    "line": 10284,
     "signature": "pub async fn load_electricity_payment_history( &mut self, ) -> Result<ElectricityPaymentHistoryDto, String>"
    },
    {
     "name": "load_electricity_payment_history_result",
-    "line": 10165,
+    "line": 10299,
     "signature": "pub async fn load_electricity_payment_history_result( &mut self, ) -> Result<ElectricityPaymentHistoryResultDto, String>"
    },
    {
     "name": "login_tunet",
-    "line": 10375,
+    "line": 10509,
     "signature": "pub async fn login_tunet( &mut self, username: String, password: String, ) -> Result<CampusRuntimeStatusDto, String>"
    },
    {
     "name": "load_tunet_status",
-    "line": 10458,
+    "line": 10592,
     "signature": "pub async fn load_tunet_status(&mut self) -> Result<TunetNetworkStatusDto, String>"
    },
    {
     "name": "disconnect_tunet",
-    "line": 10551,
+    "line": 10685,
     "signature": "pub async fn disconnect_tunet(&mut self) -> Result<TunetNetworkStatusDto, String>"
    },
    {
     "name": "load_campus_card_account_result",
-    "line": 10595,
+    "line": 10729,
     "signature": "pub async fn load_campus_card_account_result( &mut self, ) -> Result<CampusCardAccountResultDto, String>"
    },
    {
     "name": "load_campus_card_account",
-    "line": 10852,
+    "line": 10986,
     "signature": "pub async fn load_campus_card_account( &mut self, ) -> Result<crate::campus_card_read::CampusCardAccount, String>"
    },
    {
     "name": "load_campus_card_transactions",
-    "line": 10862,
+    "line": 10996,
     "signature": "pub async fn load_campus_card_transactions( &mut self, start_date: String, end_date: String, ) -> Result<crate::campus_card_read::CampusCardTransactionReport, String>"
    },
    {
     "name": "load_campus_card_transactions_result",
-    "line": 10882,
+    "line": 11016,
     "signature": "pub async fn load_campus_card_transactions_result( &mut self, start_date: String, end_date: String, transaction_type: String, ) -> Result<CampusCardTransactionsResultDto, String>"
    },
    {
     "name": "usereg_login_phase",
-    "line": 11195,
+    "line": 11329,
     "signature": "pub fn usereg_login_phase(&mut self) -> String"
    },
    {
     "name": "cancel_usereg_login",
-    "line": 11234,
+    "line": 11368,
     "signature": "pub fn cancel_usereg_login(&mut self)"
    },
    {
     "name": "start_usereg_login",
-    "line": 11243,
+    "line": 11377,
     "signature": "pub async fn start_usereg_login( &mut self, username: String, password: String, ) -> Result<UseregCaptchaDto, String>"
    },
    {
     "name": "start_usereg_login_with_options",
-    "line": 11254,
+    "line": 11388,
     "signature": "pub async fn start_usereg_login_with_options( &mut self, username: String, password: String, remember_credentials: bool, ) -> Result<UseregCaptchaDto, String>"
    },
    {
     "name": "refresh_usereg_captcha",
-    "line": 11355,
+    "line": 11489,
     "signature": "pub async fn refresh_usereg_captcha(&mut self) -> Result<UseregCaptchaDto, String>"
    },
    {
     "name": "complete_usereg_login",
-    "line": 11388,
+    "line": 11522,
     "signature": "pub async fn complete_usereg_login( &mut self, verify_code: String, sms_code: Option<String>, ) -> Result<CampusRuntimeStatusDto, String>"
    },
    {
     "name": "complete_usereg_login_with_result",
-    "line": 11400,
+    "line": 11534,
     "signature": "pub async fn complete_usereg_login_with_result( &mut self, verify_code: String, sms_code: Option<String>, ) -> Result<(CampusRuntimeStatusDto, bool), String>"
    },
    {
     "name": "load_usereg_account",
-    "line": 11570,
+    "line": 11704,
     "signature": "pub async fn load_usereg_account(&mut self) -> Result<UseregAccountDto, String>"
    },
    {
     "name": "load_usereg_devices",
-    "line": 11609,
+    "line": 11743,
     "signature": "pub async fn load_usereg_devices(&mut self) -> Result<Vec<UseregDeviceDto>, String>"
    },
    {
     "name": "load_usereg_balance",
-    "line": 11683,
+    "line": 11817,
     "signature": "pub async fn load_usereg_balance(&mut self) -> Result<UseregBalanceDto, String>"
    },
    {
     "name": "disconnect_usereg_device",
-    "line": 11711,
+    "line": 11845,
     "signature": "pub async fn disconnect_usereg_device( &mut self, index: u32, ) -> Result<CampusRuntimeStatusDto, String>"
    },
    {
     "name": "service_catalog",
-    "line": 11767,
+    "line": 11901,
     "signature": "pub fn service_catalog(&self) -> ServiceCatalogDto"
    },
    {
     "name": "establish_service_session",
-    "line": 12171,
+    "line": 12305,
     "signature": "pub async fn establish_service_session( &mut self, service: String, ) -> Result<CampusRuntimeStatusDto, String>"
    },
    {
     "name": "logout",
-    "line": 12972,
+    "line": 13106,
     "signature": "pub fn logout(&mut self) -> Result<CampusRuntimeStatusDto, String>"
    },
    {
     "name": "load_program_completion_result",
-    "line": 14863,
+    "line": 14997,
     "signature": "pub async fn load_program_completion_result( &mut self, ) -> Result<ProgramCompletionResultDto, String>"
    },
    {
     "name": "load_assessment_list_result",
-    "line": 14990,
+    "line": 15124,
     "signature": "pub async fn load_assessment_list_result(&mut self) -> Result<AssessmentListResultDto, String>"
    },
    {
     "name": "load_assessment_form_result",
-    "line": 15065,
+    "line": 15199,
     "signature": "pub async fn load_assessment_form_result( &mut self, reference: &AssessmentRef, ) -> Result<AssessmentFormViewDto, String>"
    },
    {
     "name": "submit_assessment_form",
-    "line": 15123,
+    "line": 15257,
     "signature": "pub async fn submit_assessment_form( &mut self, answers: &AssessmentAnswers, ) -> Result<CampusRuntimeStatusDto, String>"
    },
    {
     "name": "load_invoice_list_result",
-    "line": 15240,
+    "line": 15374,
     "signature": "pub async fn load_invoice_list_result( &mut self, page: u32, ) -> Result<InvoiceListResultDto, String>"
    },
    {
     "name": "load_invoice_document_result",
-    "line": 15331,
+    "line": 15465,
     "signature": "pub async fn load_invoice_document_result( &mut self, reference: &crate::invoice_read::InvoiceRef, ) -> Result<InvoiceDocumentResultDto, String>"
    },
    {
     "name": "load_bank_payment_ledger_result",
-    "line": 15471,
+    "line": 15605,
     "signature": "pub async fn load_bank_payment_ledger_result( &mut self, ledger: BankLedger, ) -> Result<BankPaymentLedgerResultDto, String>"
    },
    {
     "name": "load_graduate_income_result",
-    "line": 15625,
+    "line": 15759,
     "signature": "pub async fn load_graduate_income_result( &mut self, begin: &str, end: &str, ) -> Result<GraduateIncomeResultDto, String>"
    },
    {
     "name": "load_sports_resources_result",
-    "line": 15818,
-    "signature": "pub async fn load_sports_resources_result(&mut self, gym_id: &str, item_id: &str, date: &str) -> Result<SportsResourcesResultDto, String>"
+    "line": 15914,
+    "signature": "pub async fn load_sports_resources_result( &mut self, gym_id: &str, item_id: &str, date: &str, ) -> Result<SportsResourcesResultDto, String>"
    },
    {
     "name": "load_sports_records_result",
-    "line": 15895,
+    "line": 15991,
     "signature": "pub async fn load_sports_records_result(&mut self) -> Result<SportsRecordsResultDto, String>"
    }
   ],

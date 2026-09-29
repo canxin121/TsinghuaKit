@@ -1445,3 +1445,49 @@ SDK `public_api` 增补 `compile_sports_api` 编译检查与两项活动断言�
 **验证**
 
 `cargo test --manifest-path rust/Cargo.toml -p tsinghua_kit_engine --lib -- registrar_api::tests` **3 项通过**：九个字母在服务值故意不同（`Some(3.9)`）时仍被覆盖为旧表值、表外的 `A+` / `P` 与空成绩沿用服务值而不被发明、服务值为 `None` 时表外成绩仍为 `None`（缺失不是零）、成绩文本带首尾空白时仍能命中（` B ` ⇒ 3.0、`\tC+\n` ⇒ 2.3）。`cargo check --workspace --all-targets` 退出 0；严格 `RUSTDOCFLAGS="-D warnings" cargo doc -p tsinghua_kit` 退出 0；`flutter analyze lib test` 无问题；`flutter test test/public_entrypoints_test.dart` 通过。渲染项计数与模块数**未变**（新增的是方法与常量，不改变引擎根的 `pub use` 数量）。**未执行任何真实账号请求**；`getReport` 的 `bx` 过滤仍未实现。
+
+## 63. 2026-09-29 INFO 新闻写操作（收藏与订阅规则，一次性写）
+
+计划阶段 2 的 News 写操作落地：把 `NewsClient` 从"只读"扩到**四个一次性写**——收藏条目增/删（`/b/info/gxfw_fg/common/addFavorite/XXFB/{id}`、`/delFavorite/XXFB/{id}`）与订阅规则增/删（`/b/info/gxfw_fg/common/addSubscribeCondition`、`/deleteSubscribeCondition/{id}/XXFB`）。四条路由、字段名与 `_csrf` 位置都来自参考实现 `thu-info-lib/src/lib/news.ts` 与 `constants/strings.ts` 的**观测值**（两处收藏是带 `_csrf` 查询参数的 GET；订阅新增是 `POST` 表单 `dygz` + `mkid=XXFB`；订阅删除是带 `_csrf` 的 GET，`{id}` 后必须跟 scope 段 `XXFB`）。**未新增 selector、未新增映射、未新增 `ServiceId`**：四条路由都落在既有的 INFO 映射（`f9f94793…`）与既有 `Service::News` 上，因此这个域不需要任何新的认证或允许名单条目。
+
+**调用方不能自己造标识符：引用只由本 Runtime 为同一账号发出**
+
+四个写方法都**不接受调用方自造的 id**：
+
+- 收藏增删收 `ArticleRef`（`generation: u64` + `article_id`）。该引用由新闻列表/搜索读返回，`generation` 是**链接快照代数**：任何一次列表读里把同一篇文章的链接换掉，就会重置整个快照并递增代数，于是旧引用立刻失效（`runtime.info_news_article_reference_is_current`）。runtime 层先解析引用、再建计划，解析失败**在任何请求存在之前**返回 `INFO 新闻条目引用已失效，请重新打开列表`。
+- 订阅删除收的是**订阅规则读**发出的 opaque selector，runtime 存的是 `selector → rule_id`，并且额外绑定**账号**与 **300 秒**年龄（`selected_info_subscription_rule` 同时校验 owner 与 `info_subscription_at`）。别的账号的 selector、过期 selector 与未知 selector 一律拒绝，且**零请求**。
+- 订阅新增不接受 id，只接受 channel/source 的 **wire 值**（SDK 层已经从本 client 的 `NewsCatalog` 引用解析出来）与可选关键字；`channel` 与 `source` **都为空**时在 Rust 内拒绝（服务无法表达这样的规则），同样零请求。
+- 桥接层（FFI）把这件事做到更严：`ClientHandle` 为每个引用类型维护自己的 handle 表，**只认自己发过的 handle**；伪造/别的 client 的 handle ⇒ `context_mismatch`，且**收藏与订阅删除的 handle 在 dispatch 之前就被移除**，所以一次结果不确定的写不能经同一个 Client 再发一次。`news_add_subscription` 需要 `NewsChannelRef` / `NewsSourceRef`（`ArticleRef` 同构，`NewsSubscriptionRef` 则是**单次使用**）。
+
+**三层"只发一次"**
+
+1. **适配器层**：`NewsProfile::{add_favorite_request, remove_favorite_request, add_subscription_request, remove_subscription_request}` 产出 `NewsRequestPlan`；`InfoSessionAdapter::execute_news_write` **拒绝非写计划**（`InvalidConfig`，零请求），只补 `_csrf`、只经统一 transport 发一次。`classify_news_write` 把响应分成 `Accepted`（`result == "success"`）/ `Refused`（业务失败包）/ `LoginRequired` / `Unrecognized`（空体、超限、非 JSON、结构不符）——**只有 `Accepted` 是成功**。
+2. **transcript 层**：写请求**不走有界读派发**。两条收藏与订阅删除是**带 `_csrf` 的 GET**，`dispatch_requires_exclusivity` 无法从请求形状识别，因此新增 `CampusHttpTransport::execute_once_exclusive`（`execute_once` / `execute_once_with_exclusivity` 共享实现，`exclusive: Option<bool>`）**显式取整个 gate**（`acquire_for(true)`），并且**只返回第一个响应、不跟随重定向**——一次重定向跳转就是一次"结果已不确定的写"的重放。传输失败（请求已经离手）也归类为 `Unrecognized`，错误文本被**丢弃**：reqwest 的失败信息可能带上请求 URL，而该 URL 里带 `_csrf`。
+3. **runtime 层**：订阅新增的**条件指纹**（channel/source/keyword 的 JSON 三元组）在**建计划之前**就记入 `info_news_dispatched_subscriptions`；重复条件在 Rust 内拒绝并记 `info_news_write_replayed`（⇒ SDK `ContextMismatch`），服务端根本看不到第二次。只有**一次新的订阅列表读**才清空该集合——那份列表是服务自己对"现在有哪些规则"的回答。`Refused` / `Unrecognized` 记 `info_news_write_unconfirmed`（⇒ SDK `OutcomeUnconfirmed`），`LoginRequired` 走与其他 INFO 读相同的**一次**有界续接并作废 INFO 会话（`info_session_expired`），**并且仍然不重发**：调用方必须自己再决定一次。
+
+**缓存一致性（收藏写的副作用）**
+
+收藏写会改变每一份列表/搜索缓存里的 `favorited` 标记，而缓存键是账号 + 查询、不含该标记。因此新增 runtime 字段 `info_news_favorite_write_epoch: Option<(账号, 时刻)>`，`Accepted` 的收藏写会写入它；列表与搜索的缓存守卫额外要求 `info_news_page_cache_is_still_current`（**只有同一账号**、且 `generated_at >= written_at` 的页面才算仍然可用）。收藏与订阅读本来就**不走缓存**，因此不查这个记录。登出与 INFO 会话作废时两个字段一并清空。
+
+**七条固定拒绝必须显式进 `public_error` 白名单**
+
+`public_error` 先看逐字白名单（`error == message` 时原样返回），然后才走小写子串 if 链，最后落到 `if normalized.contains("info")` 的兜底。上述前六条拒绝都以 `INFO ` 开头，若不进白名单就会被兜底重写成"INFO 服务暂时不可用，请稍后重试"——**把"去刷新列表"误导成"稍后重试"**。本轮把六条新增拒绝 + 一条既有拒绝（`INFO 新闻编号无效`）都加入白名单。
+
+**一处必须固定文本的拒绝**
+
+`build_plan` 把 `NewsProfileError` **一律**映射为固定文案 `INFO 新闻写入参数无效，请刷新后重试`，而不是透传错误自身的文本。两个原因：(1) `NewsProfileError::InvalidPath` / `InvalidWireName` 携带**违规值本身**，而这里违规值就是服务端标识符，调用方本来不该看到；(2) `public_error` 按子串匹配，未经审查的文本可能被改写成**另一个类别**。参数拒绝发生在任何请求之前。
+
+**SDK / FFI / Dart**
+
+- 引擎：`info_news.rs` 新增四个 `*_request` 构建器 + `NewsSubscriptionDraft`（builder）+ `NewsOperation`（含 `is_write()`）/ `NewsParameterPlacement` / `NewsWriteOutcome` / `MAX_NEWS_WRITE_RESPONSE_BYTES` / `classify_news_write`；新增 `info_news_write_tests.rs`（适配器）与 `api/runtime_news_write.rs` + `runtime_news_write_tests.rs`（runtime）。runtime 新增四个公开方法（`add_/remove_info_news_favorite`、`add_/remove_info_news_subscription`）与两个状态字段。
+- SDK：`NewsClient` 新增 `add_favorite` / `remove_favorite` / `add_subscription` / `remove_subscription`（薄包装，参数是引用而非 id）。
+- FFI：`ClientHandle` 新增 `news_add_favorite` / `news_remove_favorite` / `news_add_subscription` / `news_remove_subscription`；FRB 2.13.0 重新生成，生成物未手工编辑。
+- Dart：`lib/src/news.dart` 的 `NewsClient` 新增同名四个方法，`addFavorite` 的文档说明"一次 dispatch，`outcome_unconfirmed` 时引用已被消费，必须重新读 `favorites` 才知道账号现在持有什么"。
+
+**验证**
+
+引擎定向（loopback fixture，无任何真实账号 / Cookie / CSRF 值）：`backend_repair_news` **48 项通过**，其中适配器层 11 项——`addFavorite` 恰好 2 次请求（bootstrap + 写）且断言线上形状含 `/common/addFavorite/XXFB/article-1`、`_csrf=fixture-csrf`；`delFavorite` 用删除路由；订阅新增是**一个**表单且带 `dygz=%7B…` 与 `mkid=XXFB`；订阅删除路径含 `/common/deleteSubscribeCondition/rule-9/XXFB`；服务端拒绝（5 种返回体）**从不重放**；302 **不被跟随**（第三个 fixture 故意未被消费）；登录页 ⇒ `LoginRequired`；500 ⇒ `Unrecognized`；**读计划 ⇒ `InvalidConfig` 且零请求**；无条件订阅 ⇒ `EmptySubscriptionCondition`；路径段穿越矩阵（`../secret`、`a/b`、`a\b`、`a?b`、`a#b`、`a&b=c`、`a%b`）全部拒绝。runtime 层 `backend_refactor_news` **20 项通过**（含 8 项新 fixture + 1 项 `info_news_page_cache_is_still_current` 单元测试 + 1 项条件指纹单元测试）：单次 dispatch 且记录写时刻、被替换的链接使代数失效且旧引用零请求、缺 INFO 适配器时明确断言而不是偷偷开第二条认证链、结果不确定的写**不被重试**、重复订阅条件在 Rust 内被拒（服务端只看到 2 次请求）、空条件零请求、刚读出的 selector 用完即退休（再用即拒）、别的账号的 selector 被拒。SDK `public_api` **19 项通过**（新增 `ArticleRef` 导入、`compile_news_api` 里四个写调用的编译检查、`accepts_public_types::<ArticleRef>`、以及"无会话时每个写都以 `Service::News` + `SessionRequired` 返回且账号仍是 `SignedOut`"的身份门禁测试）。桥接层 `--lib` **45 项通过**（新增 `news_writes_only_accept_handles_this_client_returned`：伪造/别的 handle ⇒ `context_mismatch`，无条件订阅 ⇒ `invalid_input`，且 `auth_status` 仍是 `SignedOut`）。`cargo check --workspace --all-targets` 退出 0；`cargo fmt --all --check` 干净；严格 `RUSTDOCFLAGS="-D warnings" cargo doc -p tsinghua_kit` 退出 0（引擎 crate 仍有两处**HEAD 既有**的私有文档链接告警：`assessment_read.rs` → `campus_html`、`invoice_read.rs` → `follow_invoice_handoff`，与本轮无关，逐字比对未改动）；`flutter analyze lib test` 无问题；`flutter test test/public_entrypoints_test.dart` 通过并覆盖四个引用类型（私有构造 ⇒ 调用方只能从本 Client 的读拿到）。
+
+同一 `news` 过滤器下另有 **5 项 HEAD 既有失败**（`backend_repair_business_news_ui_id_uses_the_returned_article_link`、`backend_repair_info_news_cache_miss_lazily_establishes_info`、`backend_repair_info_news_stale_cache_attempts_lazy_refresh_then_falls_back`、`info_session::tests::fixture_promotes_after_cookie_handoff_probe_and_executes_news`、`info_session::tests::news_read_rejects_a_valid_envelope_from_another_target_route`）：用 `git stash push -u` 在**同一 fixture 环境**下重建并重跑，失败集合逐项相同，逐字确认与本轮无关。
+
+**未验证**：四条新闻写路由的线上可用性**未验证**，需要另行真实只读验收——写路由本轮**未对任何真实账号发起**（§59 的写操作约定不变：写操作只做本地验收，真实账号只读验收另行进行）；在此之前不得用 fixture 或空结果冒充线上证据。

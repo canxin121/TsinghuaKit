@@ -204,9 +204,10 @@ pub use info_client::{
     InfoHtmlSignal, InfoHttpResponse, InfoRequestPlan, InfoResponseClassification,
 };
 pub use info_news::{
-    NewsAttachment, NewsChannelId, NewsDetail, NewsFeedKind, NewsItem, NewsLink, NewsPage,
-    NewsParseError, NewsParseOutcome, NewsProfile, NewsProfileError, NewsRequestPlan,
-    NewsSearchInput, parse_news_detail, parse_news_list, parse_news_page, parse_news_search,
+    NewsAttachment, NewsChannelId, NewsDetail, NewsFeedKind, NewsItem, NewsLink, NewsOperation,
+    NewsPage, NewsParameterPlacement, NewsParseError, NewsParseOutcome, NewsProfile,
+    NewsProfileError, NewsRequestPlan, NewsSearchInput, NewsSubscriptionDraft, NewsWriteOutcome,
+    parse_news_detail, parse_news_list, parse_news_page, parse_news_search,
 };
 pub use info_session::{InfoSessionAdapter, InfoSessionError, InfoSessionResult, InfoWebVpnConfig};
 pub use invoice_read::{

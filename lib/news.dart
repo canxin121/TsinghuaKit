@@ -1,4 +1,5 @@
-/// INFO news catalog, search, article and subscription reads.
+/// INFO news catalog, search, article, subscription and favorite reads, plus
+/// the four one-shot writes (favorite add/remove, subscription add/remove).
 library;
 
 export 'tsinghua_kit.dart'

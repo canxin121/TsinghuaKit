@@ -164,6 +164,9 @@ mod school_calendar_runtime;
 #[path = "runtime_learn_homework.rs"]
 mod learn_homework_runtime;
 
+#[path = "runtime_news_write.rs"]
+mod news_write_runtime;
+
 #[cfg(test)]
 #[path = "runtime_audit_tests.rs"]
 mod api_audit_tests;
@@ -211,6 +214,10 @@ mod lastmile_tests;
 #[cfg(test)]
 #[path = "runtime_info_cache_tests.rs"]
 mod info_cache_tests;
+
+#[cfg(test)]
+#[path = "runtime_news_write_tests.rs"]
+mod news_write_tests;
 
 #[cfg(test)]
 #[path = "runtime_program_tests.rs"]
@@ -2837,6 +2844,17 @@ pub struct CampusRuntime {
     info_subscription_selectors: HashMap<String, String>,
     info_subscription_owner: Option<String>,
     info_subscription_at: Option<std::time::Instant>,
+    // Adding a subscription is not idempotent on the service: the same
+    // condition sent twice becomes two rules.  Remember exactly which
+    // conditions this session has already dispatched so a repeat is refused
+    // until a fresh subscription read replaces the set.
+    info_news_dispatched_subscriptions: HashSet<String>,
+    // A favorite write changes the `favorited` flag a cached list or search
+    // page still carries.  Remember the account and instant of the last
+    // accepted write so an older page cache is not reused as if it were
+    // current.  Only list/search payloads can carry that flag; the favorites
+    // and subscription reads are never served from cache.
+    info_news_favorite_write_epoch: Option<(String, DateTime<Utc>)>,
     library_adapter: Option<LibraryReadAdapter>,
     // Establishing Library already performs and strictly parses the area-tree
     // read. Retain that exact value only until the first public tree read so
@@ -3609,6 +3627,8 @@ impl CampusRuntime {
             info_subscription_selectors: HashMap::new(),
             info_subscription_owner: None,
             info_subscription_at: None,
+            info_news_dispatched_subscriptions: HashSet::new(),
+            info_news_favorite_write_epoch: None,
             library_adapter: None,
             library_area_tree_prefetch: None,
             library_root_ids: HashSet::new(),
@@ -7511,6 +7531,10 @@ impl CampusRuntime {
             self.info_subscription_selectors.clear();
             self.info_subscription_owner = None;
             self.info_subscription_at = None;
+            // A fresh read is the only thing that retires the "already sent
+            // this condition" record: the list it returns is the service's
+            // own answer about which rules now exist.
+            self.info_news_dispatched_subscriptions.clear();
             let user = self.ensure_identity_user_for_live_read().await?;
             self.ensure_info_reader_session(&user).await?;
             let Some(adapter) = self.info_adapter.as_ref() else {
@@ -7807,6 +7831,68 @@ impl CampusRuntime {
         .await
     }
 
+    /// Adds one INFO article to the current account's favorites.
+    ///
+    /// The article is named only by a reference this runtime returned for the
+    /// same proven account and link snapshot; a foreign, replaced or unknown
+    /// reference is refused before any plan exists.  The write is dispatched
+    /// exactly once and its result is never resolved by asking again: an
+    /// unconfirmed outcome is reported as such and the caller must re-read the
+    /// favorites list to learn what the account now holds.
+    pub async fn add_info_news_favorite(
+        &mut self,
+        generation: u64,
+        article_id: String,
+    ) -> Result<CampusRuntimeStatusDto, String> {
+        crate::telemetry::observe("info", "add_info_news_favorite", async {
+            news_write_runtime::add_favorite(self, generation, &article_id).await
+        })
+        .await
+    }
+
+    /// Removes one INFO article from the current account's favorites.
+    pub async fn remove_info_news_favorite(
+        &mut self,
+        generation: u64,
+        article_id: String,
+    ) -> Result<CampusRuntimeStatusDto, String> {
+        crate::telemetry::observe("info", "remove_info_news_favorite", async {
+            news_write_runtime::remove_favorite(self, generation, &article_id).await
+        })
+        .await
+    }
+
+    /// Adds one INFO subscription rule.
+    ///
+    /// The rule names a source or a channel of this account, or both, plus an
+    /// optional keyword; a rule with neither is refused locally.  The same
+    /// condition is not sent twice in one session without a fresh subscription
+    /// read in between, because the service stores a second identical rule
+    /// rather than deduplicating it.
+    pub async fn add_info_news_subscription(
+        &mut self,
+        channel_id: Option<String>,
+        source_id: Option<String>,
+        keyword: Option<String>,
+    ) -> Result<CampusRuntimeStatusDto, String> {
+        crate::telemetry::observe("info", "add_info_news_subscription", async {
+            news_write_runtime::add_subscription(self, channel_id, source_id, keyword).await
+        })
+        .await
+    }
+
+    /// Removes one INFO subscription rule selected from this runtime's most
+    /// recent rule read.
+    pub async fn remove_info_news_subscription(
+        &mut self,
+        selector: String,
+    ) -> Result<CampusRuntimeStatusDto, String> {
+        crate::telemetry::observe("info", "remove_info_news_subscription", async {
+            news_write_runtime::remove_subscription(self, selector).await
+        })
+        .await
+    }
+
     pub async fn load_info_news(
         &mut self,
         page: u32,
@@ -7878,7 +7964,12 @@ impl CampusRuntime {
                         "",
                         None,
                         false,
-                    ) && info_news_cache_is_usable(&envelope.payload.generated_at) =>
+                    ) && info_news_cache_is_usable(&envelope.payload.generated_at)
+                        && info_news_page_cache_is_still_current(
+                            self,
+                            &user.username,
+                            &envelope.payload.generated_at,
+                        ) =>
                 {
                     let payload = envelope.payload;
                     let fresh = info_news_cache_is_fresh(&payload.generated_at);
@@ -8204,7 +8295,12 @@ impl CampusRuntime {
                         &keyword,
                         channel_filter_label.as_deref(),
                         exact_match,
-                    ) && info_news_cache_is_usable(&envelope.payload.generated_at) =>
+                    ) && info_news_cache_is_usable(&envelope.payload.generated_at)
+                        && info_news_page_cache_is_still_current(
+                            self,
+                            &user.username,
+                            &envelope.payload.generated_at,
+                        ) =>
                 {
                     let payload = envelope.payload;
                     let fresh = info_news_cache_is_fresh(&payload.generated_at);
@@ -17254,6 +17350,8 @@ impl CampusRuntime {
                 self.info_subscription_selectors.clear();
                 self.info_subscription_owner = None;
                 self.info_subscription_at = None;
+                self.info_news_dispatched_subscriptions.clear();
+                self.info_news_favorite_write_epoch = None;
                 self.invalidate_classroom_session();
                 self.invalidate_electricity_session();
                 self.invalidate_physical_exam_session();
@@ -18197,6 +18295,8 @@ impl CampusRuntime {
         self.info_subscription_selectors.clear();
         self.info_subscription_owner = None;
         self.info_subscription_at = None;
+        self.info_news_dispatched_subscriptions.clear();
+        self.info_news_favorite_write_epoch = None;
         self.library_adapter = None;
         self.library_area_tree_prefetch = None;
         self.library_root_ids.clear();
@@ -19221,6 +19321,25 @@ fn info_news_cache_payload_is_valid(
 
 fn info_news_cache_is_fresh(generated_at: &DateTime<Utc>) -> bool {
     cache_is_fresh(generated_at, INFO_NEWS_CACHE_MAX_AGE)
+}
+
+/// True when a cached list/search page is not known to be older than the last
+/// favorite write this account confirmed.
+///
+/// A favorite write changes the `favorited` flag every list and search page
+/// carries, and the cache is keyed by account and query rather than by that
+/// flag, so a page generated before the write would otherwise be served as if
+/// it still described the account.  Favorites and subscription reads are never
+/// served from this cache, so only these two feeds consult the record.
+fn info_news_page_cache_is_still_current(
+    runtime: &CampusRuntime,
+    username: &str,
+    generated_at: &DateTime<Utc>,
+) -> bool {
+    runtime
+        .info_news_favorite_write_epoch
+        .as_ref()
+        .is_none_or(|(owner, written_at)| owner != username || *generated_at >= *written_at)
 }
 
 fn info_news_cache_is_usable(generated_at: &DateTime<Utc>) -> bool {
@@ -20437,6 +20556,17 @@ fn public_error(error: String) -> String {
         "请输入网络自助验证码",
         "请输入网络自助账号",
         "请输入网络自助密码",
+        // Fixed INFO news-write refusals.  Every one of these is decided
+        // locally, before a request exists, and would otherwise be swallowed
+        // by the generic `info` fallback below — telling the caller to retry
+        // later when what they must actually do is refresh the list.
+        "INFO 服务会话未建立，请先登录后打开信息门户",
+        "INFO 服务会话未确认，请先打开信息门户建立会话",
+        "INFO 新闻条目引用已失效，请重新打开列表",
+        "INFO 新闻编号无效",
+        "INFO 新闻写入参数无效，请刷新后重试",
+        "INFO 订阅条件必须包含一个关注的来源或栏目",
+        "INFO 订阅选择已失效，请刷新订阅规则",
     ] {
         if error == message {
             return message.to_owned();

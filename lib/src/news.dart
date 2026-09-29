@@ -231,6 +231,44 @@ class NewsClient {
               page: page,
             ),
           ));
+
+  /// Adds one article from this Client's current page to the account's
+  /// favorites.
+  ///
+  /// This is a single dispatch. An outcome the service does not confirm
+  /// reaches the caller as `outcome_unconfirmed`; the reference is spent at
+  /// that point, so the article cannot be sent again through this Client and
+  /// the caller must re-read [favorites] to learn what the account holds.
+  Future<void> addFavorite(NewsArticleReference reference) =>
+      _sdkCall(() => _handle.newsAddFavorite(referenceId: reference._id));
+
+  /// Removes one article from this Client's current page from the account's
+  /// favorites. The reference is spent exactly as in [addFavorite].
+  Future<void> removeFavorite(NewsArticleReference reference) =>
+      _sdkCall(() => _handle.newsRemoveFavorite(referenceId: reference._id));
+
+  /// Adds one subscription rule naming a channel, a source, or both, each
+  /// returned by this Client's latest [catalog].
+  ///
+  /// The same condition is not sent twice without a fresh [subscriptions] read
+  /// in between, because the service stores a second identical rule.
+  Future<void> addSubscription({
+    NewsChannelReference? channel,
+    NewsSourceReference? source,
+    String? keyword,
+  }) =>
+      _sdkCall(() => _handle.newsAddSubscription(
+            channelReferenceId: channel?._id,
+            sourceReferenceId: source?._id,
+            keyword: keyword,
+          ));
+
+  /// Removes one rule returned by this Client's latest [subscriptions] read.
+  /// The reference is spent before the request leaves.
+  Future<void> removeSubscription(NewsSubscriptionReference reference) =>
+      _sdkCall(
+        () => _handle.newsRemoveSubscription(referenceId: reference._id),
+      );
 }
 
 native.ReadPolicyDto _readPolicyDto(ReadPolicy value) => switch (value) {

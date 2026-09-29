@@ -778,6 +778,34 @@ impl CampusHttpTransport {
         client: &Client,
         request: reqwest::Request,
     ) -> Result<reqwest::Response, reqwest::Error> {
+        self.execute_once_with_exclusivity(client, request, None)
+            .await
+    }
+
+    /// Dispatches one state-changing request that is shaped as a read.
+    ///
+    /// A few mutating endpoints are GETs carrying a CSRF value, so
+    /// [`Self::dispatch_requires_exclusivity`] cannot recognise them from the
+    /// request alone. Such a request still must not overlap the bounded read
+    /// slots, and it must never be re-dispatched by the redirect loop: a second
+    /// send of a write whose effect is unknown is a replay of it. This method
+    /// therefore takes the whole gate and returns the first response, redirect
+    /// or not, for the caller to judge.
+    pub(crate) async fn execute_once_exclusive(
+        &self,
+        client: &Client,
+        request: reqwest::Request,
+    ) -> Result<reqwest::Response, reqwest::Error> {
+        self.execute_once_with_exclusivity(client, request, Some(true))
+            .await
+    }
+
+    async fn execute_once_with_exclusivity(
+        &self,
+        client: &Client,
+        request: reqwest::Request,
+        exclusive: Option<bool>,
+    ) -> Result<reqwest::Response, reqwest::Error> {
         let mut trace = crate::telemetry::HttpTrace::begin(&request);
         if crate::request_gate::is_loopback(request.url()) {
             trace.dispatched();
@@ -790,9 +818,8 @@ impl CampusHttpTransport {
             return result;
         }
         let gate = crate::request_gate::campus_request_gate();
-        let (_permit, queue_wait, rate_wait) = gate
-            .acquire_for(Self::dispatch_requires_exclusivity(&request))
-            .await;
+        let exclusive = exclusive.unwrap_or_else(|| Self::dispatch_requires_exclusivity(&request));
+        let (_permit, queue_wait, rate_wait) = gate.acquire_for(exclusive).await;
         trace.waited(queue_wait, rate_wait);
         trace.dispatched();
         self.record_potentially_consuming_dispatch(&request);

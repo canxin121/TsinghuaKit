@@ -52,8 +52,8 @@ use tsinghua_kit_engine::{
         NetworkProfileSummary, PortalConnectionResult, PreparedNetworkInput,
     },
     news::{
-        ArticleDetail, ArticleRef, NewsCatalog, NewsFavorites, NewsPage, NewsQuery,
-        NewsSubscriptionRef, NewsSubscriptions,
+        ArticleDetail, ArticleRef, NewsCatalog, NewsChannelRef, NewsFavorites, NewsPage, NewsQuery,
+        NewsSourceRef, NewsSubscriptionRef, NewsSubscriptions,
     },
     overview_api::{DailyOverview, OverviewClient as EngineOverviewClient},
     physical_exam_read::PhysicalExamReport,
@@ -1126,6 +1126,43 @@ impl NewsClient<'_> {
         policy: crate::read::ReadPolicy,
     ) -> Result<ReadResult<ArticleDetail>, Error> {
         self.inner.article(reference, policy).await
+    }
+
+    /// Adds one article from this client's current news result to the
+    /// account's favorites.
+    ///
+    /// This is a single dispatch. An outcome the service does not confirm is
+    /// reported as `outcome_unconfirmed` and is never retried here or by the
+    /// service layer, so the caller must re-read `favorites` to learn what the
+    /// account now holds.
+    pub async fn add_favorite(&mut self, reference: &ArticleRef) -> Result<(), Error> {
+        self.inner.add_favorite(reference).await
+    }
+
+    /// Removes one article from this client's current news result from the
+    /// account's favorites.
+    pub async fn remove_favorite(&mut self, reference: &ArticleRef) -> Result<(), Error> {
+        self.inner.remove_favorite(reference).await
+    }
+
+    /// Adds one subscription rule naming a channel, a source, or both, each
+    /// chosen from this client's latest catalog read.
+    pub async fn add_subscription(
+        &mut self,
+        channel: Option<&NewsChannelRef>,
+        source: Option<&NewsSourceRef>,
+        keyword: Option<&str>,
+    ) -> Result<(), Error> {
+        self.inner.add_subscription(channel, source, keyword).await
+    }
+
+    /// Removes one subscription rule from this client's latest subscription
+    /// result.
+    pub async fn remove_subscription(
+        &mut self,
+        reference: &NewsSubscriptionRef,
+    ) -> Result<(), Error> {
+        self.inner.remove_subscription(reference).await
     }
 }
 

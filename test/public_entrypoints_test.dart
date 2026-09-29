@@ -73,6 +73,14 @@ void main() {
     expect(service_hall.ServiceHallTaskView.phases.name, 'phases');
     expect(_publicType<service_hall.ServiceHallDirectory>(), isNull);
     expect(news.NewsCatalogCoverage.complete.name, 'complete');
+    // The news writes consume the same opaque references the reads hand out,
+    // and every reference type has a private constructor, so a caller can only
+    // obtain one from this Client's own reads.  A type-level assertion is the
+    // strongest check that fits without an instance.
+    expect(_publicType<news.NewsArticleReference>(), isNull);
+    expect(_publicType<news.NewsSubscriptionReference>(), isNull);
+    expect(_publicType<news.NewsChannelReference>(), isNull);
+    expect(_publicType<news.NewsSourceReference>(), isNull);
     expect(learn.LearnHomeworkState.pending.name, 'pending');
     expect(calendar.AcademicStage.undergraduate.name, 'undergraduate');
     expect(library_api.LibraryDay.today.name, 'today');

@@ -40,7 +40,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1369641020;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -205958105;
 
 // Section: executor
 
@@ -3093,6 +3093,130 @@ fn wire__crate__sdk_api__ClientHandle_new_impl(
         },
     )
 }
+fn wire__crate__sdk_api__ClientHandle_news_add_favorite_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "ClientHandle_news_add_favorite",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<ClientHandle>,
+            >>::sse_decode(&mut deserializer);
+            let api_reference_id = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, crate::sdk_api::SdkErrorDto>(
+                    (move || async move {
+                        let mut api_that_guard = None;
+                        let decode_indices_ =
+                            flutter_rust_bridge::for_generated::lockable_compute_decode_order(
+                                vec![flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                    &api_that, 0, true,
+                                )],
+                            );
+                        for i in decode_indices_ {
+                            match i {
+                                0 => {
+                                    api_that_guard =
+                                        Some(api_that.lockable_decode_async_ref_mut().await)
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
+                        let mut api_that_guard = api_that_guard.unwrap();
+                        let output_ok = crate::sdk_api::ClientHandle::news_add_favorite(
+                            &mut *api_that_guard,
+                            api_reference_id,
+                        )
+                        .await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__sdk_api__ClientHandle_news_add_subscription_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "ClientHandle_news_add_subscription",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<ClientHandle>,
+            >>::sse_decode(&mut deserializer);
+            let api_channel_reference_id = <Option<String>>::sse_decode(&mut deserializer);
+            let api_source_reference_id = <Option<String>>::sse_decode(&mut deserializer);
+            let api_keyword = <Option<String>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, crate::sdk_api::SdkErrorDto>(
+                    (move || async move {
+                        let mut api_that_guard = None;
+                        let decode_indices_ =
+                            flutter_rust_bridge::for_generated::lockable_compute_decode_order(
+                                vec![flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                    &api_that, 0, true,
+                                )],
+                            );
+                        for i in decode_indices_ {
+                            match i {
+                                0 => {
+                                    api_that_guard =
+                                        Some(api_that.lockable_decode_async_ref_mut().await)
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
+                        let mut api_that_guard = api_that_guard.unwrap();
+                        let output_ok = crate::sdk_api::ClientHandle::news_add_subscription(
+                            &mut *api_that_guard,
+                            api_channel_reference_id,
+                            api_source_reference_id,
+                            api_keyword,
+                        )
+                        .await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
 fn wire__crate__sdk_api__ClientHandle_news_article_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -3329,6 +3453,126 @@ fn wire__crate__sdk_api__ClientHandle_news_favorites_impl(
                         let output_ok =
                             crate::sdk_api::ClientHandle::news_favorites(&mut *api_that_guard)
                                 .await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__sdk_api__ClientHandle_news_remove_favorite_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "ClientHandle_news_remove_favorite",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<ClientHandle>,
+            >>::sse_decode(&mut deserializer);
+            let api_reference_id = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, crate::sdk_api::SdkErrorDto>(
+                    (move || async move {
+                        let mut api_that_guard = None;
+                        let decode_indices_ =
+                            flutter_rust_bridge::for_generated::lockable_compute_decode_order(
+                                vec![flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                    &api_that, 0, true,
+                                )],
+                            );
+                        for i in decode_indices_ {
+                            match i {
+                                0 => {
+                                    api_that_guard =
+                                        Some(api_that.lockable_decode_async_ref_mut().await)
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
+                        let mut api_that_guard = api_that_guard.unwrap();
+                        let output_ok = crate::sdk_api::ClientHandle::news_remove_favorite(
+                            &mut *api_that_guard,
+                            api_reference_id,
+                        )
+                        .await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__sdk_api__ClientHandle_news_remove_subscription_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "ClientHandle_news_remove_subscription",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<ClientHandle>,
+            >>::sse_decode(&mut deserializer);
+            let api_reference_id = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, crate::sdk_api::SdkErrorDto>(
+                    (move || async move {
+                        let mut api_that_guard = None;
+                        let decode_indices_ =
+                            flutter_rust_bridge::for_generated::lockable_compute_decode_order(
+                                vec![flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                    &api_that, 0, true,
+                                )],
+                            );
+                        for i in decode_indices_ {
+                            match i {
+                                0 => {
+                                    api_that_guard =
+                                        Some(api_that.lockable_decode_async_ref_mut().await)
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
+                        let mut api_that_guard = api_that_guard.unwrap();
+                        let output_ok = crate::sdk_api::ClientHandle::news_remove_subscription(
+                            &mut *api_that_guard,
+                            api_reference_id,
+                        )
+                        .await?;
                         std::result::Result::Ok(output_ok)
                     })()
                     .await,
@@ -9633,217 +9877,241 @@ fn pde_ffi_dispatcher_primary_impl(
             data_len,
         ),
         52 => wire__crate__sdk_api__ClientHandle_new_impl(port, ptr, rust_vec_len, data_len),
-        53 => {
+        53 => wire__crate__sdk_api__ClientHandle_news_add_favorite_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        54 => wire__crate__sdk_api__ClientHandle_news_add_subscription_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        55 => {
             wire__crate__sdk_api__ClientHandle_news_article_impl(port, ptr, rust_vec_len, data_len)
         }
-        54 => {
+        56 => {
             wire__crate__sdk_api__ClientHandle_news_articles_impl(port, ptr, rust_vec_len, data_len)
         }
-        55 => {
+        57 => {
             wire__crate__sdk_api__ClientHandle_news_catalog_impl(port, ptr, rust_vec_len, data_len)
         }
-        56 => wire__crate__sdk_api__ClientHandle_news_favorites_impl(
+        58 => wire__crate__sdk_api__ClientHandle_news_favorites_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        57 => {
+        59 => wire__crate__sdk_api__ClientHandle_news_remove_favorite_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        60 => wire__crate__sdk_api__ClientHandle_news_remove_subscription_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        61 => {
             wire__crate__sdk_api__ClientHandle_news_search_impl(port, ptr, rust_vec_len, data_len)
         }
-        58 => wire__crate__sdk_api__ClientHandle_news_subscription_articles_impl(
+        62 => wire__crate__sdk_api__ClientHandle_news_subscription_articles_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        59 => wire__crate__sdk_api__ClientHandle_news_subscriptions_impl(
+        63 => wire__crate__sdk_api__ClientHandle_news_subscriptions_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        60 => {
+        64 => {
             wire__crate__sdk_api__ClientHandle_overview_day_impl(port, ptr, rust_vec_len, data_len)
         }
-        61 => wire__crate__sdk_api__ClientHandle_physical_exam_result_impl(
+        65 => wire__crate__sdk_api__ClientHandle_physical_exam_result_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        62 => wire__crate__sdk_api__ClientHandle_prepare_network_profile_fill_impl(
+        66 => wire__crate__sdk_api__ClientHandle_prepare_network_profile_fill_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        63 => wire__crate__sdk_api__ClientHandle_program_completion_result_impl(
+        67 => wire__crate__sdk_api__ClientHandle_program_completion_result_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        64 => wire__crate__sdk_api__ClientHandle_refresh_self_service_captcha_impl(
+        68 => wire__crate__sdk_api__ClientHandle_refresh_self_service_captcha_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        65 => wire__crate__sdk_api__ClientHandle_registrar_exams_impl(
+        69 => wire__crate__sdk_api__ClientHandle_registrar_exams_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        66 => wire__crate__sdk_api__ClientHandle_registrar_grades_impl(
+        70 => wire__crate__sdk_api__ClientHandle_registrar_grades_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        67 => wire__crate__sdk_api__ClientHandle_registrar_semester_schedule_impl(
+        71 => wire__crate__sdk_api__ClientHandle_registrar_semester_schedule_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        68 => wire__crate__sdk_api__ClientHandle_save_network_profile_impl(
+        72 => wire__crate__sdk_api__ClientHandle_save_network_profile_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        69 => wire__crate__sdk_api__ClientHandle_self_service_account_impl(
+        73 => wire__crate__sdk_api__ClientHandle_self_service_account_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        70 => wire__crate__sdk_api__ClientHandle_self_service_disconnect_device_impl(
+        74 => wire__crate__sdk_api__ClientHandle_self_service_disconnect_device_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        71 => wire__crate__sdk_api__ClientHandle_self_service_login_phase_impl(
+        75 => wire__crate__sdk_api__ClientHandle_self_service_login_phase_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        72 => wire__crate__sdk_api__ClientHandle_self_service_online_devices_impl(
+        76 => wire__crate__sdk_api__ClientHandle_self_service_online_devices_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        73 => wire__crate__sdk_api__ClientHandle_self_service_usage_impl(
+        77 => wire__crate__sdk_api__ClientHandle_self_service_usage_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        74 => wire__crate__sdk_api__ClientHandle_send_identity_code_impl(
+        78 => wire__crate__sdk_api__ClientHandle_send_identity_code_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        75 => wire__crate__sdk_api__ClientHandle_service_hall_pending_impl(
+        79 => wire__crate__sdk_api__ClientHandle_service_hall_pending_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        76 => wire__crate__sdk_api__ClientHandle_service_hall_phase_details_impl(
+        80 => wire__crate__sdk_api__ClientHandle_service_hall_phase_details_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        77 => wire__crate__sdk_api__ClientHandle_service_hall_services_impl(
+        81 => wire__crate__sdk_api__ClientHandle_service_hall_services_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        78 => wire__crate__sdk_api__ClientHandle_service_hall_tasks_impl(
+        82 => wire__crate__sdk_api__ClientHandle_service_hall_tasks_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        79 => wire__crate__sdk_api__ClientHandle_sports_records_result_impl(
+        83 => wire__crate__sdk_api__ClientHandle_sports_records_result_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        80 => wire__crate__sdk_api__ClientHandle_sports_resources_result_impl(
+        84 => wire__crate__sdk_api__ClientHandle_sports_resources_result_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        81 => wire__crate__sdk_api__ClientHandle_start_saved_self_service_login_impl(
+        85 => wire__crate__sdk_api__ClientHandle_start_saved_self_service_login_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        82 => wire__crate__sdk_api__ClientHandle_start_self_service_login_impl(
+        86 => wire__crate__sdk_api__ClientHandle_start_self_service_login_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        83 => wire__crate__sdk_api__ClientHandle_submit_identity_code_impl(
+        87 => wire__crate__sdk_api__ClientHandle_submit_identity_code_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        84 => wire__crate__sdk_api__ClientHandle_submit_self_service_captcha_impl(
+        88 => wire__crate__sdk_api__ClientHandle_submit_self_service_captcha_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        85 => wire__crate__sdk_api__ClientHandle_update_network_profile_impl(
+        89 => wire__crate__sdk_api__ClientHandle_update_network_profile_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        86 => wire__crate__sdk_api__ClientHandle_water_brand_labels_impl(
+        90 => wire__crate__sdk_api__ClientHandle_water_brand_labels_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        87 => wire__crate__sdk_api__ClientHandle_water_user_impl(port, ptr, rust_vec_len, data_len),
-        88 => wire__crate__sdk_api__NetworkProfilePasswordHandle_expose_for_form_impl(
+        91 => wire__crate__sdk_api__ClientHandle_water_user_impl(port, ptr, rust_vec_len, data_len),
+        92 => wire__crate__sdk_api__NetworkProfilePasswordHandle_expose_for_form_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        89 => wire__crate__sdk_api__PreparedNetworkProfile_form_fields_impl(
+        93 => wire__crate__sdk_api__PreparedNetworkProfile_form_fields_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        90 => wire__crate__sdk_api__laundry_providers_impl(port, ptr, rust_vec_len, data_len),
-        91 => wire__crate__sdk_api__laundry_statuses_impl(port, ptr, rust_vec_len, data_len),
-        92 => wire__crate__sdk_api__suggest_identity_login_stage_impl(
+        94 => wire__crate__sdk_api__laundry_providers_impl(port, ptr, rust_vec_len, data_len),
+        95 => wire__crate__sdk_api__laundry_statuses_impl(port, ptr, rust_vec_len, data_len),
+        96 => wire__crate__sdk_api__suggest_identity_login_stage_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        93 => wire__crate__sdk_api__water_brands_impl(port, ptr, rust_vec_len, data_len),
+        97 => wire__crate__sdk_api__water_brands_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }

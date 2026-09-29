@@ -24,9 +24,9 @@ use crate::{
     info_news::{
         NewsChannelOption, NewsDetail, NewsFeedKind, NewsItem, NewsPage, NewsParseError,
         NewsProfile, NewsRequestPlan, NewsSearchInput, NewsSourceOption, NewsSubscriptionRule,
-        parse_news_channels, parse_news_detail, parse_news_favorite_page, parse_news_page,
-        parse_news_pdf, parse_news_sources, parse_news_subscription_page, parse_news_subscriptions,
-        parse_news_system_pdf,
+        NewsWriteOutcome, parse_news_channels, parse_news_detail, parse_news_favorite_page,
+        parse_news_page, parse_news_pdf, parse_news_sources, parse_news_subscription_page,
+        parse_news_subscriptions, parse_news_system_pdf,
     },
     protocol::{CsrfToken, ServiceId, ServiceSessionState, UserIdentity},
     session::{SessionCoordinator, SessionError, SessionSnapshot},
@@ -1554,6 +1554,136 @@ impl InfoSessionAdapter {
         Ok(body)
     }
 
+    /// Dispatches one news write and classifies what the service said.
+    ///
+    /// The plan is built by [`crate::info_news::NewsProfile`], so the relative
+    /// path, the wire fields and the CSRF placement are decided there.  This
+    /// method only adds the cookie-derived CSRF value, runs the request through
+    /// the shared transport gate, and applies the same same-origin,
+    /// exact-path and no-redirect rules the reads use.
+    ///
+    /// It is dispatched exactly once.  A transport failure after the request
+    /// was built, an unexpected origin or path, and an unfamiliar body all come
+    /// back as [`NewsWriteOutcome::Unrecognized`]; a service-side refusal comes
+    /// back as [`NewsWriteOutcome::Refused`].  None of them is retried here: a
+    /// second dispatch of a write whose effect is unknown is a replay of it.
+    pub async fn execute_news_write(
+        &self,
+        coordinator: &SessionCoordinator,
+        plan: NewsRequestPlan,
+    ) -> Result<NewsWriteOutcome, InfoSessionError> {
+        if !plan.operation().is_write() {
+            return Err(InfoSessionError::InvalidConfig(
+                "INFO news write plan is not a write".to_owned(),
+            ));
+        }
+        let csrf = self.news_csrf(coordinator).await?;
+        let endpoint = self.config.target_url(plan.path())?;
+        let expected_path = endpoint.path().to_owned();
+        let mut query = plan.query_parameters().to_vec();
+        let mut form = plan.form_parameters().to_vec();
+        match plan.csrf_requirement().placement {
+            crate::info_news::NewsParameterPlacement::Query => query.push((
+                plan.csrf_requirement().field.clone(),
+                csrf.as_str().to_owned(),
+            )),
+            crate::info_news::NewsParameterPlacement::Form => form.push((
+                plan.csrf_requirement().field.clone(),
+                csrf.as_str().to_owned(),
+            )),
+        }
+        let method = match plan.method() {
+            crate::info_news::NewsHttpMethod::Get => Method::GET,
+            crate::info_news::NewsHttpMethod::Post => Method::POST,
+        };
+        let builder = self.transport.client().request(method.clone(), endpoint);
+        let builder = if method == Method::GET {
+            builder.query(&query)
+        } else {
+            builder.query(&query).form(&form)
+        };
+        let request = builder.build().map_err(|error| {
+            InfoSessionError::InvalidConfig(format!("INFO news write request: {error}"))
+        })?;
+        // Two of the four news writes are GETs that carry `_csrf` in the query,
+        // so the transport cannot recognise them as writes from the request
+        // alone. Take the whole gate explicitly and stop after the first
+        // response: a write must never share the bounded read slots, and a
+        // redirect hop would be a second dispatch of a write whose effect is
+        // already unknown.
+        let response = match self
+            .transport
+            .execute_once_exclusive(self.transport.client(), request)
+            .await
+        {
+            Ok(response) => response,
+            Err(error) => {
+                // The request was built and handed to the transport, so a
+                // failure here cannot be told apart from a dispatch whose
+                // answer was lost.  Nothing may be sent again, and the caller
+                // is told the outcome is unknown rather than failed.  The
+                // error text is deliberately dropped: a reqwest failure may
+                // name the request URL, and this URL carries the CSRF value.
+                let _ = error;
+                tracing::warn!(target: "tsinghua_kit::validation",
+                    event = "info_news_write_dispatch_failed",
+                    business_stage = "info_news_write");
+                return Ok(NewsWriteOutcome::Unrecognized);
+            }
+        };
+        let status = response.status();
+        let final_url = response.url().clone();
+        let location = response
+            .headers()
+            .get(LOCATION)
+            .map(|value| value.to_str().map(str::to_owned))
+            .transpose()
+            .map_err(|_| InfoSessionError::NewsUnexpectedOrigin)?;
+        let content_type = response
+            .headers()
+            .get(CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_owned);
+        tracing::info!(target: "tsinghua_kit::validation", event = "info_news_write_response",
+            business_stage = "info_news_write", http_status = status.as_u16(),
+            redirect_present = location.is_some());
+        let bytes = crate::telemetry::timing::read_bounded_bytes(
+            response,
+            crate::info_news::MAX_NEWS_WRITE_RESPONSE_BYTES,
+        )
+        .await
+        .map_err(|error| {
+            // The request has already left, so a truncated or oversized answer
+            // leaves the outcome unknown rather than failed.  The message is
+            // fixed text: a transport error may name the request URL, and this
+            // URL carries the CSRF value.
+            let _ = error;
+            InfoSessionError::Transport(TransportError::DecodeBody {
+                message: "INFO news write response could not be read".to_owned(),
+            })
+        })?;
+        let body = String::from_utf8_lossy(&bytes).into_owned();
+        if !same_origin(&self.config.webvpn_base_url, &final_url)
+            || self.config.is_identity_login_target(&final_url)
+            || is_authentication_status(status)
+            || is_login_page(&final_url, content_type.as_deref(), &body)
+        {
+            return Err(InfoSessionError::LoginRequired);
+        }
+        if location.is_some()
+            || !status.is_success()
+            || final_url.path() != expected_path
+            || !path_has_prefix(final_url.path(), &self.config.target_prefix)
+            || !query_matches(&query, &final_url)
+        {
+            // A refused hop, a page we did not ask for, or a body we do not
+            // recognise: the request has already left, so the effect is
+            // unknown rather than failed. Never redispatched.
+            return Ok(NewsWriteOutcome::Unrecognized);
+        }
+        Ok(crate::info_news::classify_news_write(&body))
+    }
+
     /// Fetches and parses one INFO article through the same authenticated
     /// WebVPN session used by list and search.
     pub async fn fetch_news_detail(
@@ -2554,6 +2684,10 @@ fn query_matches(expected: &[(String, String)], candidate: &Url) -> bool {
 #[cfg(test)]
 #[path = "info_session_personal_tests.rs"]
 mod personal_tests;
+
+#[cfg(test)]
+#[path = "info_news_write_tests.rs"]
+mod news_write_tests;
 
 fn looks_like_news_link(value: &str) -> bool {
     value.starts_with('/') || value.contains("://")

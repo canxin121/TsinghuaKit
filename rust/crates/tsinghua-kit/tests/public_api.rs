@@ -40,7 +40,7 @@ use tsinghua_kit::{
         PortalConnectionState, PortalObservation, PreparedNetworkInput,
     },
     news::{
-        NewsCatalog, NewsChannelRef, NewsFavorites, NewsPage, NewsQuery, NewsSourceRef,
+        ArticleRef, NewsCatalog, NewsChannelRef, NewsFavorites, NewsPage, NewsQuery, NewsSourceRef,
         NewsSubscription, NewsSubscriptionRef, NewsSubscriptions,
     },
     read::ReadPolicy,
@@ -83,6 +83,15 @@ async fn compile_news_api(client: &mut tsinghua_kit::Client) -> Result<()> {
     }
     let favorites = client.news().favorites().await?;
     let _favorite_count = favorites.data().items().len();
+    if let (Some(channel), Some(source)) = (
+        catalog.data().channels().first(),
+        catalog.data().sources().first(),
+    ) {
+        let _ = client
+            .news()
+            .add_subscription(Some(channel.reference()), Some(source.reference()), None)
+            .await;
+    }
     let query = match (
         catalog.data().sources().first(),
         catalog.data().channels().first(),
@@ -103,6 +112,11 @@ async fn compile_news_api(client: &mut tsinghua_kit::Client) -> Result<()> {
             .article(article.reference(), ReadPolicy::CacheOnly)
             .await?;
         let _ = detail.metadata().source();
+        let _ = client.news().add_favorite(article.reference()).await;
+        let _ = client.news().remove_favorite(article.reference()).await;
+    }
+    if let Some(rule) = subscriptions.data().rules().first() {
+        let _ = client.news().remove_subscription(rule.reference()).await;
     }
     Ok(())
 }
@@ -412,6 +426,7 @@ fn rust_consumers_can_import_curated_domain_modules_without_ffi() {
     accepts_public_types::<NewsSourceRef>(None);
     accepts_public_types::<NewsChannelRef>(None);
     accepts_public_types::<NewsSubscriptionRef>(None);
+    accepts_public_types::<ArticleRef>(None);
     accepts_public_types::<CourseCatalog>(None);
     accepts_public_types::<tsinghua_kit::learn::CourseAnnouncements>(None);
     accepts_public_types::<CourseRef>(None);
@@ -608,6 +623,33 @@ async fn sports_reads_require_identity_and_return_service_scoped_errors() {
         assert_eq!(error.service(), Service::Sports);
         assert_eq!(error.code(), ErrorCode::SessionRequired);
     }
+    assert_eq!(
+        client.auth().status().identity().state(),
+        AccountAuthState::SignedOut
+    );
+}
+
+/// Every news write is addressed by a reference a catalog, page, or
+/// subscription read handed out. With no Identity session there is no such
+/// read, so each write refuses with the session that is missing rather than
+/// inventing an outcome — and the account is still signed out afterwards.
+#[tokio::test]
+async fn news_writes_report_the_missing_session_instead_of_an_outcome() {
+    let mut client = tsinghua_kit::Client::builder().build().unwrap();
+    let mut news = client.news();
+    let catalog = news.catalog().await.unwrap_err();
+    assert_eq!(catalog.service(), Service::News);
+    assert_eq!(catalog.code(), ErrorCode::SessionRequired);
+
+    let subscriptions = news.subscriptions().await.unwrap_err();
+    assert_eq!(subscriptions.service(), Service::News);
+    assert_eq!(subscriptions.code(), ErrorCode::SessionRequired);
+
+    let favorites = news.favorites().await.unwrap_err();
+    assert_eq!(favorites.service(), Service::News);
+    assert_eq!(favorites.code(), ErrorCode::SessionRequired);
+    drop(news);
+
     assert_eq!(
         client.auth().status().identity().state(),
         AccountAuthState::SignedOut

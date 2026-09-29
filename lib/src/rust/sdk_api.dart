@@ -314,6 +314,26 @@ abstract class ClientHandle implements RustOpaqueInterface {
           identitySessionRoot: identitySessionRoot,
           identitySessionNamespace: identitySessionNamespace);
 
+  /// Adds one article from this Client's current news page to the account's
+  /// favorites.
+  ///
+  /// The handle is consumed before dispatch, so a write whose outcome is
+  /// unconfirmed — reported as `outcome_unconfirmed` — cannot be sent again
+  /// through this Client.  Only a fresh page read makes the article
+  /// writable again, and the account's own favorites read says what it now
+  /// holds.
+  Future<void> newsAddFavorite({required String referenceId});
+
+  /// Adds one subscription rule naming a channel, a source, or both, each
+  /// taken from handles this Client returned from its latest catalog read.
+  ///
+  /// The same condition is not sent twice without a fresh subscription read
+  /// in between: the service stores a second identical rule rather than
+  /// deduplicating it, so the repeat is refused inside Rust before any
+  /// request is built.
+  Future<void> newsAddSubscription(
+      {String? channelReferenceId, String? sourceReferenceId, String? keyword});
+
   /// Reads detail only for an article reference returned by this Client's
   /// current page. The FFI identifier never contains the upstream article ID.
   Future<ArticleDetailResultDto> newsArticle(
@@ -334,6 +354,15 @@ abstract class ClientHandle implements RustOpaqueInterface {
   /// Reads all current-account favorites after Rust proves bounded pagination
   /// complete. The returned article references are bound to this Client.
   Future<NewsFavoritesResultDto> newsFavorites();
+
+  /// Removes one article from this Client's current news page from the
+  /// account's favorites. The handle is consumed exactly as
+  /// [`Self::news_add_favorite`] does and for the same reason.
+  Future<void> newsRemoveFavorite({required String referenceId});
+
+  /// Removes one subscription rule selected from this Client's latest
+  /// subscription list. The handle is consumed before dispatch.
+  Future<void> newsRemoveSubscription({required String referenceId});
 
   /// Searches INFO news using a caller-provided term and optional channel
   /// reference. Query validation and the requested cache policy stay in Rust.

@@ -4910,6 +4910,91 @@ impl ClientHandle {
         Ok(news_page_result(result, &mut self.news_article_references))
     }
 
+    /// Adds one article from this Client's current news page to the account's
+    /// favorites.
+    ///
+    /// The handle is consumed before dispatch, so a write whose outcome is
+    /// unconfirmed — reported as `outcome_unconfirmed` — cannot be sent again
+    /// through this Client.  Only a fresh page read makes the article
+    /// writable again, and the account's own favorites read says what it now
+    /// holds.
+    pub async fn news_add_favorite(&mut self, reference_id: String) -> Result<(), SdkErrorDto> {
+        let Some(reference) = self.news_article_references.remove(&reference_id) else {
+            return Err(context_mismatch("news"));
+        };
+        self.inner
+            .news()
+            .add_favorite(&reference)
+            .await
+            .map_err(SdkErrorDto::from)
+    }
+
+    /// Removes one article from this Client's current news page from the
+    /// account's favorites. The handle is consumed exactly as
+    /// [`Self::news_add_favorite`] does and for the same reason.
+    pub async fn news_remove_favorite(&mut self, reference_id: String) -> Result<(), SdkErrorDto> {
+        let Some(reference) = self.news_article_references.remove(&reference_id) else {
+            return Err(context_mismatch("news"));
+        };
+        self.inner
+            .news()
+            .remove_favorite(&reference)
+            .await
+            .map_err(SdkErrorDto::from)
+    }
+
+    /// Adds one subscription rule naming a channel, a source, or both, each
+    /// taken from handles this Client returned from its latest catalog read.
+    ///
+    /// The same condition is not sent twice without a fresh subscription read
+    /// in between: the service stores a second identical rule rather than
+    /// deduplicating it, so the repeat is refused inside Rust before any
+    /// request is built.
+    pub async fn news_add_subscription(
+        &mut self,
+        channel_reference_id: Option<String>,
+        source_reference_id: Option<String>,
+        keyword: Option<String>,
+    ) -> Result<(), SdkErrorDto> {
+        let channel = channel_reference_id
+            .map(|id| {
+                self.news_channel_references
+                    .get(&id)
+                    .cloned()
+                    .ok_or_else(|| context_mismatch("news"))
+            })
+            .transpose()?;
+        let source = source_reference_id
+            .map(|id| {
+                self.news_source_references
+                    .get(&id)
+                    .cloned()
+                    .ok_or_else(|| context_mismatch("news"))
+            })
+            .transpose()?;
+        self.inner
+            .news()
+            .add_subscription(channel.as_ref(), source.as_ref(), keyword.as_deref())
+            .await
+            .map_err(SdkErrorDto::from)
+    }
+
+    /// Removes one subscription rule selected from this Client's latest
+    /// subscription list. The handle is consumed before dispatch.
+    pub async fn news_remove_subscription(
+        &mut self,
+        reference_id: String,
+    ) -> Result<(), SdkErrorDto> {
+        let Some(reference) = self.news_subscription_references.remove(&reference_id) else {
+            return Err(context_mismatch("news"));
+        };
+        self.inner
+            .news()
+            .remove_subscription(&reference)
+            .await
+            .map_err(SdkErrorDto::from)
+    }
+
     /// Reads the complete schedule for the Runtime-selected semester.
     pub async fn registrar_semester_schedule(
         &mut self,
@@ -6884,6 +6969,59 @@ mod tests {
         assert!(!rendered.contains("private-handle"));
         assert!(!rendered.contains("private-comment"));
         assert!(!rendered.contains("private-answer"));
+    }
+
+    #[tokio::test]
+    async fn news_writes_only_accept_handles_this_client_returned() {
+        // Every news write is addressed by a handle, and this Client is the
+        // only thing that ever mints one.  An invented handle therefore cannot
+        // reach a request: it is a local context mismatch and the account is
+        // still signed out afterwards.
+        let mut client = client();
+        let invented = || uuid::Uuid::new_v4().to_string();
+
+        let add = client.news_add_favorite(invented()).await.unwrap_err();
+        assert_eq!(add.service, "news");
+        assert_eq!(add.code, "context_mismatch");
+
+        let remove = client.news_remove_favorite(invented()).await.unwrap_err();
+        assert_eq!(remove.service, "news");
+        assert_eq!(remove.code, "context_mismatch");
+
+        let channel = client
+            .news_add_subscription(Some(invented()), None, None)
+            .await
+            .unwrap_err();
+        assert_eq!(channel.service, "news");
+        assert_eq!(channel.code, "context_mismatch");
+
+        let source = client
+            .news_add_subscription(None, Some(invented()), None)
+            .await
+            .unwrap_err();
+        assert_eq!(source.service, "news");
+        assert_eq!(source.code, "context_mismatch");
+
+        let rule = client
+            .news_remove_subscription(invented())
+            .await
+            .unwrap_err();
+        assert_eq!(rule.service, "news");
+        assert_eq!(rule.code, "context_mismatch");
+
+        // A rule that names no condition is refused by the SDK's own input
+        // check, before a session or a catalog is consulted.
+        let empty = client
+            .news_add_subscription(None, None, None)
+            .await
+            .unwrap_err();
+        assert_eq!(empty.service, "news");
+        assert_eq!(empty.code, "invalid_input");
+
+        assert_eq!(
+            client.auth_status().identity.state,
+            AccountStateDto::SignedOut
+        );
     }
 
     #[test]

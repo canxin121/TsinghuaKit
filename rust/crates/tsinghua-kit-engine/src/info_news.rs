@@ -27,6 +27,23 @@ use thiserror::Error;
 const DEFAULT_LIST_PATH: &str = "/b/info/xxfb_fg/xnzx/template/more";
 const DEFAULT_SEARCH_PATH: &str = "/b/xnzx/search/info/xxfb_fg/teacher/getMobilePageList";
 const DEFAULT_DETAIL_PATH: &str = "/b/info/xxfb_fg/xnzx/template/detail";
+const DEFAULT_ADD_FAVORITE_PATH: &str = "/b/info/gxfw_fg/common/addFavorite/XXFB";
+const DEFAULT_REMOVE_FAVORITE_PATH: &str = "/b/info/gxfw_fg/common/delFavorite/XXFB";
+const DEFAULT_ADD_SUBSCRIPTION_PATH: &str = "/b/info/gxfw_fg/common/addSubscribeCondition";
+const DEFAULT_REMOVE_SUBSCRIPTION_PREFIX: &str = "/b/info/gxfw_fg/common/deleteSubscribeCondition";
+const DEFAULT_SUBSCRIPTION_SCOPE: &str = "XXFB";
+const DEFAULT_SUBSCRIPTION_CONDITION_FIELD: &str = "dygz";
+const DEFAULT_SUBSCRIPTION_SCOPE_FIELD: &str = "mkid";
+const DEFAULT_SUBSCRIPTION_CHANNEL_FIELD: &str = "lmid";
+const DEFAULT_SUBSCRIPTION_SOURCE_FIELD: &str = "fbdwnm";
+const DEFAULT_SUBSCRIPTION_KEYWORD_FIELD: &str = "bt";
+const MAX_SUBSCRIPTION_KEYWORD_LENGTH: usize = 256;
+const MAX_WRITE_BODY_BYTES: usize = 4096;
+/// The largest answer a news write endpoint is read for.  It is public so the
+/// session boundary that performs the dispatch can bound the same read.
+pub const MAX_NEWS_WRITE_RESPONSE_BYTES: usize = 64 * 1024;
+/// The one result string the service returns for an accepted write.
+const WRITE_SUCCESS_RESULT: &str = "success";
 const DEFAULT_CSRF_FIELD: &str = "_csrf";
 const DEFAULT_LIST_OPERATION_FIELD: &str = "oType";
 const DEFAULT_LIST_OPERATION_VALUE: &str = "xs";
@@ -65,12 +82,35 @@ impl NewsFeedKind {
     }
 }
 
-/// Identifies the read operation without carrying a URL or session state.
+/// Identifies one news operation without carrying a URL or session state.
+///
+/// The last four are the service's own write endpoints.  They are planned here
+/// exactly like the reads: this module decides the relative path, the wire
+/// fields and where the CSRF value goes, and nothing else.  Whether a write is
+/// ever dispatched is the caller's decision, and each of them is dispatched at
+/// most once.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NewsOperation {
     List,
     Search,
     Detail,
+    AddFavorite,
+    RemoveFavorite,
+    AddSubscription,
+    RemoveSubscription,
+}
+
+impl NewsOperation {
+    /// True for the operations that change state on the service.
+    pub fn is_write(self) -> bool {
+        matches!(
+            self,
+            Self::AddFavorite
+                | Self::RemoveFavorite
+                | Self::AddSubscription
+                | Self::RemoveSubscription
+        )
+    }
 }
 
 /// Where the caller must add the CSRF value when it turns a plan into a
@@ -196,12 +236,46 @@ pub struct NewsDetailRouteProfile {
     pub csrf_placement: NewsParameterPlacement,
 }
 
+/// Relative-path and wire-field configuration for the two favorite writes.
+///
+/// The observed routes carry the article identifier as a path segment after a
+/// fixed prefix, so only the prefix is configuration and the identifier is
+/// never appended anywhere else.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewsFavoriteRouteProfile {
+    pub add_prefix: String,
+    pub remove_prefix: String,
+    pub csrf_field: String,
+    pub csrf_placement: NewsParameterPlacement,
+}
+
+/// Relative-path and wire-field configuration for the two subscription writes.
+///
+/// The add route takes one form field whose value is a JSON object, and the
+/// remove route carries the rule identifier as a path segment followed by the
+/// rule's scope.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewsSubscriptionRouteProfile {
+    pub add_path: String,
+    pub remove_prefix: String,
+    pub scope: String,
+    pub csrf_field: String,
+    pub csrf_placement: NewsParameterPlacement,
+    pub condition_field: String,
+    pub scope_field: String,
+    pub channel_field: String,
+    pub source_field: String,
+    pub keyword_field: String,
+}
+
 /// The independently configurable INFO news profile.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NewsProfile {
     pub list: NewsListRouteProfile,
     pub search: NewsSearchRouteProfile,
     pub detail: NewsDetailRouteProfile,
+    pub favorite: NewsFavoriteRouteProfile,
+    pub subscription: NewsSubscriptionRouteProfile,
 }
 
 impl Default for NewsProfile {
@@ -249,6 +323,24 @@ impl NewsProfile {
                 csrf_field: DEFAULT_CSRF_FIELD.to_owned(),
                 csrf_placement: NewsParameterPlacement::Query,
             },
+            favorite: NewsFavoriteRouteProfile {
+                add_prefix: DEFAULT_ADD_FAVORITE_PATH.to_owned(),
+                remove_prefix: DEFAULT_REMOVE_FAVORITE_PATH.to_owned(),
+                csrf_field: DEFAULT_CSRF_FIELD.to_owned(),
+                csrf_placement: NewsParameterPlacement::Query,
+            },
+            subscription: NewsSubscriptionRouteProfile {
+                add_path: DEFAULT_ADD_SUBSCRIPTION_PATH.to_owned(),
+                remove_prefix: DEFAULT_REMOVE_SUBSCRIPTION_PREFIX.to_owned(),
+                scope: DEFAULT_SUBSCRIPTION_SCOPE.to_owned(),
+                csrf_field: DEFAULT_CSRF_FIELD.to_owned(),
+                csrf_placement: NewsParameterPlacement::Query,
+                condition_field: DEFAULT_SUBSCRIPTION_CONDITION_FIELD.to_owned(),
+                scope_field: DEFAULT_SUBSCRIPTION_SCOPE_FIELD.to_owned(),
+                channel_field: DEFAULT_SUBSCRIPTION_CHANNEL_FIELD.to_owned(),
+                source_field: DEFAULT_SUBSCRIPTION_SOURCE_FIELD.to_owned(),
+                keyword_field: DEFAULT_SUBSCRIPTION_KEYWORD_FIELD.to_owned(),
+            },
         }
     }
 
@@ -256,6 +348,13 @@ impl NewsProfile {
         validate_path("list.path", &self.list.path)?;
         validate_path("search.path", &self.search.path)?;
         validate_path("detail.path", &self.detail.path)?;
+        validate_path("favorite.add_prefix", &self.favorite.add_prefix)?;
+        validate_path("favorite.remove_prefix", &self.favorite.remove_prefix)?;
+        validate_path("subscription.add_path", &self.subscription.add_path)?;
+        validate_path(
+            "subscription.remove_prefix",
+            &self.subscription.remove_prefix,
+        )?;
 
         for (field, value) in [
             ("list.operation_field", self.list.operation_field.as_str()),
@@ -285,6 +384,32 @@ impl NewsProfile {
             ("detail.id_field", self.detail.id_field.as_str()),
             ("detail.preview_field", self.detail.preview_field.as_str()),
             ("detail.csrf_field", self.detail.csrf_field.as_str()),
+            ("favorite.csrf_field", self.favorite.csrf_field.as_str()),
+            (
+                "subscription.csrf_field",
+                self.subscription.csrf_field.as_str(),
+            ),
+            (
+                "subscription.condition_field",
+                self.subscription.condition_field.as_str(),
+            ),
+            (
+                "subscription.scope_field",
+                self.subscription.scope_field.as_str(),
+            ),
+            (
+                "subscription.channel_field",
+                self.subscription.channel_field.as_str(),
+            ),
+            (
+                "subscription.source_field",
+                self.subscription.source_field.as_str(),
+            ),
+            (
+                "subscription.keyword_field",
+                self.subscription.keyword_field.as_str(),
+            ),
+            ("subscription.scope", self.subscription.scope.as_str()),
         ] {
             validate_wire_name(field, value)?;
         }
@@ -436,6 +561,153 @@ impl NewsProfile {
             },
         })
     }
+
+    /// Builds the plan that stores one article in the account's favorites.
+    ///
+    /// The identifier is a path segment of the service's own route, so any
+    /// value that could extend or escape that path is refused before the plan
+    /// is built.
+    pub fn add_favorite_request(
+        &self,
+        article_id: &str,
+    ) -> Result<NewsRequestPlan, NewsProfileError> {
+        self.favorite_request(article_id, true)
+    }
+
+    /// Builds the plan that removes one article from the account's favorites.
+    pub fn remove_favorite_request(
+        &self,
+        article_id: &str,
+    ) -> Result<NewsRequestPlan, NewsProfileError> {
+        self.favorite_request(article_id, false)
+    }
+
+    fn favorite_request(
+        &self,
+        article_id: &str,
+        add: bool,
+    ) -> Result<NewsRequestPlan, NewsProfileError> {
+        self.validate()?;
+        let (field, prefix, operation) = if add {
+            (
+                "favorite.article_id",
+                &self.favorite.add_prefix,
+                NewsOperation::AddFavorite,
+            )
+        } else {
+            (
+                "favorite.article_id",
+                &self.favorite.remove_prefix,
+                NewsOperation::RemoveFavorite,
+            )
+        };
+        let article_id = required_path_segment(field, article_id)?;
+        Ok(NewsRequestPlan {
+            operation,
+            method: NewsHttpMethod::Get,
+            path: format!("{prefix}/{article_id}"),
+            query: Vec::new(),
+            form: Vec::new(),
+            csrf: NewsCsrfRequirement {
+                field: self.favorite.csrf_field.clone(),
+                placement: self.favorite.csrf_placement,
+            },
+        })
+    }
+
+    /// Builds the plan that stores one subscription rule.
+    ///
+    /// The rule is a JSON object inside one form field, exactly as the
+    /// reference sends it.  A rule that names neither a channel nor a source
+    /// is refused here: the service cannot express it, so it is never sent.
+    pub fn add_subscription_request(
+        &self,
+        draft: &NewsSubscriptionDraft,
+    ) -> Result<NewsRequestPlan, NewsProfileError> {
+        self.validate()?;
+        let channel = optional_wire_value("subscription.channel", draft.channel_id.as_deref())?;
+        let source = optional_wire_value("subscription.source", draft.source_id.as_deref())?;
+        if channel.is_none() && source.is_none() {
+            return Err(NewsProfileError::EmptySubscriptionCondition);
+        }
+        let keyword = draft.keyword.as_deref().unwrap_or_default();
+        if keyword.chars().count() > MAX_SUBSCRIPTION_KEYWORD_LENGTH {
+            return Err(NewsProfileError::InvalidValue {
+                field: "subscription.keyword".to_owned(),
+            });
+        }
+        validate_wire_value("subscription.keyword", keyword)?;
+
+        let mut condition = Map::new();
+        if let Some(channel) = channel {
+            condition.insert(
+                self.subscription.channel_field.clone(),
+                Value::String(channel),
+            );
+        }
+        if let Some(source) = source {
+            condition.insert(
+                self.subscription.source_field.clone(),
+                Value::String(source),
+            );
+        }
+        condition.insert(
+            self.subscription.keyword_field.clone(),
+            Value::String(keyword.to_owned()),
+        );
+        let serialized = serde_json::to_string(&Value::Object(condition)).map_err(|error| {
+            NewsProfileError::SubscriptionSerialization {
+                message: error.to_string(),
+            }
+        })?;
+        if serialized.len() > MAX_WRITE_BODY_BYTES {
+            return Err(NewsProfileError::SubscriptionTooLarge);
+        }
+
+        Ok(NewsRequestPlan {
+            operation: NewsOperation::AddSubscription,
+            method: NewsHttpMethod::Post,
+            path: self.subscription.add_path.clone(),
+            query: Vec::new(),
+            form: vec![
+                (self.subscription.condition_field.clone(), serialized),
+                (
+                    self.subscription.scope_field.clone(),
+                    self.subscription.scope.clone(),
+                ),
+            ],
+            csrf: NewsCsrfRequirement {
+                field: self.subscription.csrf_field.clone(),
+                placement: self.subscription.csrf_placement,
+            },
+        })
+    }
+
+    /// Builds the plan that removes one subscription rule.
+    ///
+    /// The rule identifier is a path segment, so it is validated as one; the
+    /// scope is a fixed profile value the route requires.
+    pub fn remove_subscription_request(
+        &self,
+        rule_id: &str,
+    ) -> Result<NewsRequestPlan, NewsProfileError> {
+        self.validate()?;
+        let rule_id = required_path_segment("subscription.rule_id", rule_id)?;
+        Ok(NewsRequestPlan {
+            operation: NewsOperation::RemoveSubscription,
+            method: NewsHttpMethod::Get,
+            path: format!(
+                "{}/{rule_id}/{}",
+                self.subscription.remove_prefix, self.subscription.scope
+            ),
+            query: Vec::new(),
+            form: Vec::new(),
+            csrf: NewsCsrfRequirement {
+                field: self.subscription.csrf_field.clone(),
+                placement: self.subscription.csrf_placement,
+            },
+        })
+    }
 }
 
 /// Input for the observed search form. It contains no session or transport
@@ -469,6 +741,38 @@ impl NewsSearchInput {
     }
 }
 
+/// A caller's request to store one subscription rule.
+///
+/// It carries only the values the service stores in the rule.  The rule's
+/// identifier is assigned by the service and is never supplied here.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct NewsSubscriptionDraft {
+    pub channel_id: Option<String>,
+    pub source_id: Option<String>,
+    pub keyword: Option<String>,
+}
+
+impl NewsSubscriptionDraft {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_channel(mut self, channel_id: impl Into<String>) -> Self {
+        self.channel_id = Some(channel_id.into());
+        self
+    }
+
+    pub fn with_source(mut self, source_id: impl Into<String>) -> Self {
+        self.source_id = Some(source_id.into());
+        self
+    }
+
+    pub fn with_keyword(mut self, keyword: impl Into<String>) -> Self {
+        self.keyword = Some(keyword.into());
+        self
+    }
+}
+
 /// Errors found while validating a relative INFO/news profile or request
 /// input.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
@@ -490,6 +794,15 @@ pub enum NewsProfileError {
 
     #[error("search parameters could not be serialized: {message}")]
     SearchParametersSerialization { message: String },
+
+    #[error("a subscription must name a channel or a source")]
+    EmptySubscriptionCondition,
+
+    #[error("subscription parameters could not be serialized: {message}")]
+    SubscriptionSerialization { message: String },
+
+    #[error("subscription parameters are past the supported size")]
+    SubscriptionTooLarge,
 }
 
 fn validate_path(field: &str, path: &str) -> Result<(), NewsProfileError> {
@@ -607,6 +920,72 @@ fn required_article_id(value: &str) -> Result<String, NewsProfileError> {
         });
     }
     Ok(value)
+}
+
+/// Validates a value that will become one path segment of a relative route.
+///
+/// The allowed set is the intersection of what the service's identifiers look
+/// like and what cannot change a path's shape: no separator, no query or
+/// fragment delimiter, no percent escape, no whitespace, no control character.
+fn required_path_segment(field: &str, value: &str) -> Result<String, NewsProfileError> {
+    let value = required_wire_value(field, value)?;
+    if value.len() > 128
+        || value.chars().any(|character| {
+            character.is_whitespace()
+                || matches!(
+                    character,
+                    '/' | '\\' | '?' | '#' | '&' | '=' | ':' | '<' | '>' | '%' | '+'
+                )
+        })
+    {
+        return Err(NewsProfileError::InvalidValue {
+            field: field.to_owned(),
+        });
+    }
+    Ok(value)
+}
+
+/// What a news write endpoint's answer says about the write.
+///
+/// Only [`NewsWriteOutcome::Accepted`] means the service stored the change.
+/// [`NewsWriteOutcome::Refused`] is the service's own refusal, and
+/// [`NewsWriteOutcome::Unrecognized`] is an answer this module does not know
+/// how to read.  The last two are never a success: a caller that dispatched
+/// the write cannot tell whether it was applied, and must not send it again.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NewsWriteOutcome {
+    Accepted,
+    Refused,
+    LoginRequired,
+    Unrecognized,
+}
+
+/// Reads the service's answer to a news write.
+///
+/// Every one of these endpoints answers a small JSON object and reports its own
+/// acceptance as `result: "success"`.
+pub fn classify_news_write(body: &str) -> NewsWriteOutcome {
+    let trimmed = body.trim_start_matches('\u{feff}').trim();
+    if trimmed.is_empty() || trimmed.len() > MAX_NEWS_WRITE_RESPONSE_BYTES {
+        return NewsWriteOutcome::Unrecognized;
+    }
+    let Ok(value) = serde_json::from_str::<Value>(trimmed) else {
+        return NewsWriteOutcome::Unrecognized;
+    };
+    let Some(root) = value.as_object() else {
+        return NewsWriteOutcome::Unrecognized;
+    };
+    match inspect_news_envelope(root) {
+        Ok(()) => {}
+        Err(NewsEnvelopeError::LoginRequired) => return NewsWriteOutcome::LoginRequired,
+        Err(NewsEnvelopeError::BusinessFailure { .. }) => return NewsWriteOutcome::Refused,
+        Err(NewsEnvelopeError::Malformed(_)) => return NewsWriteOutcome::Unrecognized,
+    }
+    match root.get("result").and_then(Value::as_str) {
+        Some(result) if result == WRITE_SUCCESS_RESULT => NewsWriteOutcome::Accepted,
+        Some(_) => NewsWriteOutcome::Refused,
+        None => NewsWriteOutcome::Unrecognized,
+    }
 }
 
 fn optional_wire_value(

@@ -68,7 +68,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0';
 
   @override
-  int get rustContentHash => 1369641020;
+  int get rustContentHash => -205958105;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -276,6 +276,15 @@ abstract class RustLibApi extends BaseApi {
       String? identitySessionRoot,
       String? identitySessionNamespace});
 
+  Future<void> crateSdkApiClientHandleNewsAddFavorite(
+      {required ClientHandle that, required String referenceId});
+
+  Future<void> crateSdkApiClientHandleNewsAddSubscription(
+      {required ClientHandle that,
+      String? channelReferenceId,
+      String? sourceReferenceId,
+      String? keyword});
+
   Future<ArticleDetailResultDto> crateSdkApiClientHandleNewsArticle(
       {required ClientHandle that,
       required String referenceId,
@@ -294,6 +303,12 @@ abstract class RustLibApi extends BaseApi {
 
   Future<NewsFavoritesResultDto> crateSdkApiClientHandleNewsFavorites(
       {required ClientHandle that});
+
+  Future<void> crateSdkApiClientHandleNewsRemoveFavorite(
+      {required ClientHandle that, required String referenceId});
+
+  Future<void> crateSdkApiClientHandleNewsRemoveSubscription(
+      {required ClientHandle that, required String referenceId});
 
   Future<NewsPageResultDto> crateSdkApiClientHandleNewsSearch(
       {required ClientHandle that,
@@ -2024,6 +2039,72 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  Future<void> crateSdkApiClientHandleNewsAddFavorite(
+      {required ClientHandle that, required String referenceId}) {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
+            that, serializer);
+        sse_encode_String(referenceId, serializer);
+        pdeCallFfi(generalizedFrbRustBinding, serializer,
+            funcId: 53, port: port_);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_unit,
+        decodeErrorData: sse_decode_sdk_error_dto,
+      ),
+      constMeta: kCrateSdkApiClientHandleNewsAddFavoriteConstMeta,
+      argValues: [that, referenceId],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateSdkApiClientHandleNewsAddFavoriteConstMeta =>
+      const TaskConstMeta(
+        debugName: "ClientHandle_news_add_favorite",
+        argNames: ["that", "referenceId"],
+      );
+
+  @override
+  Future<void> crateSdkApiClientHandleNewsAddSubscription(
+      {required ClientHandle that,
+      String? channelReferenceId,
+      String? sourceReferenceId,
+      String? keyword}) {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
+            that, serializer);
+        sse_encode_opt_String(channelReferenceId, serializer);
+        sse_encode_opt_String(sourceReferenceId, serializer);
+        sse_encode_opt_String(keyword, serializer);
+        pdeCallFfi(generalizedFrbRustBinding, serializer,
+            funcId: 54, port: port_);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_unit,
+        decodeErrorData: sse_decode_sdk_error_dto,
+      ),
+      constMeta: kCrateSdkApiClientHandleNewsAddSubscriptionConstMeta,
+      argValues: [that, channelReferenceId, sourceReferenceId, keyword],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateSdkApiClientHandleNewsAddSubscriptionConstMeta =>
+      const TaskConstMeta(
+        debugName: "ClientHandle_news_add_subscription",
+        argNames: [
+          "that",
+          "channelReferenceId",
+          "sourceReferenceId",
+          "keyword"
+        ],
+      );
+
+  @override
   Future<ArticleDetailResultDto> crateSdkApiClientHandleNewsArticle(
       {required ClientHandle that,
       required String referenceId,
@@ -2036,7 +2117,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_String(referenceId, serializer);
         sse_encode_read_policy_dto(policy, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 53, port: port_);
+            funcId: 55, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_article_detail_result_dto,
@@ -2073,7 +2154,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_opt_String(channelReferenceId, serializer);
         sse_encode_read_policy_dto(policy, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 54, port: port_);
+            funcId: 56, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_news_page_result_dto,
@@ -2114,7 +2195,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
             that, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 55, port: port_);
+            funcId: 57, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_news_catalog_result_dto,
@@ -2141,7 +2222,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
             that, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 56, port: port_);
+            funcId: 58, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_news_favorites_result_dto,
@@ -2157,6 +2238,62 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(
         debugName: "ClientHandle_news_favorites",
         argNames: ["that"],
+      );
+
+  @override
+  Future<void> crateSdkApiClientHandleNewsRemoveFavorite(
+      {required ClientHandle that, required String referenceId}) {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
+            that, serializer);
+        sse_encode_String(referenceId, serializer);
+        pdeCallFfi(generalizedFrbRustBinding, serializer,
+            funcId: 59, port: port_);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_unit,
+        decodeErrorData: sse_decode_sdk_error_dto,
+      ),
+      constMeta: kCrateSdkApiClientHandleNewsRemoveFavoriteConstMeta,
+      argValues: [that, referenceId],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateSdkApiClientHandleNewsRemoveFavoriteConstMeta =>
+      const TaskConstMeta(
+        debugName: "ClientHandle_news_remove_favorite",
+        argNames: ["that", "referenceId"],
+      );
+
+  @override
+  Future<void> crateSdkApiClientHandleNewsRemoveSubscription(
+      {required ClientHandle that, required String referenceId}) {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
+            that, serializer);
+        sse_encode_String(referenceId, serializer);
+        pdeCallFfi(generalizedFrbRustBinding, serializer,
+            funcId: 60, port: port_);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_unit,
+        decodeErrorData: sse_decode_sdk_error_dto,
+      ),
+      constMeta: kCrateSdkApiClientHandleNewsRemoveSubscriptionConstMeta,
+      argValues: [that, referenceId],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateSdkApiClientHandleNewsRemoveSubscriptionConstMeta =>
+      const TaskConstMeta(
+        debugName: "ClientHandle_news_remove_subscription",
+        argNames: ["that", "referenceId"],
       );
 
   @override
@@ -2178,7 +2315,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_bool(exactMatch, serializer);
         sse_encode_read_policy_dto(policy, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 57, port: port_);
+            funcId: 61, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_news_page_result_dto,
@@ -2216,7 +2353,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_String(referenceId, serializer);
         sse_encode_u_32(page, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 58, port: port_);
+            funcId: 62, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_news_page_result_dto,
@@ -2243,7 +2380,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
             that, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 59, port: port_);
+            funcId: 63, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_news_subscriptions_result_dto,
@@ -2274,7 +2411,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_String(date, serializer);
         sse_encode_read_policy_dto(policy, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 60, port: port_);
+            funcId: 64, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_daily_overview_result_dto,
@@ -2301,7 +2438,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
             that, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 61, port: port_);
+            funcId: 65, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_physical_exam_result_dto,
@@ -2330,7 +2467,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             that, serializer);
         sse_encode_String(id, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 62, port: port_);
+            funcId: 66, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData:
@@ -2360,7 +2497,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
             that, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 63, port: port_);
+            funcId: 67, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_program_completion_result_dto,
@@ -2388,7 +2525,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
             that, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 64, port: port_);
+            funcId: 68, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_self_service_captcha_dto,
@@ -2416,7 +2553,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
             that, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 65, port: port_);
+            funcId: 69, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_exam_report_result_dto,
@@ -2443,7 +2580,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
             that, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 66, port: port_);
+            funcId: 70, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_grade_report_result_dto,
@@ -2471,7 +2608,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
             that, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 67, port: port_);
+            funcId: 71, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_semester_schedule_result_dto,
@@ -2507,7 +2644,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_network_access_method_dto(method, serializer);
         sse_encode_opt_String(password, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 68, port: port_);
+            funcId: 72, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_network_profile_dto,
@@ -2534,7 +2671,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
             that, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 69, port: port_);
+            funcId: 73, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_self_service_account_result_dto,
@@ -2562,7 +2699,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             that, serializer);
         sse_encode_String(referenceId, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 70, port: port_);
+            funcId: 74, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_unit,
@@ -2590,7 +2727,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
             that, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 71, port: port_);
+            funcId: 75, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_self_service_login_phase_dto,
@@ -2618,7 +2755,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
             that, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 72, port: port_);
+            funcId: 76, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_self_service_devices_result_dto,
@@ -2645,7 +2782,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
             that, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 73, port: port_);
+            funcId: 77, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_self_service_usage_result_dto,
@@ -2673,7 +2810,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             that, serializer);
         sse_encode_second_factor_method_dto(method, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 74, port: port_);
+            funcId: 78, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_identity_login_result_dto,
@@ -2701,7 +2838,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             that, serializer);
         sse_encode_service_hall_read_policy_dto(policy, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 75, port: port_);
+            funcId: 79, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_service_hall_pending_result_dto,
@@ -2733,7 +2870,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_String(referenceId, serializer);
         sse_encode_service_hall_read_policy_dto(policy, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 76, port: port_);
+            funcId: 80, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_service_hall_phase_details_result_dto,
@@ -2763,7 +2900,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             that, serializer);
         sse_encode_service_hall_read_policy_dto(policy, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 77, port: port_);
+            funcId: 81, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_service_hall_directory_result_dto,
@@ -2794,7 +2931,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_service_hall_task_view_dto(view, serializer);
         sse_encode_service_hall_read_policy_dto(policy, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 78, port: port_);
+            funcId: 82, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_service_hall_task_list_result_dto,
@@ -2821,7 +2958,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
             that, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 79, port: port_);
+            funcId: 83, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_sports_records_result_dto,
@@ -2854,7 +2991,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_String(itemId, serializer);
         sse_encode_String(date, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 80, port: port_);
+            funcId: 84, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_sports_resources_result_dto,
@@ -2883,7 +3020,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             that, serializer);
         sse_encode_String(username, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 81, port: port_);
+            funcId: 85, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_self_service_captcha_dto,
@@ -2917,7 +3054,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_String(password, serializer);
         sse_encode_bool(rememberCredentials, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 82, port: port_);
+            funcId: 86, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_self_service_captcha_dto,
@@ -2948,7 +3085,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_second_factor_method_dto(method, serializer);
         sse_encode_String(code, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 83, port: port_);
+            funcId: 87, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_identity_login_result_dto,
@@ -2980,7 +3117,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_String(answer, serializer);
         sse_encode_opt_String(smsCode, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 84, port: port_);
+            funcId: 88, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_self_service_login_result_dto,
@@ -3017,7 +3154,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_network_access_method_dto(method, serializer);
         sse_encode_opt_String(password, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 85, port: port_);
+            funcId: 89, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_network_profile_dto,
@@ -3044,7 +3181,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
             that, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 86, port: port_);
+            funcId: 90, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_list_laundry_option_dto,
@@ -3072,7 +3209,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             that, serializer);
         sse_encode_String(deliveryId, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 87, port: port_);
+            funcId: 91, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_water_user_dto,
@@ -3099,7 +3236,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerNetworkProfilePasswordHandle(
             that, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 88, port: port_);
+            funcId: 92, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_String,
@@ -3127,7 +3264,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPreparedNetworkProfile(
             that, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 89, port: port_);
+            funcId: 93, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_network_profile_fill_dto,
@@ -3151,7 +3288,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       callFfi: (port_) {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 90, port: port_);
+            funcId: 94, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_list_laundry_option_dto,
@@ -3175,7 +3312,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       callFfi: (port_) {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 91, port: port_);
+            funcId: 95, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_list_laundry_option_dto,
@@ -3200,7 +3337,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         sse_encode_String(username, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 92, port: port_);
+            funcId: 96, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_opt_box_autoadd_login_stage_dto,
@@ -3224,7 +3361,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       callFfi: (port_) {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 93, port: port_);
+            funcId: 97, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_list_laundry_option_dto,
@@ -12975,6 +13112,35 @@ class ClientHandleImpl extends RustOpaque implements ClientHandle {
         that: this,
       );
 
+  /// Adds one article from this Client's current news page to the account's
+  /// favorites.
+  ///
+  /// The handle is consumed before dispatch, so a write whose outcome is
+  /// unconfirmed — reported as `outcome_unconfirmed` — cannot be sent again
+  /// through this Client.  Only a fresh page read makes the article
+  /// writable again, and the account's own favorites read says what it now
+  /// holds.
+  Future<void> newsAddFavorite({required String referenceId}) =>
+      RustLib.instance.api.crateSdkApiClientHandleNewsAddFavorite(
+          that: this, referenceId: referenceId);
+
+  /// Adds one subscription rule naming a channel, a source, or both, each
+  /// taken from handles this Client returned from its latest catalog read.
+  ///
+  /// The same condition is not sent twice without a fresh subscription read
+  /// in between: the service stores a second identical rule rather than
+  /// deduplicating it, so the repeat is refused inside Rust before any
+  /// request is built.
+  Future<void> newsAddSubscription(
+          {String? channelReferenceId,
+          String? sourceReferenceId,
+          String? keyword}) =>
+      RustLib.instance.api.crateSdkApiClientHandleNewsAddSubscription(
+          that: this,
+          channelReferenceId: channelReferenceId,
+          sourceReferenceId: sourceReferenceId,
+          keyword: keyword);
+
   /// Reads detail only for an article reference returned by this Client's
   /// current page. The FFI identifier never contains the upstream article ID.
   Future<ArticleDetailResultDto> newsArticle(
@@ -13010,6 +13176,19 @@ class ClientHandleImpl extends RustOpaque implements ClientHandle {
       RustLib.instance.api.crateSdkApiClientHandleNewsFavorites(
         that: this,
       );
+
+  /// Removes one article from this Client's current news page from the
+  /// account's favorites. The handle is consumed exactly as
+  /// [`Self::news_add_favorite`] does and for the same reason.
+  Future<void> newsRemoveFavorite({required String referenceId}) =>
+      RustLib.instance.api.crateSdkApiClientHandleNewsRemoveFavorite(
+          that: this, referenceId: referenceId);
+
+  /// Removes one subscription rule selected from this Client's latest
+  /// subscription list. The handle is consumed before dispatch.
+  Future<void> newsRemoveSubscription({required String referenceId}) =>
+      RustLib.instance.api.crateSdkApiClientHandleNewsRemoveSubscription(
+          that: this, referenceId: referenceId);
 
   /// Searches INFO news using a caller-provided term and optional channel
   /// reference. Query validation and the requested cache policy stay in Rust.
