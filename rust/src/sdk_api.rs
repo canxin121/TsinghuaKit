@@ -72,6 +72,7 @@ use tsinghua_kit_sdk::{
         AcademicStage, ExamReport, ExamWeekday, GradeReport, GradeReportKind, ScheduleEvent,
         ScheduleEventKind, SemesterSchedule,
     },
+    reserves::{ReservesBookDetail, ReservesRef, ReservesSearch},
     self_service::{AccountProfile, DeviceRef, OnlineDevice, UsageBalance},
     service_hall::{
         PendingTasks, PhaseDetails, ServiceDirectory, ServiceHallReadPolicy, TaskView,
@@ -1449,6 +1450,71 @@ fn sports_records_result(
     }
 }
 
+/// Flattens one reserve-catalogue page into bridge-safe rows.
+///
+/// Every row's `reference_id` is an opaque handle into the search that produced
+/// it; the service's own `bookId` never crosses the bridge.  The list is
+/// replaced wholesale, so a handle from a superseded search stops resolving.
+fn reserves_search_result(
+    value: ReadResult<ReservesSearch>,
+    references: &mut HashMap<String, ReservesRef>,
+) -> ReservesSearchResultDto {
+    let (search, metadata) = value.into_parts();
+    let mut next_references = HashMap::new();
+    let books = search
+        .books
+        .iter()
+        .map(|book| {
+            let reference_id = uuid::Uuid::new_v4().to_string();
+            next_references.insert(reference_id.clone(), book.reference.clone());
+            ReservesBookDto {
+                title: book.title.clone(),
+                image_url: book.image_url.clone(),
+                isbn: book.isbn.clone(),
+                author: book.author.clone(),
+                publisher: book.publisher.clone(),
+                reference_id: Some(reference_id),
+            }
+        })
+        .collect();
+    *references = next_references;
+    ReservesSearchResultDto {
+        data: ReservesSearchDataDto {
+            books,
+            total: search.total,
+            page_count: search.page_count,
+            page: search.page,
+        },
+        metadata: ReadMetadataDto::from(&metadata),
+    }
+}
+
+/// Flattens one book's detail page.  Chapter links stay as the service printed
+/// them, rewritten onto this module's own mapping origin in Rust.
+fn reserves_detail_result(value: ReadResult<ReservesBookDetail>) -> ReservesDetailResultDto {
+    let (book, metadata) = value.into_parts();
+    ReservesDetailResultDto {
+        data: ReservesDetailDataDto {
+            title: book.title,
+            image_url: book.image_url,
+            author: book.author,
+            publisher: book.publisher,
+            isbn: book.isbn,
+            version: book.version,
+            volume: book.volume,
+            chapters: book
+                .chapters
+                .into_iter()
+                .map(|chapter| ReservesChapterDto {
+                    title: chapter.title,
+                    url: chapter.url,
+                })
+                .collect(),
+        },
+        metadata: ReadMetadataDto::from(&metadata),
+    }
+}
+
 fn library_directory_result(
     value: ReadResult<LibraryDirectory>,
     references: &mut HashMap<String, LibraryRef>,
@@ -2668,6 +2734,80 @@ pub struct SportsRecordsDataDto {
 #[derive(Debug, Clone, PartialEq)]
 pub struct SportsRecordsResultDto {
     pub data: SportsRecordsDataDto,
+    pub metadata: ReadMetadataDto,
+}
+
+/// One catalogue record as the bridge reports it.
+///
+/// The service's own `bookId` is not a field: `reference_id` is an opaque
+/// handle into the search this row came from.
+#[derive(Clone, PartialEq)]
+pub struct ReservesBookDto {
+    pub title: String,
+    /// The cover image address, already rewritten onto this module's mapping
+    /// origin.  It is a link, never a fetched payload.
+    pub image_url: String,
+    pub isbn: String,
+    pub author: String,
+    pub publisher: String,
+    pub reference_id: Option<String>,
+}
+
+impl fmt::Debug for ReservesBookDto {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ReservesBookDto")
+            .field("reference_present", &self.reference_id.is_some())
+            .field("title", &self.title)
+            .field("has_image_url", &!self.image_url.is_empty())
+            .field("isbn_present", &!self.isbn.is_empty())
+            .field("author_present", &!self.author.is_empty())
+            .field("publisher_present", &!self.publisher.is_empty())
+            .finish()
+    }
+}
+
+/// One validated catalogue page.
+///
+/// `total: 0` with no rows is the page's own "nothing matched" answer, and only
+/// a page that carried its counter produces it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ReservesSearchDataDto {
+    pub books: Vec<ReservesBookDto>,
+    pub total: u64,
+    pub page_count: u64,
+    pub page: u32,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ReservesSearchResultDto {
+    pub data: ReservesSearchDataDto,
+    pub metadata: ReadMetadataDto,
+}
+
+/// One chapter link on a book's detail page.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReservesChapterDto {
+    pub title: String,
+    pub url: String,
+}
+
+/// One book's bibliographic detail.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ReservesDetailDataDto {
+    pub title: String,
+    pub image_url: String,
+    pub author: String,
+    pub publisher: String,
+    pub isbn: String,
+    pub version: String,
+    pub volume: String,
+    pub chapters: Vec<ReservesChapterDto>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ReservesDetailResultDto {
+    pub data: ReservesDetailDataDto,
     pub metadata: ReadMetadataDto,
 }
 
@@ -4644,6 +4784,7 @@ pub struct ClientHandle {
     learn_course_file_references: HashMap<String, CourseFileRef>,
     library_references: HashMap<String, LibraryRef>,
     invoice_references: HashMap<String, InvoiceRef>,
+    reserves_references: HashMap<String, ReservesRef>,
     assessment_references: HashMap<String, AssessmentRef>,
     library_floor_references: HashMap<String, FloorRef>,
     library_section_references: HashMap<String, SectionRef>,
@@ -4740,6 +4881,7 @@ impl ClientHandle {
             learn_course_file_references: HashMap::new(),
             library_references: HashMap::new(),
             invoice_references: HashMap::new(),
+            reserves_references: HashMap::new(),
             assessment_references: HashMap::new(),
             library_floor_references: HashMap::new(),
             library_section_references: HashMap::new(),
@@ -5639,6 +5781,47 @@ impl ClientHandle {
         Ok(sports_records_result(result))
     }
 
+    /// Searches the course-reserve textbook catalogue by book name.
+    ///
+    /// `book_name` is escaped with the service's own `%uXXXX` convention inside
+    /// Rust, so caller text never arrives as a raw query value; `page` is
+    /// one-based and bounded.  `total: 0` with no rows is the page's own
+    /// "nothing matched" answer and is only produced from a page that carried
+    /// its result counter.
+    ///
+    /// Every row's `reference_id` is an opaque handle into this search; it is
+    /// replaced by each new search and cleared whenever the account context
+    /// changes.
+    pub async fn reserves_search_result(
+        &mut self,
+        book_name: String,
+        page: u32,
+    ) -> Result<ReservesSearchResultDto, SdkErrorDto> {
+        self.reserves_references.clear();
+        let result = self.inner.reserves().search(&book_name, page).await?;
+        Ok(reserves_search_result(
+            result,
+            &mut self.reserves_references,
+        ))
+    }
+
+    /// Reads one catalogue record's bibliographic detail and chapter list.
+    ///
+    /// `reference_id` must come from the most recent successful
+    /// `reserves_search_result`; one from a superseded search or from another
+    /// client does not resolve, and the call fails rather than reading a
+    /// different book.
+    pub async fn reserves_detail_result(
+        &mut self,
+        reference_id: String,
+    ) -> Result<ReservesDetailResultDto, SdkErrorDto> {
+        let Some(reference) = self.reserves_references.get(&reference_id).cloned() else {
+            return Err(context_mismatch("reserves"));
+        };
+        let result = self.inner.reserves().detail(&reference).await?;
+        Ok(reserves_detail_result(result))
+    }
+
     /// Reads the teaching-evaluation questionnaires the account may fill in.
     /// A closed questionnaire window is the service's own "not available"
     /// state, never a validated empty list.
@@ -5913,6 +6096,7 @@ impl ClientHandle {
         self.library_references.clear();
         self.clear_library_descendants();
         self.invoice_references.clear();
+        self.reserves_references.clear();
         self.assessment_references.clear();
         self.classroom_building_references.clear();
     }
@@ -8066,5 +8250,59 @@ mod tests {
         ] {
             assert!(!debug.contains(private_value));
         }
+    }
+
+    /// A catalogue row's bridge `Debug` keeps the bibliographic fields — they
+    /// are the catalogue's own public description — but never the row's opaque
+    /// handle.
+    #[test]
+    fn reserves_bridge_debug_omits_the_opaque_row_handle() {
+        let row = ReservesBookDto {
+            title: "高等数学".into(),
+            image_url: "https://example.invalid/cover.png".into(),
+            isbn: "978-7-04-039663-5".into(),
+            author: "同济大学数学系".into(),
+            publisher: "高等教育出版社".into(),
+            reference_id: Some("private-reserves-handle".into()),
+        };
+        let rendered = format!("{row:?}");
+        assert!(rendered.contains("ReservesBookDto"));
+        assert!(rendered.contains("高等数学"));
+        assert!(rendered.contains("reference_present"));
+        assert!(!rendered.contains("private-reserves-handle"));
+    }
+
+    /// Refused search arguments and an unknown row handle are answered by Rust
+    /// with no request and no session work, and the account is left exactly as
+    /// it was.
+    #[tokio::test]
+    async fn reserves_refusals_need_no_account_and_no_request() {
+        let mut client = client();
+        for (name, page) in [
+            ("", 1u32),
+            ("   ", 1),
+            ("高等数学", 0),
+            ("高等数学", 1001),
+            ("a&b", 1),
+        ] {
+            let error = client
+                .reserves_search_result(name.to_owned(), page)
+                .await
+                .unwrap_err();
+            assert_eq!(error.service, "reserves");
+            assert_eq!(error.code, "invalid_input");
+        }
+
+        let unknown = client
+            .reserves_detail_result("not-a-handle".to_owned())
+            .await
+            .unwrap_err();
+        assert_eq!(unknown.service, "reserves");
+        assert_eq!(unknown.code, "context_mismatch");
+
+        assert_eq!(
+            client.auth_status().identity.state,
+            AccountStateDto::SignedOut
+        );
     }
 }

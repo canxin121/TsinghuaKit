@@ -319,6 +319,34 @@ async fn compile_sports_api(client: &mut tsinghua_kit::Client) -> Result<()> {
     Ok(())
 }
 
+/// The course-reserve catalogue is a `Client` method pair because both reads
+/// are account-bound to the INFO/WebVPN session, and both are read-only: the
+/// service's full-text reader needs a campus identity login this module does
+/// not perform.
+#[allow(dead_code)]
+async fn compile_reserves_api(client: &mut tsinghua_kit::Client) -> Result<()> {
+    let mut reserves = client.reserves();
+    let page: u32 = tsinghua_kit::reserves::ReservesClient::MAX_PAGE;
+    let search = reserves.search("高等数学", page.min(1)).await?;
+    let _: &tsinghua_kit::reserves::ReservesSearch = search.data();
+    let _counts: (u64, u64, u32) = (
+        search.data().total,
+        search.data().page_count,
+        search.data().page,
+    );
+    if let Some(book) = search.data().books.first() {
+        let _: &tsinghua_kit::reserves::ReservesBook = book;
+        // The row's only reachable identifier is the opaque handle the search
+        // attached; the service's own `bookId` is not a field here.
+        let detail = reserves.detail(&book.reference).await?;
+        let _: &tsinghua_kit::reserves::ReservesBookDetail = detail.data();
+        if let Some(chapter) = detail.data().chapters.first() {
+            let _: &tsinghua_kit::reserves::ReservesChapter = chapter;
+        }
+    }
+    Ok(())
+}
+
 /// Both third-party reads are free functions rather than `Client` methods:
 /// they carry no campus account binding, so neither can require a session.
 /// They report their own error types rather than the campus `Error`, so this
@@ -438,6 +466,11 @@ fn rust_consumers_can_import_curated_domain_modules_without_ffi() {
     accepts_public_types::<SportsResources>(None);
     accepts_public_types::<SportsResource>(None);
     accepts_public_types::<SportsReservationRecord>(None);
+    accepts_public_types::<tsinghua_kit::reserves::ReservesSearch>(None);
+    accepts_public_types::<tsinghua_kit::reserves::ReservesBook>(None);
+    accepts_public_types::<tsinghua_kit::reserves::ReservesBookDetail>(None);
+    accepts_public_types::<tsinghua_kit::reserves::ReservesChapter>(None);
+    assert_eq!(tsinghua_kit::reserves::ReservesClient::MAX_PAGE, 1000);
     accepts_public_types::<NewsCatalog>(None);
     accepts_public_types::<NewsFavorites>(None);
     accepts_public_types::<NewsSubscription>(None);
@@ -500,6 +533,7 @@ fn rust_consumers_can_import_curated_domain_modules_without_ffi() {
             .all(|(id, name)| !id.is_empty() && !name.is_empty())
     );
     let _ = compile_third_party_read_api;
+    let _ = compile_reserves_api;
     let _ = compile_news_api;
     let _ = compile_learn_api;
     let _ = compile_registrar_api;
@@ -712,6 +746,44 @@ async fn sports_refuses_an_unusable_venue_argument_before_any_session_check() {
         assert_eq!(error.service(), Service::Sports);
         assert_eq!(error.code(), ErrorCode::InvalidInput);
     }
+}
+
+/// A refused catalogue search is a caller-input error, and it must be decided
+/// before any session is even considered: the account is signed out here, yet
+/// the answer is `InvalidInput` rather than `SessionRequired`.  The detail read
+/// is checked at the same time — it demands a reference from a search this
+/// client never completed, so it fails closed rather than reading some other
+/// book.
+#[tokio::test]
+async fn reserves_refuses_unusable_search_text_before_any_session_check() {
+    let mut client = tsinghua_kit::Client::builder().build().unwrap();
+    let mut reserves = client.reserves();
+    for (name, page) in [
+        ("", 1u32),
+        ("   ", 1),
+        ("高等数学", 0),
+        ("高等数学", 1001),
+        ("a&b", 1),
+        ("x=y", 1),
+    ] {
+        let error = reserves.search(name, page).await.unwrap_err();
+        assert_eq!(error.service(), Service::Reserves);
+        assert_eq!(error.code(), ErrorCode::InvalidInput);
+    }
+
+    assert_eq!(tsinghua_kit::reserves::ReservesClient::MAX_PAGE, 1000);
+
+    // `detail` takes a `ReservesRef`, and that type has no public constructor
+    // and no public fields, so a caller cannot name a record this client never
+    // handed out: there is no forged-reference case to assert here, because
+    // one cannot be written.  What a cross-search reference does at run time is
+    // covered by the engine's own adapter tests.
+    drop(reserves);
+
+    assert_eq!(
+        client.auth().status().identity().state(),
+        AccountAuthState::SignedOut
+    );
 }
 
 #[test]

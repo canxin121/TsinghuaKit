@@ -30,6 +30,7 @@ part 'src/bank.dart';
 part 'src/laundry.dart';
 part 'src/water.dart';
 part 'src/sports.dart';
+part 'src/reserves.dart';
 part 'src/course_score.dart';
 part 'src/learn.dart';
 part 'src/registrar_calendar.dart';
@@ -331,6 +332,7 @@ class TsinghuaKitClient {
         laundry = LaundryClient._(handle),
         water = WaterClient._(handle),
         sports = SportsClient._(handle),
+        reserves = ReservesClient._(handle),
         courseScore = CourseScoreClient._(handle),
         learn = LearnClient._(handle),
         news = NewsClient._(handle),
@@ -392,6 +394,10 @@ class TsinghuaKitClient {
   /// Sports-venue availability and this account's reservation records.
   /// Read-only: no order, payment, or cancellation is reachable.
   final SportsClient sports;
+
+  /// The course-reserve textbook collection. Read-only, and account-bound to
+  /// the INFO/WebVPN session this client already holds.
+  final ReservesClient reserves;
 
   /// One course result looked up by course number.
   final CourseScoreClient courseScore;

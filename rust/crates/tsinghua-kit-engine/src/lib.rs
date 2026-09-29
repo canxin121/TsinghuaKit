@@ -60,6 +60,7 @@ pub mod registrar_academic;
 pub mod registrar_api;
 pub mod registrar_client;
 pub mod registrar_session;
+pub mod reserves_read;
 pub mod self_service;
 pub mod service_catalog;
 pub mod service_hall;
@@ -300,6 +301,15 @@ pub use registrar_client::{
 pub use registrar_session::{
     RegistrarSessionError, RegistrarSessionOrchestrator, RegistrarSessionResult,
 };
+pub use reserves_read::{
+    MAX_RESERVES_PAGE, RESERVES_DETAIL_PATH, RESERVES_LOGIN_MARKER, RESERVES_SEARCH_PATH,
+    RESERVES_WEBVPN_TARGET, ReservesAdapter, ReservesAdapterConfig, ReservesAdapterError,
+    ReservesBook, ReservesBookDetail, ReservesBusinessProof, ReservesChapter, ReservesDetailRead,
+    ReservesMethod, ReservesOperation, ReservesParseError, ReservesProfile, ReservesRef,
+    ReservesRequestPlan, ReservesSearch, ReservesSearchRead, ReservesSearchRow, ReservesSearchRows,
+    ReservesSessionPrerequisite, encode_book_name, parse_reserves_detail_html,
+    parse_reserves_search_html,
+};
 pub use service_catalog::{
     ALL_CATALOG_SERVICE_IDS, AuthenticationRequirement, CapabilityAccess, CatalogServiceId,
     STANDARD_SERVICE_DEFINITIONS, ServiceAvailability, ServiceCapabilities, ServiceCapability,
@@ -368,6 +378,9 @@ mod sports_tests;
 
 #[cfg(test)]
 mod invoice_tests;
+
+#[cfg(test)]
+mod reserves_tests;
 
 #[cfg(test)]
 mod bank_tests;

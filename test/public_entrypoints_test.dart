@@ -18,6 +18,7 @@ import 'package:tsinghua_kit/physical_exam.dart' as physical_exam;
 import 'package:tsinghua_kit/program.dart' as program;
 import 'package:tsinghua_kit/read.dart' as read;
 import 'package:tsinghua_kit/registrar_calendar.dart' as calendar;
+import 'package:tsinghua_kit/reserves.dart' as reserves;
 import 'package:tsinghua_kit/self_service.dart' as self_service;
 import 'package:tsinghua_kit/service_hall.dart' as service_hall;
 import 'package:tsinghua_kit/sports.dart' as sports;
@@ -273,5 +274,64 @@ void main() {
       payId: null,
     );
     expect(record.method, '已支付');
+    expect(_publicType<reserves.ReservesClient>(), isNull);
+    expect(_publicType<reserves.ReservesSearch>(), isNull);
+    expect(_publicType<reserves.ReservesBook>(), isNull);
+    expect(_publicType<reserves.ReservesBookDetail>(), isNull);
+    expect(_publicType<reserves.ReservesChapter>(), isNull);
+    expect(reserves.ReservesClient.maxPage, 1000);
+    // A row's handle is opaque: the service's own book identifier is not a
+    // field, and an absent handle is the service's answer, not a read error.
+    const book = reserves.ReservesBook(
+      title: '高等数学',
+      imageUrl: 'https://example.invalid/cover.png',
+      isbn: '978-7-04-039663-5',
+      author: '同济大学数学系',
+      publisher: '高等教育出版社',
+      referenceId: null,
+    );
+    expect(book.referenceId, isNull);
+    expect(book.imageUrl, 'https://example.invalid/cover.png');
+    // The row list is unmodifiable, so a caller cannot present a catalogue the
+    // service did not send.  A zero total with no rows is the service's own
+    // "nothing matched" answer.
+    final search = reserves.ReservesSearch(
+      books: const [book],
+      total: BigInt.one,
+      pageCount: BigInt.one,
+      page: 1,
+    );
+    expect(search.books, hasLength(1));
+    expect(
+      () => search.books.add(book),
+      throwsUnsupportedError,
+    );
+    final empty = reserves.ReservesSearch(
+      books: const [],
+      total: BigInt.zero,
+      pageCount: BigInt.zero,
+      page: 1,
+    );
+    expect(empty.books, isEmpty);
+    expect(empty.total, BigInt.zero);
+    // Chapters are links this client never fetches, and the list is
+    // unmodifiable for the same reason as the row list.
+    final detail = reserves.ReservesBookDetail(
+      title: '高等数学',
+      imageUrl: '',
+      author: '同济大学数学系',
+      publisher: '高等教育出版社',
+      isbn: '978-7-04-039663-5',
+      version: '7',
+      volume: '上册',
+      chapters: const [
+        reserves.ReservesChapter(title: '第一章', url: 'https://example.invalid/c1'),
+      ],
+    );
+    expect(detail.chapters, hasLength(1));
+    expect(
+      () => detail.chapters.clear(),
+      throwsUnsupportedError,
+    );
   });
 }

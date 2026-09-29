@@ -981,6 +981,13 @@ impl Client {
         }
     }
 
+    /// Borrows the read-only course-reserve textbook catalogue.
+    pub fn reserves(&mut self) -> ReservesClient<'_> {
+        ReservesClient {
+            runtime: &mut self.runtime,
+        }
+    }
+
     /// Borrows school-wide and academic-term calendar reads.
     pub fn calendar(&mut self) -> CalendarClient<'_> {
         CalendarClient {
@@ -1398,6 +1405,82 @@ impl SportsClient<'_> {
             ReadSource::Live,
         )?;
         Ok(ReadResult::new(dto.records, metadata))
+    }
+}
+
+/// Read-only course-reserve textbook catalogue.
+///
+/// Both reads go live on every call and are never served from a cached copy: a
+/// holding can change between requests, so a retained catalogue would present a
+/// withdrawn book as available.  A book reference only resolves against the
+/// search this client most recently completed.
+pub struct ReservesClient<'client> {
+    runtime: &'client mut CampusRuntime,
+}
+
+impl ReservesClient<'_> {
+    /// The one-based page range the service accepts through this client.
+    pub const MAX_PAGE: u32 = crate::reserves_read::MAX_RESERVES_PAGE;
+
+    /// Searches the catalogue for one book name.
+    ///
+    /// `book_name` is the caller's own text; it is validated and encoded inside
+    /// Rust with the service's own private escape scheme, so a value that cannot
+    /// be sent is refused before any request.  A page that did not carry the
+    /// service's own result counter is reported as a failure, never as an empty
+    /// catalogue.
+    pub async fn search(
+        &mut self,
+        book_name: &str,
+        page: u32,
+    ) -> Result<ReadResult<crate::reserves_read::ReservesSearch>, Error> {
+        let dto = self
+            .runtime
+            .load_reserves_search_result(book_name, page)
+            .await
+            .map_err(|_| reserves_failure(self.runtime))?;
+        let metadata = cached_read_metadata(
+            Service::Reserves,
+            &dto.generated_at,
+            &dto.source,
+            &dto.status,
+            dto.error.is_some(),
+            ReadSource::Live,
+        )?;
+        Ok(ReadResult::new(
+            crate::reserves_read::ReservesSearch {
+                books: dto.books,
+                total: dto.total,
+                page_count: dto.page_count,
+                page: dto.page,
+            },
+            metadata,
+        ))
+    }
+
+    /// Reads one catalogue book's detail page.
+    ///
+    /// The reference must come from this client's most recent [`Self::search`]
+    /// result; a reference from an earlier search or a dropped session does not
+    /// resolve.
+    pub async fn detail(
+        &mut self,
+        reference: &crate::reserves_read::ReservesRef,
+    ) -> Result<ReadResult<crate::reserves_read::ReservesBookDetail>, Error> {
+        let dto = self
+            .runtime
+            .load_reserves_detail_result(reference)
+            .await
+            .map_err(|_| reserves_failure(self.runtime))?;
+        let metadata = cached_read_metadata(
+            Service::Reserves,
+            &dto.generated_at,
+            &dto.source,
+            &dto.status,
+            dto.error.is_some(),
+            ReadSource::Live,
+        )?;
+        Ok(ReadResult::new(dto.book, metadata))
     }
 }
 
@@ -1997,6 +2080,39 @@ fn invoice_failure(runtime: &CampusRuntime) -> Error {
         AccountAuthState::Authenticated => ErrorCode::ServiceUnavailable,
     };
     Error::new(Service::Invoice, code)
+}
+
+/// Maps one course-reserve failure to its stable code.
+///
+/// The adapter's own diagnostic is checked first so an expired session is
+/// distinguishable from a changed page.  A page that did not carry the
+/// service's own result counter, or a record missing a field it printed, is
+/// `InvalidResponse` rather than an empty catalogue — the reference answers
+/// that shape from a mock, which is exactly what must not happen here.
+fn reserves_failure(runtime: &CampusRuntime) -> Error {
+    if let Some(diagnostic) = runtime.last_reserves_failure_code() {
+        let code = match diagnostic {
+            "reserves_auth_required" => ErrorCode::SessionExpired,
+            "reserves_config" | "reserves_input" => ErrorCode::InvalidInput,
+            "reserves_network" => ErrorCode::NetworkUnavailable,
+            "reserves_origin" | "reserves_path" => ErrorCode::RedirectRefused,
+            "reserves_http" => ErrorCode::ServiceUnavailable,
+            "reserves_reference" => ErrorCode::NotAvailable,
+            "reserves_size" => ErrorCode::IncompleteResult,
+            _ => ErrorCode::InvalidResponse,
+        };
+        return Error::new(Service::Reserves, code);
+    }
+    let code = match runtime.auth_status().identity().state() {
+        AccountAuthState::SignedOut | AccountAuthState::RestoredUnverified => {
+            ErrorCode::SessionRequired
+        }
+        AccountAuthState::Expired => ErrorCode::SessionExpired,
+        AccountAuthState::NeedsInteraction => ErrorCode::InteractionRequired,
+        AccountAuthState::Authenticating => ErrorCode::InteractionInProgress,
+        AccountAuthState::Authenticated => ErrorCode::ServiceUnavailable,
+    };
+    Error::new(Service::Reserves, code)
 }
 
 /// Maps one payroll failure to its stable code.

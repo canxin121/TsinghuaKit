@@ -301,6 +301,17 @@ pub mod sports {
     };
 }
 
+/// The course-reserve textbook catalogue, reached through the INFO WebVPN
+/// session the client already holds.
+pub mod reserves {
+    pub use crate::client::ReservesClient;
+    pub use tsinghua_kit_engine::reserves_read::{
+        MAX_RESERVES_PAGE, RESERVES_DETAIL_PATH, RESERVES_LOGIN_MARKER, RESERVES_SEARCH_PATH,
+        ReservesBook, ReservesBookDetail, ReservesChapter, ReservesRef, ReservesSearch,
+        ReservesSearchRow,
+    };
+}
+
 /// The standard result type for public SDK operations.
 pub type Result<T> = std::result::Result<T, Error>;
 

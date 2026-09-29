@@ -1601,3 +1601,52 @@ SDK `public_api` 增补 `compile_sports_api` 编译检查与两项活动断言�
 `docs/api-surface-baseline.json` 已按本节源码与重新渲染的 Rustdoc 刷新到第七版：模块列表 66 项**不变**、根 `pub use` 53 条**不变**、runtime DTO 76 个**不变**、`direct_state_field_count` 120 **不变**；移动的是渲染项计数 `struct 320→323` / `fn 58→59`（`enum`/`constant`/`trait`/`type` 不变）、runtime 公开方法 101 → 102（新增 `set_library_socket_state`，插入在 `cancel_library_booking` 与 `load_info_news` 之间，其后 52 条方法统一右移 20 行——与 `git diff --numstat` 的 `20 0` 一致）、`runtime.line_count` 28436 → 28455。本次刷新同时更正两处**本节之前就存在**的记录错误：`runtime.public_free_functions` 的 6 条行号自 `37d4182` 起四轮未随源码更新（`[376, 400, 3127, 3179, 3187, 3218]` → `[390, 414, 3238, 3290, 3298, 3329]`）；上一版的 `line_count` 记成 28436，而该修订实测 28435（本版按 `wc -l` 口径记 28455）。
 
 **未验证**：这条路由的线上可用性**未验证**，需要另行真实只读验收——插座写本轮**未对任何真实账号发起**（§59 的写操作约定不变）；在此之前不得用 fixture 或空结果冒充线上证据。
+\n
+## 66. 2026-09-30 馆藏教参检索与书目详情（只读）
+
+计划阶段 3 的第三个子域：**馆藏教参**（`教参平台`）的检索与书目详情。它落在自己的校园主机上，经一个固定的 WebVPN 映射进入，走的是 transport 已经持有的 INFO/WebVPN 会话。本子域**只读**，且**没有新增任何 `Service` 认证方式**。
+
+**允许名单条目，以及为什么这一条是"有据"的**
+
+映射令牌是 `77726476706e69737468656265737421` + AES-128-CFB(密钥与 IV 同为 `wrdvpnisthebest!`，明文为主机名)，那个 16 字节前缀本身就是 `wrdvpnisthebest!` 的 ASCII 十六进制。把本模块的令牌 `e2f2529935266d43300480aed641303c455d43259619a3eaf6eebb99` 解码，得到的正是 `reserves.lib.tsinghua.edu.cn`——因此 `map_additional_roaming` 里的新分支把主机写作**有据**而不是推断（与 §60 之后银行 `yhdf`、研究生 `zzjl.graduate` 两条标注为"推断"的分支不同）。方案是 `http`，与参考库自己把这条路由拼成 `/http/<token>/…` 一致。
+
+**刻意不实现参考的恢复策略**
+
+参考库给这个应用登记的策略是 `"id"`，也就是一次**校园身份登录**（先取 `ID_BASE_URL + "5bf6e5a699d63ff1cdb082836ebd50f9"` 的表单，再把凭据 POST 到 `ID_LOGIN_URL`）后重试。引擎不实现第二套校园登录，这里也不需要：Cookie jar 与 WebVPN 跳转已经由 `CampusHttpTransport` 共享。因此 `RESERVES_WEBVPN_TARGET` 只作为**文档常量**保留，说明"这条恢复路径被刻意没有实现"，它**没有**被登记为漫游 selector——这一点由测试 `the_reference_recovery_payload_is_never_registered_as_a_roam_selector` 固定。会话过期统一报 `ReservesAdapterError::SessionExpired`，由既有的 INFO 刷新路径处理，与其它 INFO 承载的读取完全一致。
+
+**没有 mock，也不把"读不出来"当"空目录"**
+
+参考实现在 `.p-fbox` 缺席时返回内置的 `MOCK_RESERVES_LIB_SEARCH = {bookCount: 0, pageCount: 0, data: []}`，这**无法区分**"服务确实没匹配到"与"页面变了"。按 AGENTS.md，本模块改成：**服务自己的结果计数器就是证据**——只有当页面真的印了 `共 0 条结果,0 页` 时才产生空目录；缺计数器、缺某个必填字段、缺书名或缺 `bookId` 一律是解析失败。`请您登录个人INFO账户查看教参全文` 是**明示的登录失败**（`LoginPage`/`SessionExpired`），绝不退化成空结果。
+
+**`%uXXXX`：私有转义必须逐字节活着穿过 URL 层**
+
+参考用 `bookName.charCodeAt(i)`（**UTF-16 码元**），只在 `>= 128` 时输出 `%u` + 大写十六进制。`Url::set_query` 会把 `%` 重新编码成 `%25`，因此查询串是**原样**写入的（`set_query(Some(query))`），再由本模块自己的 `valid_query` 放行——它只接受 `%uXXXX` 与合法 `%XX`。loopback 断言把这个形状钉死在请求行上：`?bookName=%u9AD8%u7B49%u6570%u5B66`，并附注"任何重新编码都会发出 `%25u9AD8…`"。非 BMP 字符因此变成两个代理转义（`"\u{1D11E}"` → `%uD834%uDD1E`）。
+
+**引用不可伪造**
+
+`bookId` 从不离开模块：对外的句柄是 `ReservesRef { adapter_binding, generation, index }`，它绑定到产生它的那一个适配器实例与那一次检索（适配器绑定号取自一个进程内 `AtomicU64`，检索成功后才推进 generation）。换一个客户端、或换一次检索拿到的引用**根本解析不了**，不会读到另一本书。`ReservesRef` 的 `Debug` 只打印 `index`。
+
+**图片与章节链接的重写**
+
+页面印出的封面图与章节 href 一律被改写回本模块自己的映射源（`RESERVES_MAPPING_ORIGIN`）：相对的 `/…` 与已经带该源的绝对地址都接受，`//host`、含 `:`、反斜杠、`#`、`..`、非法百分号编码一律拒绝。这样一份响应无法把调用方的图片或章节抓取搬到别的主机。
+
+**SDK / FFI / Dart**
+
+- 引擎：新增模块 `reserves_read`（14 struct / 5 enum / 3 fn / 5 const）、`ReservesSearch` 与 `ReservesAdapter` 等；`info_session.rs` 新增一条允许名单分支；`api/runtime.rs` 新增 `load_reserves_search_result` / `load_reserves_detail_result` 两个公开方法与三个状态字段；`client.rs` 新增 `ReservesClient`。检索在**任何会话工作之前**先约束书名与页码，被拒的参数不会花掉一次 handoff；检索与会话过期走既有的"失效 → INFO 刷新 → 重试一次"模式，第二次仍过期就失败。详情读**刻意不透明重试**：重建适配器会丢掉书目标识，所以过期时直接失败并提示重新检索，而不是悄悄读另一本书。
+- SDK：`tsinghua-kit/src/lib.rs` 新增 `pub mod reserves { … }` 再导出块，`client.rs` 新增 `Client::reserves()` 与薄包装 `ReservesClient`（含 `MAX_PAGE`）。
+- FFI：`ClientHandle` 新增 `reserves_search_result` / `reserves_detail_result` 与 `reserves_references` 句柄表（连同 `invalidate_auth_bound_references` 一起清空）；新增 `ReservesBookDto`（`Debug` 只印 `reference_present` 与书名等书目字段，**不印句柄**）、`ReservesSearchDataDto` / `ReservesSearchResultDto` / `ReservesChapterDto` / `ReservesDetailDataDto` / `ReservesDetailResultDto`；FRB 2.13.0 重新生成，生成物未手工编辑。
+- Dart：`lib/src/reserves.dart`（part）+ `lib/reserves.dart` 入口 + `lib/tsinghua_kit.dart` 的 `part`/字段；`ReservesClient.search({bookName, page})` 与 `detail({referenceId})`，`maxPage = 1000`。总数与页数是 `BigInt`（FFI 的 `u64`）。
+
+**验证**
+
+引擎定向（loopback fixture，无任何真实账号 / Cookie / 书目标识）：`cargo test -p tsinghua_kit_engine reserves_tests` **32 项通过 / 0 失败**，覆盖正常页、空页（计数器为 0）、缺计数器、计数器非 0 而块为空、缺书名 / 缺 `bookId` / 缺字段、非 HTML 响应、5xx、空体、超时文案、WebVPN 门户页、服务自己的未登录提示、图片与章节链接重写与拒绝、私有转义的逐字节形状、引用跨适配器 / 跨检索失效、以及"参考的恢复载荷没有登记成漫游 selector"。
+
+桥接层 `cargo test -p tsinghua_kit_ffi --lib`（含 `--features ffi-bridge` 与不带该特性两种配置）**49 项通过**，其中本轮新增 2 项（`reserves_bridge_debug_omits_the_opaque_row_handle`、`reserves_refusals_need_no_account_and_no_request`）。SDK `cargo test -p tsinghua_kit` **21 项通过**（`public_api` 新增 `reserves_refuses_unusable_search_text_before_any_session_check`，`compile_reserves_api` 与 `rust_consumers_can_import_curated_domain_modules_without_ffi` 增补馆藏类型）。`cargo fmt --all -- --check` 与 `git diff --check` 干净；严格 `RUSTDOCFLAGS="-D warnings" cargo doc --locked --no-deps -p tsinghua_kit` 退出 0；`flutter analyze lib test` 无问题；`flutter test test/public_entrypoints_test.dart` 通过并覆盖 `ReservesClient` / `ReservesSearch` / `ReservesBook` / `ReservesBookDetail` / `ReservesChapter` / `maxPage == 1000` 与两张列表的不可变。
+
+**同过滤器下的既有失败**：`library` 过滤器仍为 87 通过 / 4 失败，与本轮之前记录的**同一批 4 项**（`backend_repair_cached_library_read_uses_existing_expiry_gate`、`backend_repair_proven_library_action_survives_unavailable_info_bootstrap`、`backend_repair_runtime_library_segments_and_seats_reach_safe_dtos`、`backend_repair_binding_library_timestamp_date_must_match_segment_day`），原因是它们直接安装 library 证明却从不填充 `library_seat_section_ids`，与新增读路径无关；本轮**未修**。`tsinghua_kit_ffi` 的 `classroom_contract` 集成测试 3 项失败（`MissingDateHeaders`）经 `git stash` 对照确认为 **HEAD 既有**，同样不是本轮引入。
+
+**baseline**
+
+`docs/api-surface-baseline.json` 已按本节源码与重新渲染的 Rustdoc 刷新到第八版：`source_revision` 前进到 `1748bad`；`root_public_modules` 66 → **67**（新增 `reserves_read`）；根 `pub use` 53 → **54**；`rendered_crate_root_item_counts` struct 323 → **337**、enum 155 → **160**、fn 59 → **62**、constant 55 → **60**（`trait` / `type` 不变），与本模块 14/5/3/5 个公开项一一对应；runtime `dto_structs` 76 → **78**、`public_methods` 102 → **104**、`direct_state_field_count` 120 → **123**（新增 `reserves_adapter` / `reserves_proof` / `last_reserves_failure_code`）、`line_count` 28455 → **28740**（与 `git diff --numstat` 的 `285 0` 一致）。方法行号按源码重新锚定：`impl` 之前的插入使既有 102 条整体下移 54 行，两个新方法插在 `load_sports_records_result` 之后（`load_invoice_list_result` / `load_invoice_document_result` / 银行与研究生收入 / 体育两读各下移 54 行，其余 96 条各下移自己的插入偏移）。
+
+**未验证**：本域的线上可用性**未验证**，需要另行真实只读验收——本轮**未对任何真实账号发起任何请求**，也未尝试教参全文阅读（那需要本引擎刻意不实现的校园身份登录）。在此之前不得用 fixture 或空结果冒充线上证据。

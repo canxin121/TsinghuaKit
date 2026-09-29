@@ -88,6 +88,9 @@ use crate::{
         RegistrarExamRecord, RegistrarExamSession, RegistrarExamWeekday,
     },
     registrar_client::{RegistrarClient, RegistrarClientConfig},
+    reserves_read::{
+        ReservesAdapter, ReservesBook, ReservesBookDetail, ReservesBusinessProof, ReservesRef,
+    },
     services::{CampusDataSource, CampusOverviewRecoveryHints},
     session::{BoundCsrfToken, SessionCoordinator},
     sports_read::{
@@ -122,6 +125,11 @@ const BANK_WEBVPN_BASE_URL: &str = "https://webvpn.tsinghua.edu.cn/http/77726476
 /// The graduate-income host's WebVPN mapping.
 const GRADUATE_INCOME_WEBVPN_BASE_URL: &str = "https://webvpn.tsinghua.edu.cn/http/77726476706e69737468656265737421eaed4b9069377a517a1d88b89d1b37269c624d2b1c6925f37faea82b8d/";
 const SPORTS_WEBVPN_BASE_URL: &str = "https://webvpn.tsinghua.edu.cn/http/77726476706e69737468656265737421a5a70f8834396657761d88e29d51367b6a00/";
+/// The course-reserve catalogue host's WebVPN mapping.  The hostname behind
+/// this token is evidenced rather than inferred: a mapping token is the fixed
+/// ASCII prefix followed by AES-128-CFB of the hostname under the same fixed
+/// key and IV, and decoding this one yields `reserves.lib.tsinghua.edu.cn`.
+const RESERVES_WEBVPN_BASE_URL: &str = "https://webvpn.tsinghua.edu.cn/http/77726476706e69737468656265737421e2f2529935266d43300480aed641303c455d43259619a3eaf6eebb99/";
 const WEBVPN_BASE_URL: &str = "https://webvpn.tsinghua.edu.cn/";
 const INFO_DIRECT_ORIGIN: &str = "https://info.tsinghua.edu.cn/";
 // Current THUInfo public clients perform one target-application identity roam
@@ -1578,6 +1586,41 @@ pub struct InvoiceDocumentResultDto {
     pub error: Option<String>,
 }
 
+/// Source-aware course-reserve catalogue page.
+///
+/// The page is read live on every request and never served from a cached copy.
+/// An empty `books` list with a zero `total` is the service's own answer that
+/// the search matched nothing; a page that did not carry the service's result
+/// counter is reported as a failure instead.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ReservesSearchResultDto {
+    pub books: Vec<ReservesBook>,
+    /// The service's own match count across all pages.
+    pub total: u64,
+    /// The service's own page count for this query.
+    pub page_count: u64,
+    /// The one-based page this result came from, as the caller asked for it.
+    pub page: u32,
+    pub generated_at: String,
+    pub source: String,
+    pub status: String,
+    pub error: Option<String>,
+}
+
+/// Source-aware course-reserve book detail.
+///
+/// Only the fields the catalogue page prints cross the boundary; the service's
+/// own book identifier stays inside Rust, and every cover or chapter URL is
+/// already rewritten onto the service's own mapping origin.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReservesDetailResultDto {
+    pub book: ReservesBookDetail,
+    pub generated_at: String,
+    pub source: String,
+    pub status: String,
+    pub error: Option<String>,
+}
+
 /// Source-aware payroll receipt ledger.
 ///
 /// The ledger is read live on every request and never served from a cached
@@ -2963,6 +3006,11 @@ pub struct CampusRuntime {
     // records only, so no booking token can be acted on from here.
     sports_adapter: Option<SportsAdapter>,
     sports_proof: Option<SportsBusinessProof>,
+    // The course-reserve adapter is prepared per confirmed INFO session, on its
+    // own mapping.  The service's book identifiers stay in the adapter, so a
+    // superseded search leaves no resolvable reference behind.
+    reserves_adapter: Option<ReservesAdapter>,
+    reserves_proof: Option<ReservesBusinessProof>,
     card_client: Option<CampusCardClient>,
     card_session: Option<CampusCardSession>,
     // One initial target-auth chain per explicit login. Retain after failure
@@ -3102,6 +3150,9 @@ pub struct CampusRuntime {
     // too, so their failures are mapped from a stable code as well.
     last_bank_payment_failure_code: Option<&'static str>,
     last_graduate_income_failure_code: Option<&'static str>,
+    // The course-reserve catalogue's own deployment/parse answer is mapped by
+    // the SDK from a stable code instead of from message text.
+    last_reserves_failure_code: Option<&'static str>,
     // The course-number query is the caller's argument, so its failures are
     // recorded here rather than inferred from the service hall's wording.
     last_course_score_failure_code: Option<&'static str>,
@@ -3717,6 +3768,8 @@ impl CampusRuntime {
             graduate_income_proof: None,
             sports_adapter: None,
             sports_proof: None,
+            reserves_adapter: None,
+            reserves_proof: None,
             card_client: None,
             card_session: None,
             card_auth_attempted: false,
@@ -3792,6 +3845,7 @@ impl CampusRuntime {
             last_invoice_failure_code: None,
             last_bank_payment_failure_code: None,
             last_graduate_income_failure_code: None,
+            last_reserves_failure_code: None,
             last_course_score_failure_code: None,
             last_sports_failure_code: None,
             last_library_failure_code: None,
@@ -16204,6 +16258,211 @@ impl CampusRuntime {
         .await
     }
 
+    /// Prepares the course-reserve adapter inside the already-confirmed INFO
+    /// session.
+    ///
+    /// Like the other INFO-hosted readers, no business read happens here: the
+    /// search that follows owns its own expiry classification.  The reference
+    /// recovers this application with a campus identity login, which this engine
+    /// deliberately does not implement, so the adapter rides the mapping the
+    /// INFO session already proved.
+    async fn ensure_reserves_reader_session(&mut self, user: &UserIdentity) -> Result<(), String> {
+        if self.reserves_service_is_proven() {
+            return Ok(());
+        }
+        let context_exists = self.reserves_adapter.is_some()
+            || self.reserves_proof.is_some()
+            || self.info_session_context_exists();
+        if context_exists && !self.service_session_is_proven(ServiceId::Info) {
+            self.refresh_nonacademic_service_after_expiry(ServiceId::Info)
+                .await
+                .map_err(|error| self.record_error(format!("INFO 自动续接失败: {error}")))?;
+        }
+        self.prepare_reserves_adapter(user).await
+    }
+
+    async fn prepare_reserves_adapter(&mut self, user: &UserIdentity) -> Result<(), String> {
+        self.invalidate_reserves_session();
+        self.ensure_info_session(user).await?;
+
+        let transport = self.identity.transport().clone();
+        let handoff = match self.info_adapter.as_ref() {
+            Some(info) => {
+                info.additional_roaming(crate::reserves_read::RESERVES_WEBVPN_TARGET)
+                    .await
+            }
+            None => return Err(self.record_error("INFO 服务会话尚未建立")),
+        };
+        let roaming_url = handoff.map_err(|error| {
+            self.record_business_failure("reserves", "reserves_handoff", info_failure_code(&error))
+        })?;
+        let mut base_url = Url::parse(roaming_url.as_str())
+            .map_err(|_| self.record_error("reserves roaming URL is invalid"))?;
+        let expected = Url::parse(RESERVES_WEBVPN_BASE_URL).expect("static reserves mapping");
+        if !base_url.path().starts_with(expected.path()) {
+            return Err(self.record_business_failure(
+                "reserves",
+                "reserves_handoff",
+                "reserves_mapping_rejected",
+            ));
+        }
+        // The handoff query is consumed here.  Only the proved target mapping
+        // configures the read endpoints that follow.
+        base_url.set_path(expected.path());
+        base_url.set_query(None);
+        base_url.set_fragment(None);
+        let adapter = ReservesAdapter::try_with_transport(base_url, transport)
+            .map_err(|error| self.record_error(format!("reserves adapter: {error}")))?;
+        self.reserves_adapter = Some(adapter);
+        Ok(())
+    }
+
+    /// Reads one page of the course-reserve catalogue for a book name.
+    ///
+    /// The page is read live every time and never served from a cached copy: a
+    /// retained page would present a superseded holding as the current one.  A
+    /// page that did not carry the service's own result counter is reported as a
+    /// failure, never as an empty catalogue.
+    pub async fn load_reserves_search_result(
+        &mut self,
+        book_name: &str,
+        page: u32,
+    ) -> Result<ReservesSearchResultDto, String> {
+        crate::telemetry::observe("reserves", "load_reserves_search_result", async {
+            self.allow_live_operation()?;
+            // The caller's book name and page are bounded before any session
+            // work, so a refused argument never costs a handoff and its text
+            // never reaches the service.
+            if let Err(error) = crate::reserves_read::encode_book_name(book_name) {
+                let reason = error.diagnostic_code();
+                self.last_reserves_failure_code = Some(reason);
+                return Err(self.record_business_failure("reserves", "reserves_search", reason));
+            }
+            if page == 0 || page > crate::reserves_read::MAX_RESERVES_PAGE {
+                self.last_reserves_failure_code = Some("reserves_config");
+                return Err(self.record_business_failure(
+                    "reserves",
+                    "reserves_search",
+                    "reserves_config",
+                ));
+            }
+            let user = self.ensure_identity_user_for_live_read().await?;
+            self.ensure_reserves_reader_session(&user).await?;
+
+            let mut result = {
+                let Some(adapter) = self.reserves_adapter.as_ref() else {
+                    return self.fail("教参服务会话未建立");
+                };
+                adapter.search_with_proof(book_name, page).await
+            };
+            if matches!(&result, Err(error) if error.is_session_expired()) {
+                self.invalidate_reserves_session();
+                if let Err(error) = self
+                    .refresh_nonacademic_service_after_expiry(ServiceId::Info)
+                    .await
+                {
+                    return Err(self.record_error(format!("教参自动续接失败: {error}")));
+                }
+                let user = self.ensure_identity_user_for_live_read().await?;
+                self.prepare_reserves_adapter(&user).await?;
+                let Some(adapter) = self.reserves_adapter.as_ref() else {
+                    return self.fail("教参自动续接后会话未建立");
+                };
+                result = adapter.search_with_proof(book_name, page).await;
+                if matches!(&result, Err(error) if error.is_session_expired()) {
+                    self.invalidate_reserves_session();
+                    return self.fail("教参自动续接后仍已过期，请重新建立");
+                }
+            }
+            match result {
+                Ok(read) => {
+                    self.reserves_proof = Some(read.proof);
+                    if !self.reserves_service_is_proven() {
+                        return self.fail("教参服务会话证明未确认，请重新建立服务会话");
+                    }
+                    self.last_error = None;
+                    self.last_reserves_failure_code = None;
+                    self.persist_resume_state_after_live_read(&user, "reserves_search");
+                    Ok(ReservesSearchResultDto {
+                        books: read.value.books,
+                        total: read.value.total,
+                        page_count: read.value.page_count,
+                        page,
+                        generated_at: Utc::now().to_rfc3339(),
+                        source: "live".to_owned(),
+                        status: "ready".to_owned(),
+                        error: None,
+                    })
+                }
+                Err(error) => {
+                    let reason = error.diagnostic_code();
+                    self.last_reserves_failure_code = Some(reason);
+                    Err(self.record_business_failure("reserves", "reserves_search", reason))
+                }
+            }
+        })
+        .await
+    }
+
+    /// Reads one catalogue book's detail page, addressed by a reference this
+    /// runtime's current search produced.
+    pub async fn load_reserves_detail_result(
+        &mut self,
+        reference: &ReservesRef,
+    ) -> Result<ReservesDetailResultDto, String> {
+        crate::telemetry::observe("reserves", "load_reserves_detail_result", async {
+            self.allow_live_operation()?;
+            let user = self.ensure_identity_user_for_live_read().await?;
+            self.ensure_reserves_reader_session(&user).await?;
+
+            let mut result = {
+                let Some(adapter) = self.reserves_adapter.as_ref() else {
+                    return self.fail("教参服务会话未建立");
+                };
+                adapter.detail_with_proof(reference).await
+            };
+            if matches!(&result, Err(error) if error.is_session_expired()) {
+                self.invalidate_reserves_session();
+                if let Err(error) = self
+                    .refresh_nonacademic_service_after_expiry(ServiceId::Info)
+                    .await
+                {
+                    return Err(self.record_error(format!("教参自动续接失败: {error}")));
+                }
+                let user = self.ensure_identity_user_for_live_read().await?;
+                self.prepare_reserves_adapter(&user).await?;
+                // Rebuilding the adapter drops the book identifiers the
+                // reference was resolved from, so the reference is refused
+                // rather than silently aimed at a different book.
+                return self.fail("教参引用已失效，请刷新列表后重试");
+            }
+            match result {
+                Ok(read) => {
+                    self.reserves_proof = Some(read.proof);
+                    if !self.reserves_service_is_proven() {
+                        return self.fail("教参服务会话证明未确认，请重新建立服务会话");
+                    }
+                    self.last_error = None;
+                    self.last_reserves_failure_code = None;
+                    self.persist_resume_state_after_live_read(&user, "reserves_detail");
+                    Ok(ReservesDetailResultDto {
+                        book: read.value,
+                        generated_at: Utc::now().to_rfc3339(),
+                        source: "live".to_owned(),
+                        status: "ready".to_owned(),
+                        error: None,
+                    })
+                }
+                Err(error) => {
+                    let reason = error.diagnostic_code();
+                    self.last_reserves_failure_code = Some(reason);
+                    Err(self.record_business_failure("reserves", "reserves_detail", reason))
+                }
+            }
+        })
+        .await
+    }
+
     async fn ensure_campus_card_reader_session(&mut self) -> Result<(), String> {
         if self.service_session_is_proven(ServiceId::CampusCard) {
             return Ok(());
@@ -17518,6 +17777,7 @@ impl CampusRuntime {
                 self.invalidate_invoice_session();
                 self.invalidate_bank_payment_session();
                 self.invalidate_graduate_income_session();
+                self.invalidate_reserves_session();
             }
             ServiceId::Library => {
                 self.library_adapter = None;
@@ -17610,6 +17870,23 @@ impl CampusRuntime {
     fn invalidate_sports_session(&mut self) {
         self.sports_adapter = None;
         self.sports_proof = None;
+    }
+
+    fn invalidate_reserves_session(&mut self) {
+        // Dropping the adapter also drops the book identifiers of the last
+        // accepted search, so a reference handed out earlier stops resolving
+        // instead of addressing a book in a session that no longer exists.
+        self.reserves_adapter = None;
+        self.reserves_proof = None;
+    }
+
+    fn reserves_service_is_proven(&self) -> bool {
+        self.service_session_is_proven(ServiceId::Info)
+            && self
+                .reserves_adapter
+                .as_ref()
+                .zip(self.reserves_proof.as_ref())
+                .is_some_and(|(adapter, proof)| adapter.business_proof_matches(proof))
     }
 
     fn sports_service_is_proven(&self) -> bool {
@@ -18054,6 +18331,14 @@ impl CampusRuntime {
     /// The sports venue's own failure code from the last read.
     pub(crate) fn last_sports_failure_code(&self) -> Option<&'static str> {
         self.last_sports_failure_code
+    }
+
+    /// The course-reserve catalogue's own failure code from the last read.
+    ///
+    /// It exists so a page that did not carry the service's result counter is
+    /// reported as a parse failure rather than as an empty catalogue.
+    pub(crate) fn last_reserves_failure_code(&self) -> Option<&'static str> {
+        self.last_reserves_failure_code
     }
 
     /// The library booking boundary's own failure code from the last action.

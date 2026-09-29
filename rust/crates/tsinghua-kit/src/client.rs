@@ -32,8 +32,8 @@ use tsinghua_kit_engine::{
         LibraryClient as EngineLibraryClient, NetworkClient as EngineNetworkClient,
         NetworkProfilesClient as EngineNetworkProfilesClient, NewsClient as EngineNewsClient,
         PhysicalExamClient as EnginePhysicalExamClient, ProgramClient as EngineProgramClient,
-        RegistrarClient as EngineRegistrarClient, SelfServiceCaptcha,
-        SelfServiceClient as EngineSelfServiceClient, SelfServiceLoginOutcome,
+        RegistrarClient as EngineRegistrarClient, ReservesClient as EngineReservesClient,
+        SelfServiceCaptcha, SelfServiceClient as EngineSelfServiceClient, SelfServiceLoginOutcome,
         ServiceHallClient as EngineServiceHallClient, SportsClient as EngineSportsClient,
     },
     electricity_api::{ElectricityPaymentHistory, ElectricityRemainder},
@@ -61,6 +61,7 @@ use tsinghua_kit_engine::{
     program_read::ProgramCompletion,
     read::{ReadPolicy, ReadResult},
     registrar_api::{ExamReport, GradeReport, SemesterSchedule},
+    reserves_read::{ReservesBookDetail, ReservesRef, ReservesSearch},
     self_service::{AccountProfile, DeviceRef, OnlineDevice, UsageBalance},
     service_hall::{
         PendingTasks, PhaseDetails, ServiceDirectory, ServiceHallReadPolicy, TaskView,
@@ -334,6 +335,13 @@ impl Client {
     pub fn sports(&mut self) -> SportsClient<'_> {
         SportsClient {
             inner: self.inner.sports(),
+        }
+    }
+
+    /// Borrows the read-only course-reserve textbook catalogue.
+    pub fn reserves(&mut self) -> ReservesClient<'_> {
+        ReservesClient {
+            inner: self.inner.reserves(),
         }
     }
 
@@ -886,6 +894,45 @@ impl SportsClient<'_> {
     /// Reads the account's unpaid reservations followed by its paid ones.
     pub async fn records(&mut self) -> Result<ReadResult<Vec<SportsReservationRecord>>, Error> {
         self.inner.records().await
+    }
+}
+
+/// Read-only course-reserve textbook catalogue.
+///
+/// Both reads go live on every call and are never served from a cached copy: a
+/// holding can change between requests, so a retained catalogue would present a
+/// withdrawn book as available. A book reference only resolves against the
+/// search this client most recently completed.
+pub struct ReservesClient<'client> {
+    inner: EngineReservesClient<'client>,
+}
+
+impl ReservesClient<'_> {
+    /// The highest one-based page the service accepts through this client.
+    pub const MAX_PAGE: u32 = EngineReservesClient::MAX_PAGE;
+
+    /// Searches the reserve catalogue by book name.
+    ///
+    /// The name is escaped with the service's own `%uXXXX` convention inside
+    /// the engine, so caller text never arrives as a raw query value; a name
+    /// that cannot be represented is refused before any request.
+    pub async fn search(
+        &mut self,
+        book_name: &str,
+        page: u32,
+    ) -> Result<ReadResult<ReservesSearch>, Error> {
+        self.inner.search(book_name, page).await
+    }
+
+    /// Reads one book's bibliographic detail and chapter list.
+    ///
+    /// The reference must come from the search this client most recently
+    /// completed; one from an earlier search or another client does not resolve.
+    pub async fn detail(
+        &mut self,
+        reference: &ReservesRef,
+    ) -> Result<ReadResult<ReservesBookDetail>, Error> {
+        self.inner.detail(reference).await
     }
 }
 

@@ -684,6 +684,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<ProgramCourseSetDto> dco_decode_list_program_course_set_dto(dynamic raw);
 
   @protected
+  List<ReservesBookDto> dco_decode_list_reserves_book_dto(dynamic raw);
+
+  @protected
+  List<ReservesChapterDto> dco_decode_list_reserves_chapter_dto(dynamic raw);
+
+  @protected
   List<ScheduleEventDto> dco_decode_list_schedule_event_dto(dynamic raw);
 
   @protected
@@ -873,6 +879,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ReadSourceDto dco_decode_read_source_dto(dynamic raw);
+
+  @protected
+  ReservesBookDto dco_decode_reserves_book_dto(dynamic raw);
+
+  @protected
+  ReservesChapterDto dco_decode_reserves_chapter_dto(dynamic raw);
+
+  @protected
+  ReservesDetailDataDto dco_decode_reserves_detail_data_dto(dynamic raw);
+
+  @protected
+  ReservesDetailResultDto dco_decode_reserves_detail_result_dto(dynamic raw);
+
+  @protected
+  ReservesSearchDataDto dco_decode_reserves_search_data_dto(dynamic raw);
+
+  @protected
+  ReservesSearchResultDto dco_decode_reserves_search_result_dto(dynamic raw);
 
   @protected
   SavedLearnCourseFileDto dco_decode_saved_learn_course_file_dto(dynamic raw);
@@ -1785,6 +1809,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
       SseDeserializer deserializer);
 
   @protected
+  List<ReservesBookDto> sse_decode_list_reserves_book_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  List<ReservesChapterDto> sse_decode_list_reserves_chapter_dto(
+      SseDeserializer deserializer);
+
+  @protected
   List<ScheduleEventDto> sse_decode_list_schedule_event_dto(
       SseDeserializer deserializer);
 
@@ -2000,6 +2032,29 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ReadSourceDto sse_decode_read_source_dto(SseDeserializer deserializer);
+
+  @protected
+  ReservesBookDto sse_decode_reserves_book_dto(SseDeserializer deserializer);
+
+  @protected
+  ReservesChapterDto sse_decode_reserves_chapter_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  ReservesDetailDataDto sse_decode_reserves_detail_data_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  ReservesDetailResultDto sse_decode_reserves_detail_result_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  ReservesSearchDataDto sse_decode_reserves_search_data_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  ReservesSearchResultDto sse_decode_reserves_search_result_dto(
+      SseDeserializer deserializer);
 
   @protected
   SavedLearnCourseFileDto sse_decode_saved_learn_course_file_dto(
@@ -2954,6 +3009,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
       List<ProgramCourseSetDto> self, SseSerializer serializer);
 
   @protected
+  void sse_encode_list_reserves_book_dto(
+      List<ReservesBookDto> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_reserves_chapter_dto(
+      List<ReservesChapterDto> self, SseSerializer serializer);
+
+  @protected
   void sse_encode_list_schedule_event_dto(
       List<ScheduleEventDto> self, SseSerializer serializer);
 
@@ -3175,6 +3238,30 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_read_source_dto(ReadSourceDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_reserves_book_dto(
+      ReservesBookDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_reserves_chapter_dto(
+      ReservesChapterDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_reserves_detail_data_dto(
+      ReservesDetailDataDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_reserves_detail_result_dto(
+      ReservesDetailResultDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_reserves_search_data_dto(
+      ReservesSearchDataDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_reserves_search_result_dto(
+      ReservesSearchResultDto self, SseSerializer serializer);
 
   @protected
   void sse_encode_saved_learn_course_file_dto(

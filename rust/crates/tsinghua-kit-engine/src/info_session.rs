@@ -831,6 +831,26 @@ impl InfoSessionAdapter {
                 "http",
                 crate::bank_read::GRADUATE_INCOME_MAPPING_TOKEN,
             ),
+            // The course-reserve catalogue lives on its own campus host, reached
+            // through one fixed WebVPN mapping.  Unlike the arms above, this
+            // hostname is **evidenced** rather than inferred: a WebVPN mapping
+            // token is the fixed ASCII prefix followed by AES-128-CFB of the
+            // hostname under the same fixed key and IV, and decoding this
+            // module's mapping token yields exactly this host.  The arm grants
+            // nothing on its own — the shared checks below still pin the
+            // scheme, port, userinfo and percent-encoding, and an input that
+            // arrives already mapped must sit inside this module's own mapping
+            // constant.
+            //
+            // The reference's recovery policy for this application is an
+            // identity login (`RESERVES_WEBVPN_TARGET`), which this engine
+            // deliberately does not implement as a second campus login; the
+            // read rides the INFO/WebVPN session the transport already holds.
+            crate::reserves_read::RESERVES_WEBVPN_TARGET => (
+                "reserves.lib.tsinghua.edu.cn",
+                crate::reserves_read::RESERVES_MAPPING_SCHEME,
+                crate::reserves_read::RESERVES_MAPPING_TOKEN,
+            ),
             _ => {
                 if same_origin(&self.config.webvpn_base_url, &url) {
                     return Ok(target.clone());
