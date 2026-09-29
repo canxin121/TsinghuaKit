@@ -62,11 +62,8 @@ use tsinghua_kit_sdk::{
         NewsFavorites, NewsPage, NewsQuery, NewsSourceRef, NewsSubscriptionRef, NewsSubscriptions,
     },
     overview::{DailyOverview, OverviewSchedule, OverviewScheduleKind, OverviewTodo},
-    physical_exam::{PhysicalExamItem, PhysicalExamItems, PhysicalExamReport},
-    program::{
-        CourseCompletion, CourseFull, CourseSetCompletion, CourseSetFull, CourseSetKind,
-        CourseState, ProgramCompletion,
-    },
+    physical_exam::PhysicalExamReport,
+    program::{CourseSetKind, CourseState, ProgramCompletion},
     read::{
         CacheFreshness, IncompleteReason, ReadCoverage, ReadMetadata, ReadPolicy, ReadResult,
         ReadSource,
@@ -5461,6 +5458,46 @@ impl ClientHandle {
             .map_err(SdkErrorDto::from)
     }
 
+    /// Turns on or off the power socket of a seat from this Client's latest
+    /// socket read.
+    ///
+    /// Both handles must come from the same Client's own reads: the availability
+    /// result names the section and the seat handle names one seat of it, and the
+    /// Runtime re-checks the seat against the inventory it read.
+    ///
+    /// Unlike [`Self::library_reserve`], the seat handle is **not** consumed.
+    /// That is deliberate: the socket state is read back through
+    /// [`Self::library_sockets`], which is keyed by this very seat handle, so
+    /// spending it would leave the caller unable to learn what happened after an
+    /// outcome reported as `outcome_unconfirmed`. The write itself is still
+    /// dispatched at most once by the Runtime.
+    pub async fn library_set_socket_state(
+        &mut self,
+        availability_reference_id: String,
+        seat_reference_id: String,
+        is_available: bool,
+    ) -> Result<(), SdkErrorDto> {
+        let Some(availability) = self
+            .library_availability_references
+            .get(&availability_reference_id)
+            .cloned()
+        else {
+            return Err(context_mismatch("library"));
+        };
+        let Some(seat) = self
+            .library_seat_reference_ids
+            .iter()
+            .find_map(|(seat, id)| (*id == seat_reference_id).then(|| seat.clone()))
+        else {
+            return Err(context_mismatch("library"));
+        };
+        self.inner
+            .library()
+            .set_socket_state(&availability, &seat, is_available)
+            .await
+            .map_err(SdkErrorDto::from)
+    }
+
     /// Reads the classroom building directory and replaces its references.
     pub async fn classroom_buildings(
         &mut self,
@@ -7203,6 +7240,15 @@ mod tests {
         assert_eq!(cancel.service, "library");
         assert_eq!(cancel.code, "context_mismatch");
 
+        // The socket write is guarded by the same pair of handles, and an
+        // invented pair is refused the same way.
+        let socket = client
+            .library_set_socket_state(invented(), invented(), true)
+            .await
+            .unwrap_err();
+        assert_eq!(socket.service, "library");
+        assert_eq!(socket.code, "context_mismatch");
+
         // A window handle this Client never handed out is refused even when the
         // seat handle could not be one either: the pair must come from the same
         // Client, so the refusal never depends on which of the two is checked
@@ -7213,6 +7259,13 @@ mod tests {
             .unwrap_err();
         assert_eq!(window.service, "library");
         assert_eq!(window.code, "context_mismatch");
+
+        let socket_window = client
+            .library_set_socket_state(invented(), String::new(), false)
+            .await
+            .unwrap_err();
+        assert_eq!(socket_window.service, "library");
+        assert_eq!(socket_window.code, "context_mismatch");
 
         assert_eq!(
             client.auth_status().identity.state,

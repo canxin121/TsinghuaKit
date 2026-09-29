@@ -240,6 +240,13 @@ async fn compile_library_api(client: &mut tsinghua_kit::Client) -> Result<()> {
         let _: &LibrarySocketAvailability = sockets.data();
         if let Some(seat) = availability.data().seats().first() {
             let _ = library.reserve(window.reference(), seat.reference()).await;
+            // The socket switch takes the same pair of handles the booking takes,
+            // and the seat handle survives it so the socket read above stays
+            // usable for learning what the write did.
+            let _ = library
+                .set_socket_state(availability.data(), seat.reference(), true)
+                .await;
+            let _ = library.sockets(availability.data()).await?;
         }
     }
     let reservations = library.reservations().await?;

@@ -252,10 +252,11 @@ pub use library_read::{
 pub use library_write::{
     LIBRARY_BOOK_PATH_PREFIX, LIBRARY_BOOK_PATH_SUFFIX, LIBRARY_BOOKING_RECORD_PATH,
     LIBRARY_CANCEL_BOOKING_PATH_PREFIX, LibraryAccessToken, LibraryBookingRecord,
-    LibraryBookingRecords, LibraryWriteAdapter, LibraryWriteMethod, LibraryWriteOperation,
+    LibraryBookingRecords, LibrarySocketWriteAdapter, LibrarySocketWritePlan,
+    LibrarySocketWriteProfile, LibraryWriteAdapter, LibraryWriteMethod, LibraryWriteOperation,
     LibraryWriteOutcome, LibraryWriteParseError, LibraryWritePlan, LibraryWriteProfile,
-    LibraryWriteSessionPrerequisite, classify_library_write, extract_access_token,
-    parse_booking_records,
+    LibraryWriteSessionPrerequisite, classify_library_write, classify_socket_write,
+    extract_access_token, parse_booking_records,
 };
 pub use physical_exam_read::{
     PHYSICAL_EXAM_PATH, PHYSICAL_EXAM_QUERY, PHYSICAL_EXAM_WEBVPN_TARGET, PhysicalExamAdapter,

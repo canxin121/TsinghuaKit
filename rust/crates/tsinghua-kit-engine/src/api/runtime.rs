@@ -8008,6 +8008,26 @@ impl CampusRuntime {
         .await
     }
 
+    /// Turns on or off the power socket of one seat this Runtime's own seat read
+    /// returned.
+    ///
+    /// This is the one library write that leaves the seat-inventory mapping: the
+    /// socket service is hosted by the campus app origin and its request carries
+    /// no booking token.  The seat's provenance rule is unchanged — the seat must
+    /// be one this Runtime read for that section — and the write is dispatched
+    /// exactly once, so an unconfirmed outcome is never replayed.
+    pub async fn set_library_socket_state(
+        &mut self,
+        section_id: u64,
+        seat_id: u64,
+        is_available: bool,
+    ) -> Result<CampusRuntimeStatusDto, String> {
+        crate::telemetry::observe("library", "set_library_socket_state", async {
+            library_write_runtime::set_socket_state(self, section_id, seat_id, is_available).await
+        })
+        .await
+    }
+
     pub async fn load_info_news(
         &mut self,
         page: u32,

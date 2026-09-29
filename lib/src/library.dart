@@ -327,6 +327,23 @@ class LibraryClient {
   Future<void> cancel(LibraryReservationReference reference) => _sdkCall(
         () => _handle.libraryCancel(reservationReferenceId: reference._id),
       );
+
+  /// Turns the power socket of one seat on or off.
+  ///
+  /// The seat must belong to this Client's latest [seats] result for the same
+  /// section. Dispatched at most once, and unlike [reserve] the seat reference is
+  /// **not** spent, so [sockets] stays usable for re-reading the state this call
+  /// changed after a result reported as unconfirmed.
+  Future<void> setSocketState(
+    LibraryAvailabilityReference availability,
+    LibrarySeat seat, {
+    required bool available,
+  }) =>
+      _sdkCall(() => _handle.librarySetSocketState(
+            availabilityReferenceId: availability._id,
+            seatReferenceId: seat.reference._id,
+            isAvailable: available,
+          ));
 }
 
 ReadResult<LibraryDirectory> _libraryDirectoryResult(

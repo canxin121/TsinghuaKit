@@ -705,6 +705,19 @@ impl LibraryReadAdapter {
         )
     }
 
+    /// Creates the socket-state writer for the independently hosted campus app
+    /// endpoint while retaining this adapter's Cookie-aware transport.
+    ///
+    /// This is the write counterpart of [`Self::app_socket_status_adapter`] and
+    /// deliberately not a form of [`Self::write_adapter`]: the socket route is on
+    /// another origin and its request carries no library booking token, so it must
+    /// never be built from the seat-inventory mapping.
+    pub fn app_socket_write_adapter(
+        &self,
+    ) -> Result<crate::library_write::LibrarySocketWriteAdapter, LibraryAdapterError> {
+        crate::library_write::LibrarySocketWriteAdapter::for_app_service(self.transport.clone())
+    }
+
     pub async fn read_area_tree(&self) -> Result<LibraryAreaTreeDto, LibraryAdapterError> {
         let plan = self.profile.area_tree_request();
         let body = self.execute(&plan).await?;
@@ -1206,7 +1219,7 @@ pub(crate) fn validate_library_base_url(base_url: Url) -> Result<Url, LibraryAda
     Ok(base_url)
 }
 
-fn validate_socket_base_url(base_url: Url) -> Result<Url, LibraryAdapterError> {
+pub(crate) fn validate_socket_base_url(base_url: Url) -> Result<Url, LibraryAdapterError> {
     if !matches!(base_url.scheme(), "http" | "https")
         || base_url.host_str().is_none()
         || !base_url.username().is_empty()
@@ -1262,7 +1275,7 @@ pub(crate) fn normalize_library_base_url(mut base_url: Url) -> Result<Url, Libra
     Ok(base_url)
 }
 
-fn normalize_socket_base_url(mut base_url: Url) -> Result<Url, LibraryAdapterError> {
+pub(crate) fn normalize_socket_base_url(mut base_url: Url) -> Result<Url, LibraryAdapterError> {
     let path = base_url.path().trim_end_matches('/');
     let normalized = if path.is_empty() {
         "/".to_owned()

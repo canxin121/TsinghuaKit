@@ -1,8 +1,8 @@
 {
  "schema_version": 1,
- "source_revision": "711e15e110ce77a032bedf9287397c8519069a6b",
- "source_date": "2026-09-29",
- "scope": "Current source and the existing Rustdoc rendered from it; not an exhaustive semver API report or a live-validation result. The 2026-09-29 third refresh adds the read-only sports-venue resource and reservation boundaries (`体育场馆`) on top of the dormitory laundry and bottled-water third-party read boundaries, the teaching-evaluation form read and its one-shot submission, the per-course score lookup, bank-payroll and graduate-income, e-invoice, degree-program, physical-education, and teaching-evaluation list slices. A fourth refresh records the locally derived previous-policy grade point on the existing grade report: it adds a method and a constant, so no rendered item count, module count, or runtime line count moves with it. No live campus request was made for any of it. A fifth refresh records the four one-shot INFO news writes (favorite add/remove and subscription-rule add/remove) on the existing news surface: they add a module with no new DTO, four runtime methods, one draft struct and three enums, and two runtime state fields, so the module list and the root `pub use` count are unchanged while the rendered root item counts, the runtime method list, the runtime field count and the runtime line count move. This refresh also corrects two pre-existing recording errors that earlier refreshes carried, described in docs/api-refactor-plan.md section 63: the runtime `direct_state_field_count` recorded 112 while the true top-level field count at the previous revision was 113, and five names in `runtime.dto_structs` are not declared in runtime.rs at all (four live in the FFI crate and one in api/thos.rs). Four of the five entered the list with the sports refresh; the fifth has been there since before it. No live campus request was made for any of it, and no news write was sent to a live account. A sixth refresh records the library seat reservation writes: the one-shot booking and cancellation, and the reservation-list read whose rows are the only source of a cancellation handle. They add one module (`library_write`) with no new runtime DTO, three runtime methods, one runtime DTO pair for the reservation list, and five runtime state fields, so the root module count, the root `pub use` count, the rendered root item counts, the runtime state field count and the runtime line count all move while the runtime DTO list grows by the two reservation DTOs. No live campus request was made for any of it, and neither the booking nor the cancellation was sent to a live account. It also records two pre-existing recording errors that this refresh corrects: the previous revision's runtime line count was recorded one line higher than the file (28279 recorded, 28278 measured), which is why the file appears to move by 157 lines here; and the `direct_state_field_count` of 115 at the previous revision is confirmed correct, so the 120 recorded here is exactly the five fields this slice adds.",
+ "source_revision": "473a8fed7ef1227d538512f59c66bcb870126e53",
+ "source_date": "2026-09-30",
+ "scope": "Current source and the existing Rustdoc rendered from it; not an exhaustive semver API report or a live-validation result. The 2026-09-29 third refresh adds the read-only sports-venue resource and reservation boundaries (`体育场馆`) on top of the dormitory laundry and bottled-water third-party read boundaries, the teaching-evaluation form read and its one-shot submission, the per-course score lookup, bank-payroll and graduate-income, e-invoice, degree-program, physical-education, and teaching-evaluation list slices. A fourth refresh records the locally derived previous-policy grade point on the existing grade report: it adds a method and a constant, so no rendered item count, module count, or runtime line count moves with it. No live campus request was made for any of it. A fifth refresh records the four one-shot INFO news writes (favorite add/remove and subscription-rule add/remove) on the existing news surface: they add a module with no new DTO, four runtime methods, one draft struct and three enums, and two runtime state fields, so the module list and the root `pub use` count are unchanged while the rendered root item counts, the runtime method list, the runtime field count and the runtime line count move. This refresh also corrects two pre-existing recording errors that earlier refreshes carried, described in docs/api-refactor-plan.md section 63: the runtime `direct_state_field_count` recorded 112 while the true top-level field count at the previous revision was 113, and five names in `runtime.dto_structs` are not declared in runtime.rs at all (four live in the FFI crate and one in api/thos.rs). Four of the five entered the list with the sports refresh; the fifth has been there since before it. No live campus request was made for any of it, and no news write was sent to a live account. A sixth refresh records the library seat reservation writes: the one-shot booking and cancellation, and the reservation-list read whose rows are the only source of a cancellation handle. They add one module (`library_write`) with no new runtime DTO, three runtime methods, one runtime DTO pair for the reservation list, and five runtime state fields, so the root module count, the root `pub use` count, the rendered root item counts, the runtime state field count and the runtime line count all move while the runtime DTO list grows by the two reservation DTOs. No live campus request was made for any of it, and neither the booking nor the cancellation was sent to a live account. It also records two pre-existing recording errors that this refresh corrects: the previous revision's runtime line count was recorded one line higher than the file (28279 recorded, 28278 measured), which is why the file appears to move by 157 lines here; and the `direct_state_field_count` of 115 at the previous revision is confirmed correct, so the 120 recorded here is exactly the five fields this slice adds. A seventh refresh records the library socket switch: the one-shot JSON POST that turns a seat's power socket on or off, on the independently hosted campus app origin. It adds no module, no runtime DTO and no runtime state field, and it moves no runtime method out of the existing `library` surface, so the module list, the root `pub use` count, the runtime DTO list and the runtime state field count are all unchanged; what moves is the rendered root item counts (three adapter/plan structs and one classifier function), the runtime method list (one method) and the runtime line count. It also refreshes the runtime free-function line numbers, which had been carried forward from an older revision since before the previous refresh, and it records the runtime line count as the file's own `wc -l`, correcting the predecessor's off-by-one (28436 recorded against 28435 measured at that revision). No live campus request was made for any of it, and no socket write was sent to a live account.",
  "methodology": "Public module/method/DTO declarations are counted from source. Rustdoc item links are deduplicated by class and href on the rendered crate root. Counts include deprecated or compatibility items; source line counts include inline tests.",
  "root_public_modules": [
   "api",
@@ -74,16 +74,16 @@
  ],
  "root_pub_use_statement_count": 53,
  "rendered_crate_root_item_counts": {
-  "struct": 320,
+  "struct": 323,
   "enum": 155,
-  "fn": 58,
+  "fn": 59,
   "constant": 55,
   "trait": 2,
   "type": 5
  },
  "runtime": {
   "path": "rust/crates/tsinghua-kit-engine/src/api/runtime.rs",
-  "line_count": 28436,
+  "line_count": 28455,
   "direct_state_field_count": 120,
   "dto_structs": [
    "AssessmentAnswersDto",
@@ -410,295 +410,300 @@
     "signature": "pub async fn cancel_library_booking( &mut self, selector: String, ) -> Result<CampusRuntimeStatusDto, String>"
    },
    {
+    "name": "set_library_socket_state",
+    "line": 8019,
+    "signature": "pub async fn set_library_socket_state( &mut self, section_id: u64, seat_id: u64, is_available: bool, ) -> Result<CampusRuntimeStatusDto, String>"
+   },
+   {
     "name": "load_info_news",
-    "line": 8011,
+    "line": 8031,
     "signature": "pub async fn load_info_news( &mut self, page: u32, page_size: u32, source_id: Option<String>, channel_id: Option<String>, ) -> Result<InfoNewsPageDto, String>"
    },
    {
     "name": "search_info_news",
-    "line": 8338,
+    "line": 8358,
     "signature": "pub async fn search_info_news( &mut self, page: u32, keyword: String, channel_filter_label: Option<String>, exact_match: bool, ) -> Result<InfoNewsPageDto, String>"
    },
    {
     "name": "load_info_news_detail",
-    "line": 8656,
+    "line": 8676,
     "signature": "pub async fn load_info_news_detail( &mut self, article_id: String, ) -> Result<InfoNewsDetailDto, String>"
    },
    {
     "name": "load_info_news_detail_result",
-    "line": 8675,
+    "line": 8695,
     "signature": "pub async fn load_info_news_detail_result( &mut self, article_id: String, ) -> Result<InfoNewsDetailResultDto, String>"
    },
    {
     "name": "load_library_area_tree",
-    "line": 9069,
+    "line": 9089,
     "signature": "pub async fn load_library_area_tree( &mut self, ) -> Result<crate::library_read::LibraryAreaTreeDto, String>"
    },
    {
     "name": "load_library_area_tree_result",
-    "line": 9082,
+    "line": 9102,
     "signature": "pub async fn load_library_area_tree_result( &mut self, ) -> Result<LibraryAreaTreeResultDto, String>"
    },
    {
     "name": "load_library_floors",
-    "line": 9289,
+    "line": 9309,
     "signature": "pub async fn load_library_floors( &mut self, library_id: u64, ) -> Result<crate::library_read::LibraryAreaTreeDto, String>"
    },
    {
     "name": "load_library_sections_for_day",
-    "line": 9334,
+    "line": 9354,
     "signature": "pub async fn load_library_sections_for_day( &mut self, floor_id: u64, day_offset: u8, ) -> Result<crate::library_read::LibraryAreaTreeDto, String>"
    },
    {
     "name": "load_library_day_segments",
-    "line": 9402,
+    "line": 9422,
     "signature": "pub async fn load_library_day_segments( &mut self, section_id: u64, ) -> Result<crate::library_read::LibraryDaySegmentsDto, String>"
    },
    {
     "name": "load_library_day_segments_result",
-    "line": 9415,
+    "line": 9435,
     "signature": "pub async fn load_library_day_segments_result( &mut self, section_id: u64, ) -> Result<LibraryDaySegmentsResultDto, String>"
    },
    {
     "name": "load_library_day_segments_for_day_result",
-    "line": 9426,
+    "line": 9446,
     "signature": "pub async fn load_library_day_segments_for_day_result( &mut self, section_id: u64, day_offset: u8, ) -> Result<LibraryDaySegmentsResultDto, String>"
    },
    {
     "name": "load_library_seats",
-    "line": 9714,
+    "line": 9734,
     "signature": "pub async fn load_library_seats( &mut self, area_id: u64, segment_id: u64, day: String, start_time: String, end_time: String, ) -> Result<crate::library_read::LibrarySeatAvailabilityDto, String>"
    },
    {
     "name": "load_library_socket_status",
-    "line": 9833,
+    "line": 9853,
     "signature": "pub async fn load_library_socket_status( &mut self, section_id: u64, ) -> Result<crate::library_read::LibrarySocketStatusesDto, String>"
    },
    {
     "name": "load_classroom_buildings",
-    "line": 9885,
+    "line": 9905,
     "signature": "pub async fn load_classroom_buildings(&mut self) -> Result<Vec<ClassroomBuildingDto>, String>"
    },
    {
     "name": "load_classroom_buildings_result",
-    "line": 9895,
+    "line": 9915,
     "signature": "pub async fn load_classroom_buildings_result( &mut self, ) -> Result<ClassroomBuildingsResultDto, String>"
    },
    {
     "name": "load_classroom_state",
-    "line": 10028,
+    "line": 10048,
     "signature": "pub async fn load_classroom_state( &mut self, building_index: u32, week_number: u32, ) -> Result<ClassroomStateResultDto, String>"
    },
    {
     "name": "load_physical_exam_result",
-    "line": 10102,
+    "line": 10122,
     "signature": "pub async fn load_physical_exam_result(&mut self) -> Result<PhysicalExamResultDto, String>"
    },
    {
     "name": "load_electricity_remainder",
-    "line": 10165,
+    "line": 10185,
     "signature": "pub async fn load_electricity_remainder(&mut self) -> Result<ElectricityRemainderDto, String>"
    },
    {
     "name": "load_electricity_remainder_result",
-    "line": 10179,
+    "line": 10199,
     "signature": "pub async fn load_electricity_remainder_result( &mut self, ) -> Result<ElectricityRemainderResultDto, String>"
    },
    {
     "name": "load_electricity_payment_history",
-    "line": 10422,
+    "line": 10442,
     "signature": "pub async fn load_electricity_payment_history( &mut self, ) -> Result<ElectricityPaymentHistoryDto, String>"
    },
    {
     "name": "load_electricity_payment_history_result",
-    "line": 10437,
+    "line": 10457,
     "signature": "pub async fn load_electricity_payment_history_result( &mut self, ) -> Result<ElectricityPaymentHistoryResultDto, String>"
    },
    {
     "name": "login_tunet",
-    "line": 10647,
+    "line": 10667,
     "signature": "pub async fn login_tunet( &mut self, username: String, password: String, ) -> Result<CampusRuntimeStatusDto, String>"
    },
    {
     "name": "load_tunet_status",
-    "line": 10730,
+    "line": 10750,
     "signature": "pub async fn load_tunet_status(&mut self) -> Result<TunetNetworkStatusDto, String>"
    },
    {
     "name": "disconnect_tunet",
-    "line": 10823,
+    "line": 10843,
     "signature": "pub async fn disconnect_tunet(&mut self) -> Result<TunetNetworkStatusDto, String>"
    },
    {
     "name": "load_campus_card_account_result",
-    "line": 10867,
+    "line": 10887,
     "signature": "pub async fn load_campus_card_account_result( &mut self, ) -> Result<CampusCardAccountResultDto, String>"
    },
    {
     "name": "load_campus_card_account",
-    "line": 11124,
+    "line": 11144,
     "signature": "pub async fn load_campus_card_account( &mut self, ) -> Result<crate::campus_card_read::CampusCardAccount, String>"
    },
    {
     "name": "load_campus_card_transactions",
-    "line": 11134,
+    "line": 11154,
     "signature": "pub async fn load_campus_card_transactions( &mut self, start_date: String, end_date: String, ) -> Result<crate::campus_card_read::CampusCardTransactionReport, String>"
    },
    {
     "name": "load_campus_card_transactions_result",
-    "line": 11154,
+    "line": 11174,
     "signature": "pub async fn load_campus_card_transactions_result( &mut self, start_date: String, end_date: String, transaction_type: String, ) -> Result<CampusCardTransactionsResultDto, String>"
    },
    {
     "name": "usereg_login_phase",
-    "line": 11467,
+    "line": 11487,
     "signature": "pub fn usereg_login_phase(&mut self) -> String"
    },
    {
     "name": "cancel_usereg_login",
-    "line": 11506,
+    "line": 11526,
     "signature": "pub fn cancel_usereg_login(&mut self)"
    },
    {
     "name": "start_usereg_login",
-    "line": 11515,
+    "line": 11535,
     "signature": "pub async fn start_usereg_login( &mut self, username: String, password: String, ) -> Result<UseregCaptchaDto, String>"
    },
    {
     "name": "start_usereg_login_with_options",
-    "line": 11526,
+    "line": 11546,
     "signature": "pub async fn start_usereg_login_with_options( &mut self, username: String, password: String, remember_credentials: bool, ) -> Result<UseregCaptchaDto, String>"
    },
    {
     "name": "refresh_usereg_captcha",
-    "line": 11627,
+    "line": 11647,
     "signature": "pub async fn refresh_usereg_captcha(&mut self) -> Result<UseregCaptchaDto, String>"
    },
    {
     "name": "complete_usereg_login",
-    "line": 11660,
+    "line": 11680,
     "signature": "pub async fn complete_usereg_login( &mut self, verify_code: String, sms_code: Option<String>, ) -> Result<CampusRuntimeStatusDto, String>"
    },
    {
     "name": "complete_usereg_login_with_result",
-    "line": 11672,
+    "line": 11692,
     "signature": "pub async fn complete_usereg_login_with_result( &mut self, verify_code: String, sms_code: Option<String>, ) -> Result<(CampusRuntimeStatusDto, bool), String>"
    },
    {
     "name": "load_usereg_account",
-    "line": 11842,
+    "line": 11862,
     "signature": "pub async fn load_usereg_account(&mut self) -> Result<UseregAccountDto, String>"
    },
    {
     "name": "load_usereg_devices",
-    "line": 11881,
+    "line": 11901,
     "signature": "pub async fn load_usereg_devices(&mut self) -> Result<Vec<UseregDeviceDto>, String>"
    },
    {
     "name": "load_usereg_balance",
-    "line": 11955,
+    "line": 11975,
     "signature": "pub async fn load_usereg_balance(&mut self) -> Result<UseregBalanceDto, String>"
    },
    {
     "name": "disconnect_usereg_device",
-    "line": 11983,
+    "line": 12003,
     "signature": "pub async fn disconnect_usereg_device( &mut self, index: u32, ) -> Result<CampusRuntimeStatusDto, String>"
    },
    {
     "name": "service_catalog",
-    "line": 12039,
+    "line": 12059,
     "signature": "pub fn service_catalog(&self) -> ServiceCatalogDto"
    },
    {
     "name": "establish_service_session",
-    "line": 12443,
+    "line": 12463,
     "signature": "pub async fn establish_service_session( &mut self, service: String, ) -> Result<CampusRuntimeStatusDto, String>"
    },
    {
     "name": "logout",
-    "line": 13244,
+    "line": 13264,
     "signature": "pub fn logout(&mut self) -> Result<CampusRuntimeStatusDto, String>"
    },
    {
     "name": "load_program_completion_result",
-    "line": 15135,
+    "line": 15155,
     "signature": "pub async fn load_program_completion_result( &mut self, ) -> Result<ProgramCompletionResultDto, String>"
    },
    {
     "name": "load_assessment_list_result",
-    "line": 15262,
+    "line": 15282,
     "signature": "pub async fn load_assessment_list_result(&mut self) -> Result<AssessmentListResultDto, String>"
    },
    {
     "name": "load_assessment_form_result",
-    "line": 15337,
+    "line": 15357,
     "signature": "pub async fn load_assessment_form_result( &mut self, reference: &AssessmentRef, ) -> Result<AssessmentFormViewDto, String>"
    },
    {
     "name": "submit_assessment_form",
-    "line": 15395,
+    "line": 15415,
     "signature": "pub async fn submit_assessment_form( &mut self, answers: &AssessmentAnswers, ) -> Result<CampusRuntimeStatusDto, String>"
    },
    {
     "name": "load_invoice_list_result",
-    "line": 15512,
+    "line": 15532,
     "signature": "pub async fn load_invoice_list_result( &mut self, page: u32, ) -> Result<InvoiceListResultDto, String>"
    },
    {
     "name": "load_invoice_document_result",
-    "line": 15603,
+    "line": 15623,
     "signature": "pub async fn load_invoice_document_result( &mut self, reference: &crate::invoice_read::InvoiceRef, ) -> Result<InvoiceDocumentResultDto, String>"
    },
    {
     "name": "load_bank_payment_ledger_result",
-    "line": 15743,
+    "line": 15763,
     "signature": "pub async fn load_bank_payment_ledger_result( &mut self, ledger: BankLedger, ) -> Result<BankPaymentLedgerResultDto, String>"
    },
    {
     "name": "load_graduate_income_result",
-    "line": 15897,
+    "line": 15917,
     "signature": "pub async fn load_graduate_income_result( &mut self, begin: &str, end: &str, ) -> Result<GraduateIncomeResultDto, String>"
    },
    {
     "name": "load_sports_resources_result",
-    "line": 16052,
+    "line": 16072,
     "signature": "pub async fn load_sports_resources_result( &mut self, gym_id: &str, item_id: &str, date: &str, ) -> Result<SportsResourcesResultDto, String>"
    },
    {
     "name": "load_sports_records_result",
-    "line": 16129,
+    "line": 16149,
     "signature": "pub async fn load_sports_records_result(&mut self) -> Result<SportsRecordsResultDto, String>"
    }
   ],
   "public_free_functions": [
    {
     "name": "backend_validation_second_factor_plan",
-    "line": 376,
+    "line": 390,
     "signature": "pub fn backend_validation_second_factor_plan( methods: &[String], code: Option<String>, ) -> BackendSecondFactorPlan"
    },
    {
     "name": "backend_validation_wechat_action",
-    "line": 400,
+    "line": 414,
     "signature": "pub fn backend_validation_wechat_action( methods: &[String], code: Option<String>, explicit_send_enabled: bool, ) -> BackendWechatSecondFactorAction"
    },
    {
     "name": "create_runtime",
-    "line": 3127,
+    "line": 3238,
     "signature": "pub fn create_runtime( semester: String, graduate: bool, cache_path: String, ) -> Result<CampusRuntime, String>"
    },
    {
     "name": "infer_academic_stage",
-    "line": 3179,
+    "line": 3290,
     "signature": "pub fn infer_academic_stage(username: String) -> Option<bool>"
    },
    {
     "name": "create_backend_validation_runtime",
-    "line": 3187,
+    "line": 3298,
     "signature": "pub fn create_backend_validation_runtime( semester: String, graduate: bool, device_cache_path: String, ) -> Result<CampusRuntime, String>"
    },
    {
     "name": "run_backend_validation_batch",
-    "line": 3218,
+    "line": 3329,
     "signature": "pub async fn run_backend_validation_batch( runtime: &mut CampusRuntime, cases: String, ledger_path: String, ) -> Result<String, String>"
    }
   ]

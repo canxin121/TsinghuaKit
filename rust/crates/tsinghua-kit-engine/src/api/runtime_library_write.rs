@@ -326,6 +326,79 @@ pub(super) async fn cancel_booking(
     Ok(status)
 }
 
+/// Turns on or off the power socket of one seat whose inventory this Runtime
+/// read.
+///
+/// The socket service is hosted by the campus app origin rather than the seat
+/// mapping, and its request carries no library booking token, so this is the one
+/// library write that goes through the socket writer instead of the booking
+/// writer.  What it keeps from the booking path is the evidence rule: the seat
+/// must be one this Runtime's own inventory read returned for that section, so a
+/// caller cannot name a socket the service never reported.
+///
+/// Like every other write here, the request is dispatched exactly once.  An
+/// outcome the service did not confirm is reported as unconfirmed and is never
+/// sent again, so a caller learns the socket's state by reading it again.
+pub(super) async fn set_socket_state(
+    runtime: &mut CampusRuntime,
+    section_id: u64,
+    seat_id: u64,
+    is_available: bool,
+) -> Result<CampusRuntimeStatusDto, String> {
+    runtime.allow_live_operation()?;
+    if section_id == 0 || seat_id == 0 {
+        return runtime.fail("图书馆插座选择无效");
+    }
+    runtime.ensure_library_reader_session().await?;
+    if runtime.library_seat_hierarchy_active
+        && !runtime.library_seat_section_ids.contains(&section_id)
+    {
+        return Err(runtime.record_business_failure(
+            "library",
+            "library_socket_write",
+            "library_section_unconfirmed",
+        ));
+    }
+    // The seat proof: this Runtime read this exact seat as part of the inventory
+    // of a window belonging to this section.  The category and availability the
+    // booking path needs are not consulted — the socket service has its own
+    // state — but the seat's provenance is the same.
+    let seat_is_confirmed =
+        runtime
+            .library_confirmed_seats
+            .iter()
+            .any(|((confirmed_section, _segment), seats)| {
+                *confirmed_section == section_id && seats.contains_key(&seat_id)
+            });
+    if !seat_is_confirmed {
+        return Err(runtime.record_business_failure(
+            "library",
+            "library_socket_write",
+            "library_seat_unconfirmed",
+        ));
+    }
+    let Some(adapter) = runtime.library_adapter.as_ref() else {
+        return Err("图书馆服务会话未建立".to_owned());
+    };
+    let adapter = adapter
+        .app_socket_write_adapter()
+        .map_err(|error| format!("图书馆插座写入适配器不可用（{}）", error.diagnostic_code()))?;
+    let plan = match adapter.socket_state_request(seat_id, is_available) {
+        Ok(plan) => plan,
+        Err(_error) => {
+            return Err(runtime.record_business_failure(
+                "library",
+                "library_socket_write",
+                "library_write_request",
+            ));
+        }
+    };
+    debug_assert_eq!(plan.operation, LibraryWriteOperation::SetSocketState);
+    let outcome = adapter.set_socket_state(&plan).await;
+    runtime.persist_identity_resume_state_after_live_read("library");
+    finish_write(runtime, "library_socket_write", outcome)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

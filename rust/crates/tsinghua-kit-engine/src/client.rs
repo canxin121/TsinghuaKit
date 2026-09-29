@@ -2554,6 +2554,42 @@ impl LibraryClient<'_> {
             *self.section_generation,
         )
     }
+
+    /// Turns on or off the power socket of one seat of a live availability
+    /// result.
+    ///
+    /// The seat must be one of this client's own latest availability result for
+    /// that window's section, which is the same proof [`Self::reserve`] uses; the
+    /// Runtime re-checks the seat against the inventory it read. The socket
+    /// service is a separate host from the seat inventory, so this write is the
+    /// one library mutation that does not carry the library's own booking token.
+    ///
+    /// The request is dispatched at most once. An outcome the service does not
+    /// confirm is reported as [`ErrorCode::OutcomeUnconfirmed`] and is never
+    /// resolved by sending it again, so the caller learns the socket's state by
+    /// reading [`Self::sockets`] again — which is exactly why the seat reference
+    /// is **not** spent here: the socket read is keyed by that same reference, and
+    /// consuming it would make the recovery path unreachable.
+    pub async fn set_socket_state(
+        &mut self,
+        availability: &LibraryAvailability,
+        seat: &SeatRef,
+        is_available: bool,
+    ) -> Result<(), Error> {
+        if !self.section_is_current(&availability.section)
+            || !seat.belongs_to(&availability.section)
+        {
+            return Err(Error::new(Service::Library, ErrorCode::ContextMismatch));
+        }
+        let section_id = availability.section.id;
+        let seat_id = seat.id;
+        self.runtime.clear_library_failure_code();
+        self.runtime
+            .set_library_socket_state(section_id, seat_id, is_available)
+            .await
+            .map_err(|_| library_failure(self.runtime))?;
+        Ok(())
+    }
 }
 
 fn library_failure(runtime: &CampusRuntime) -> Error {

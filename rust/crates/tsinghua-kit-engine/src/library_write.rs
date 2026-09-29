@@ -51,9 +51,10 @@ use thiserror::Error;
 
 use crate::campus_html::{self, PageClass, RawElement, ScanError};
 use crate::library_read::{
-    LIBRARY_HOME_PATH, LibraryAdapterError, LibraryRequestError, LibrarySessionPrerequisite,
-    is_library_login_response, looks_like_html, path_within_base, query_matches,
-    redirect_leaves_origin, resolve_location, same_origin,
+    LIBRARY_HOME_PATH, LIBRARY_SOCKET_STATUS_ORIGIN, LIBRARY_SOCKET_STATUS_PATH,
+    LibraryAdapterError, LibraryRequestError, LibrarySessionPrerequisite,
+    is_library_login_response, looks_like_html, normalize_socket_base_url, path_within_base,
+    query_matches, redirect_leaves_origin, resolve_location, same_origin, validate_socket_base_url,
 };
 use crate::transport::{CampusHttpTransport, CampusTextResponse, TransportError};
 
@@ -84,6 +85,20 @@ const MAX_ACCESS_TOKEN_CHARS: usize = 4096;
 const MAX_WRITE_RESPONSE_BYTES: usize = 64 * 1024;
 /// The longest cancellation identifier this module will put into a path.
 const MAX_CANCELLATION_ID_CHARS: usize = 64;
+
+/// The socket-state write, which is the one library write that does **not** live
+/// on the seat-inventory mapping.
+///
+/// The public clients reach it at the campus app origin with a JSON body
+/// `{"seatId": <id>, "isavailable": <bool>}`, and the observed reference never
+/// inspects the answer — it only requires the response to be ok.  This module
+/// therefore defines its own success predicate from the service's own answer
+/// rather than inheriting "whatever came back is fine": see
+/// [`classify_socket_write`].  The route and body shape come from the observed
+/// contract; the acceptance rule is this module's own decision and is documented
+/// as such.
+const SOCKET_WRITE_SEAT_FIELD: &str = "seatId";
+const SOCKET_WRITE_STATE_FIELD: &str = "isavailable";
 
 /// The column count the reference observes for one reservation row, and the
 /// four columns it reads from that row.  See the module documentation: the
@@ -125,12 +140,13 @@ pub enum LibraryWriteMethod {
 pub enum LibraryWriteOperation {
     BookSeat,
     CancelBooking,
+    SetSocketState,
 }
 
 impl LibraryWriteOperation {
     /// Returns whether this operation changes the account's reservations.
     ///
-    /// Both operations here do, so the answer is always `true`; it exists so a
+    /// Every operation here does, so the answer is always `true`; it exists so a
     /// read-shaped operation cannot be added to this profile and dispatched
     /// through the one-shot write path by accident.
     pub const fn is_write(self) -> bool {
@@ -389,6 +405,97 @@ impl LibraryWriteProfile {
     }
 }
 
+/// Builds the campus app's socket-state plan from one validated seat identifier.
+///
+/// The plan is deliberately its own type rather than a [`LibraryWritePlan`]:
+/// that plan's path is relative to the seat-inventory mapping this module's
+/// adapter owns, and the socket route is on a different origin entirely.  Keeping
+/// the two apart means a socket plan can never be dispatched through the booking
+/// writer (whose form would carry the library's own booking token to an origin
+/// that has no use for it).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct LibrarySocketWriteProfile;
+
+impl LibrarySocketWriteProfile {
+    pub const fn new() -> Self {
+        Self
+    }
+
+    /// Builds the plan that turns one seat's socket on or off.
+    ///
+    /// `seat_id` is the inventory's own seat identifier, which the Runtime may
+    /// only supply from a seat read it performed itself.
+    pub fn socket_state_request(
+        &self,
+        seat_id: u64,
+        is_available: bool,
+    ) -> Result<LibrarySocketWritePlan, LibraryRequestError> {
+        if seat_id == 0 {
+            return Err(LibraryRequestError::InvalidIdentifier { field: "seat_id" });
+        }
+        Ok(LibrarySocketWritePlan {
+            operation: LibraryWriteOperation::SetSocketState,
+            method: LibraryWriteMethod::Post,
+            path: LIBRARY_SOCKET_STATUS_PATH.to_owned(),
+            seat_id,
+            is_available,
+        })
+    }
+}
+
+/// A transport-neutral JSON write plan for the campus app's socket endpoint.
+///
+/// The body carries exactly the two observed fields and no others; both values
+/// live in private fields, so a plan cannot be read back into a second request
+/// and its `Debug` prints the field names instead of the seat it names.
+#[derive(Clone, PartialEq, Eq)]
+pub struct LibrarySocketWritePlan {
+    pub operation: LibraryWriteOperation,
+    pub method: LibraryWriteMethod,
+    pub path: String,
+    seat_id: u64,
+    is_available: bool,
+}
+
+impl LibrarySocketWritePlan {
+    /// Returns the JSON body's field names.  The seat identifier is not a
+    /// credential, but it is the service's own handle for one seat, so it is
+    /// reported as presence rather than printed.
+    pub fn body_fields(&self) -> [&'static str; 2] {
+        [SOCKET_WRITE_SEAT_FIELD, SOCKET_WRITE_STATE_FIELD]
+    }
+
+    /// Returns the target state the plan would ask the service for.
+    pub fn is_available(&self) -> bool {
+        self.is_available
+    }
+
+    fn body(&self) -> serde_json::Value {
+        let mut body = serde_json::Map::new();
+        body.insert(
+            SOCKET_WRITE_SEAT_FIELD.to_owned(),
+            serde_json::Value::from(self.seat_id),
+        );
+        body.insert(
+            SOCKET_WRITE_STATE_FIELD.to_owned(),
+            serde_json::Value::from(self.is_available),
+        );
+        serde_json::Value::Object(body)
+    }
+}
+
+impl fmt::Debug for LibrarySocketWritePlan {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("LibrarySocketWritePlan")
+            .field("operation", &self.operation)
+            .field("method", &self.method)
+            .field("has_relative_path", &self.path.starts_with('/'))
+            .field("body_fields", &self.body_fields())
+            .finish()
+    }
+}
+
 /// Extracts the booking token from the library home page.
 ///
 /// The reference locates the value by the literal `access_token` and then takes
@@ -565,6 +672,119 @@ pub fn classify_library_write(body: &str) -> LibraryWriteOutcome {
         Some(serde_json::Value::Bool(false)) => LibraryWriteOutcome::Refused,
         _ => LibraryWriteOutcome::Unrecognized,
     }
+}
+
+/// Reads the campus app's own answer to a socket-state write.
+///
+/// The observed reference sends this body and then discards whatever comes
+/// back, so the reference offers **no** acceptance evidence.  Rather than
+/// inherit "any answer is fine" — which would report a refused or unrecognised
+/// write as a success — this module accepts only an answer that says so in one
+/// of the shapes the campus services are known to use, and reports everything
+/// else the way every other unreadable write here is reported: as an outcome
+/// the service did not confirm, never as a failure to retry.  The shapes
+/// accepted are:
+///
+/// * an empty body or a body of only whitespace — the endpoint answers `200`
+///   with no payload when it applied the change, and this is the only
+///   non-`2xx`-shaped evidence the observed deployment gives;
+/// * a JSON envelope whose `status`/`result`/`success` is `1` or `true` or the
+///   literal `"success"`, with no failure marker anywhere in the envelope;
+/// * the literal `OK`, again with no failure marker.
+///
+/// A JSON envelope with a falsy `status`/`result`/`success`, any explicit failure
+/// wording, HTML, or anything this reader cannot classify is *not* an acceptance.
+pub fn classify_socket_write(body: &str) -> LibraryWriteOutcome {
+    let trimmed = strip_utf8_bom(body).trim();
+    if trimmed.len() > MAX_WRITE_RESPONSE_BYTES || looks_like_html(trimmed) {
+        return LibraryWriteOutcome::Unrecognized;
+    }
+    if trimmed.is_empty() {
+        // The observed deployment answers this route with an empty body when it
+        // applied the change; the reference treats that as success, and there is
+        // no failure evidence in an empty body to contradict it.
+        return LibraryWriteOutcome::Accepted;
+    }
+    if trimmed.eq_ignore_ascii_case("ok") {
+        return LibraryWriteOutcome::Accepted;
+    }
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(trimmed) else {
+        return LibraryWriteOutcome::Unrecognized;
+    };
+    let Some(envelope) = value.as_object() else {
+        return LibraryWriteOutcome::Unrecognized;
+    };
+    if has_socket_write_failure_marker(envelope) {
+        return LibraryWriteOutcome::Refused;
+    }
+    for field in ["status", "result", "success"] {
+        match envelope.get(field) {
+            // A flag the service itself set to a falsy value is the service's
+            // own refusal, exactly as it is on the booking route.  A numeric
+            // value other than 1 is read the same way rather than being waved
+            // through, because this route's envelope is unobserved and a
+            // non-acceptance must not become a success by default.
+            Some(serde_json::Value::Number(number)) => {
+                return if number.as_i64() == Some(1) {
+                    LibraryWriteOutcome::Accepted
+                } else if number.as_i64().is_some() {
+                    LibraryWriteOutcome::Refused
+                } else {
+                    LibraryWriteOutcome::Unrecognized
+                };
+            }
+            Some(serde_json::Value::Bool(true)) => return LibraryWriteOutcome::Accepted,
+            Some(serde_json::Value::Bool(false)) => return LibraryWriteOutcome::Refused,
+            Some(serde_json::Value::String(text)) => {
+                return if text.trim().eq_ignore_ascii_case("success") {
+                    LibraryWriteOutcome::Accepted
+                } else {
+                    LibraryWriteOutcome::Refused
+                };
+            }
+            _ => {}
+        }
+    }
+    LibraryWriteOutcome::Unrecognized
+}
+
+/// Reports whether a socket write's answer carries explicit failure evidence.
+///
+/// The socket envelope's field names are not observed, so the markers are the
+/// conventional ones the campus JSON services use.  A `status: 0` is **not**
+/// treated as a failure here: the campus services use zero for success in some
+/// legacy envelopes, and this route's own envelope is unobserved, so a zero says
+/// nothing this module can act on and the answer is reported as unreadable
+/// instead of as a refusal.
+fn has_socket_write_failure_marker(envelope: &serde_json::Map<String, serde_json::Value>) -> bool {
+    use serde_json::Value;
+    let text_marker = |value: &Value| {
+        value.as_str().is_some_and(|text| {
+            let text = text.trim().to_ascii_lowercase();
+            matches!(
+                text.as_str(),
+                "error"
+                    | "fail"
+                    | "failed"
+                    | "failure"
+                    | "forbidden"
+                    | "unauthorized"
+                    | "错误"
+                    | "失败"
+                    | "无权限"
+                    | "拒绝"
+            ) || text.starts_with("error ")
+                || text.starts_with("fail")
+                || text.starts_with("failed")
+                || text.starts_with("failure")
+        })
+    };
+    envelope.get("success").and_then(Value::as_bool) == Some(false)
+        || envelope.get("result").and_then(Value::as_bool) == Some(false)
+        || ["message", "msg", "error", "errorMessage"]
+            .iter()
+            .filter_map(|field| envelope.get(*field))
+            .any(text_marker)
 }
 
 /// One-shot booking client that reuses the caller's Cookie-aware transport.
@@ -886,6 +1106,204 @@ impl fmt::Debug for LibraryWriteAdapter {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("LibraryWriteAdapter")
+            .field("scheme", &self.base_url.scheme())
+            .field("host", &self.base_url.host_str())
+            .field("has_opaque_path", &(!self.base_url.path().is_empty()))
+            .field("profile", &self.profile)
+            .finish()
+    }
+}
+
+/// One-shot writer for the campus app's socket-state route.
+///
+/// This is the one library write that leaves the seat-inventory mapping: the
+/// socket endpoint is hosted by the campus app origin while the seat inventory is
+/// reached through an INFO/WebVPN handoff.  The writer therefore validates its
+/// own origin and its own path, and it carries **no** library booking token —
+/// the observed request has a JSON body of two fields and nothing else.
+///
+/// Like the booking writer it dispatches exactly once through
+/// `CampusHttpTransport::execute_once_exclusive` and never follows a redirect,
+/// because a second send of a write whose effect is unknown is a replay of it.
+pub struct LibrarySocketWriteAdapter {
+    base_url: Url,
+    transport: CampusHttpTransport,
+    profile: LibrarySocketWriteProfile,
+}
+
+impl LibrarySocketWriteAdapter {
+    /// Builds a writer against the observed direct campus-app origin.
+    pub fn for_app_service(transport: CampusHttpTransport) -> Result<Self, LibraryAdapterError> {
+        let base_url = Url::parse(LIBRARY_SOCKET_STATUS_ORIGIN)
+            .map_err(|_| LibraryAdapterError::InvalidBaseUrl)?;
+        Self::try_with_transport(base_url, transport)
+    }
+
+    /// Builds a writer with a caller-provided origin, while retaining the
+    /// caller's Cookie jar.  The origin and path guard is the same one the
+    /// socket reader applies, so a fixture or an opaque mapping is validated
+    /// identically whichever direction the request travels.
+    pub fn try_with_transport(
+        base_url: Url,
+        transport: CampusHttpTransport,
+    ) -> Result<Self, LibraryAdapterError> {
+        let base_url = normalize_socket_base_url(validate_socket_base_url(base_url)?)?;
+        Ok(Self {
+            base_url,
+            transport,
+            profile: LibrarySocketWriteProfile::new(),
+        })
+    }
+
+    pub fn transport(&self) -> &CampusHttpTransport {
+        &self.transport
+    }
+
+    pub fn profile(&self) -> LibrarySocketWriteProfile {
+        self.profile
+    }
+
+    /// Builds the plan that turns one seat's socket on or off.
+    pub fn socket_state_request(
+        &self,
+        seat_id: u64,
+        is_available: bool,
+    ) -> Result<LibrarySocketWritePlan, LibraryRequestError> {
+        self.profile.socket_state_request(seat_id, is_available)
+    }
+
+    /// Dispatches one socket-state write, exactly once.
+    pub async fn set_socket_state(
+        &self,
+        plan: &LibrarySocketWritePlan,
+    ) -> Result<LibraryWriteOutcome, LibraryAdapterError> {
+        if plan.operation != LibraryWriteOperation::SetSocketState
+            || plan.method != LibraryWriteMethod::Post
+        {
+            return Err(LibraryAdapterError::WriteOperation);
+        }
+        let endpoint = self.endpoint(&plan.path)?;
+        let expected_path = endpoint.path().to_owned();
+        let body = plan.body();
+        let request = self
+            .transport
+            .client()
+            .post(endpoint)
+            .header(CONTENT_TYPE, "application/json")
+            .body(body.to_string())
+            .build()
+            .map_err(|_| LibraryAdapterError::InvalidBaseUrl)?;
+        drop(body);
+        let response = match self
+            .transport
+            .execute_once_exclusive(self.transport.client(), request)
+            .await
+        {
+            Ok(response) => response,
+            Err(_error) => {
+                // The request left this process, so its effect cannot be told
+                // apart from an answer that was lost.  Nothing is sent again and
+                // the caller is told the outcome is unknown.
+                return Ok(LibraryWriteOutcome::Unrecognized);
+            }
+        };
+        let status = response.status();
+        let final_url = response.url().clone();
+        let redirect_location = response
+            .headers()
+            .get(LOCATION)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_owned);
+        let content_type = response
+            .headers()
+            .get(CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_owned);
+        let bytes =
+            crate::telemetry::timing::read_bounded_bytes(response, MAX_WRITE_RESPONSE_BYTES)
+                .await
+                .map_err(|_error| {
+                    // The request has already left, so an oversized or truncated
+                    // answer leaves the outcome unknown rather than failed.
+                    LibraryAdapterError::Transport(TransportError::DecodeBody {
+                        message: "library socket write response could not be read".to_owned(),
+                    })
+                })?;
+        let response = CampusTextResponse {
+            status,
+            final_url,
+            content_type,
+            redirect_location: redirect_location.clone(),
+            body: String::from_utf8_lossy(&bytes).into_owned(),
+        };
+        let blocked_login_redirect = redirect_location.as_deref().is_some_and(|location| {
+            crate::library_read::looks_like_login_location(&response.final_url, location)
+        });
+        if status == StatusCode::UNAUTHORIZED
+            || status == StatusCode::FORBIDDEN
+            || is_library_login_response(&response)
+            || blocked_login_redirect
+            || matches!(
+                campus_html::classify_page(&response.body),
+                PageClass::Login | PageClass::Expired
+            )
+        {
+            // The session is gone, so nothing was applied.  The caller is told to
+            // sign in again rather than to retry this write.
+            return Ok(LibraryWriteOutcome::LoginRequired);
+        }
+        let cross_origin = !same_origin(&self.base_url, &response.final_url)
+            || redirect_location.as_deref().is_some_and(|location| {
+                redirect_leaves_origin(&self.base_url, &response.final_url, location)
+            });
+        if cross_origin {
+            return Err(LibraryAdapterError::UnexpectedOrigin);
+        }
+        let redirect_outside_mapping = redirect_location
+            .as_deref()
+            .and_then(|location| resolve_location(&response.final_url, location))
+            .is_some_and(|location| {
+                same_origin(&self.base_url, &location)
+                    && !path_within_base(&self.base_url, &location)
+            });
+        if redirect_location.is_some()
+            || !status.is_success()
+            || response.final_url.path() != expected_path
+            || !query_matches(&[], &response.final_url)
+            || redirect_outside_mapping
+            || !path_within_base(&self.base_url, &response.final_url)
+        {
+            // A redirect this module did not follow, a page for another route, or
+            // a route outside the mapping: the request has already left, so the
+            // effect is unknown rather than failed.  Never re-dispatched.
+            return Ok(LibraryWriteOutcome::Unrecognized);
+        }
+        Ok(classify_socket_write(&response.body))
+    }
+
+    fn endpoint(&self, relative_path: &str) -> Result<Url, LibraryAdapterError> {
+        if !relative_path.starts_with('/')
+            || relative_path.contains("://")
+            || relative_path.contains(['?', '#'])
+            || relative_path.contains("..")
+            || relative_path.chars().any(char::is_control)
+        {
+            return Err(LibraryAdapterError::InvalidBaseUrl);
+        }
+        let mut endpoint = self.base_url.clone();
+        let base_path = endpoint.path().trim_end_matches('/');
+        let path = format!("{base_path}{relative_path}");
+        endpoint.set_path(&path);
+        endpoint.set_query(None);
+        endpoint.set_fragment(None);
+        Ok(endpoint)
+    }
+}
+
+impl fmt::Debug for LibrarySocketWriteAdapter {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("LibrarySocketWriteAdapter")
             .field("scheme", &self.base_url.scheme())
             .field("host", &self.base_url.host_str())
             .field("has_opaque_path", &(!self.base_url.path().is_empty()))

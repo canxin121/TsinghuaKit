@@ -40,7 +40,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1230068555;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -574959591;
 
 // Section: executor
 
@@ -2570,6 +2570,70 @@ fn wire__crate__sdk_api__ClientHandle_library_sections_impl(
                             &mut *api_that_guard,
                             api_floor_reference_id,
                             api_day,
+                        )
+                        .await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__sdk_api__ClientHandle_library_set_socket_state_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "ClientHandle_library_set_socket_state",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<ClientHandle>,
+            >>::sse_decode(&mut deserializer);
+            let api_availability_reference_id = <String>::sse_decode(&mut deserializer);
+            let api_seat_reference_id = <String>::sse_decode(&mut deserializer);
+            let api_is_available = <bool>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, crate::sdk_api::SdkErrorDto>(
+                    (move || async move {
+                        let mut api_that_guard = None;
+                        let decode_indices_ =
+                            flutter_rust_bridge::for_generated::lockable_compute_decode_order(
+                                vec![flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                    &api_that, 0, true,
+                                )],
+                            );
+                        for i in decode_indices_ {
+                            match i {
+                                0 => {
+                                    api_that_guard =
+                                        Some(api_that.lockable_decode_async_ref_mut().await)
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
+                        let mut api_that_guard = api_that_guard.unwrap();
+                        let output_ok = crate::sdk_api::ClientHandle::library_set_socket_state(
+                            &mut *api_that_guard,
+                            api_availability_reference_id,
+                            api_seat_reference_id,
+                            api_is_available,
                         )
                         .await?;
                         std::result::Result::Ok(output_ok)
@@ -10066,303 +10130,309 @@ fn pde_ffi_dispatcher_primary_impl(
             rust_vec_len,
             data_len,
         ),
-        44 => wire__crate__sdk_api__ClientHandle_library_sockets_impl(
+        44 => wire__crate__sdk_api__ClientHandle_library_set_socket_state_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        45 => wire__crate__sdk_api__ClientHandle_library_time_windows_impl(
+        45 => wire__crate__sdk_api__ClientHandle_library_sockets_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        46 => wire__crate__sdk_api__ClientHandle_login_identity_impl(
+        46 => wire__crate__sdk_api__ClientHandle_library_time_windows_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        47 => wire__crate__sdk_api__ClientHandle_logout_all_impl(port, ptr, rust_vec_len, data_len),
-        48 => wire__crate__sdk_api__ClientHandle_logout_identity_impl(
+        47 => wire__crate__sdk_api__ClientHandle_login_identity_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        49 => wire__crate__sdk_api__ClientHandle_logout_self_service_impl(
+        48 => wire__crate__sdk_api__ClientHandle_logout_all_impl(port, ptr, rust_vec_len, data_len),
+        49 => wire__crate__sdk_api__ClientHandle_logout_identity_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        50 => wire__crate__sdk_api__ClientHandle_network_connect_portal_impl(
+        50 => wire__crate__sdk_api__ClientHandle_logout_self_service_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        51 => wire__crate__sdk_api__ClientHandle_network_disconnect_portal_impl(
+        51 => wire__crate__sdk_api__ClientHandle_network_connect_portal_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        52 => wire__crate__sdk_api__ClientHandle_network_portal_observation_impl(
+        52 => wire__crate__sdk_api__ClientHandle_network_disconnect_portal_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        53 => wire__crate__sdk_api__ClientHandle_network_profile_password_for_fill_impl(
+        53 => wire__crate__sdk_api__ClientHandle_network_portal_observation_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        54 => wire__crate__sdk_api__ClientHandle_network_profiles_impl(
+        54 => wire__crate__sdk_api__ClientHandle_network_profile_password_for_fill_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        55 => wire__crate__sdk_api__ClientHandle_new_impl(port, ptr, rust_vec_len, data_len),
-        56 => wire__crate__sdk_api__ClientHandle_news_add_favorite_impl(
+        55 => wire__crate__sdk_api__ClientHandle_network_profiles_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        57 => wire__crate__sdk_api__ClientHandle_news_add_subscription_impl(
+        56 => wire__crate__sdk_api__ClientHandle_new_impl(port, ptr, rust_vec_len, data_len),
+        57 => wire__crate__sdk_api__ClientHandle_news_add_favorite_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        58 => {
+        58 => wire__crate__sdk_api__ClientHandle_news_add_subscription_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        59 => {
             wire__crate__sdk_api__ClientHandle_news_article_impl(port, ptr, rust_vec_len, data_len)
         }
-        59 => {
+        60 => {
             wire__crate__sdk_api__ClientHandle_news_articles_impl(port, ptr, rust_vec_len, data_len)
         }
-        60 => {
+        61 => {
             wire__crate__sdk_api__ClientHandle_news_catalog_impl(port, ptr, rust_vec_len, data_len)
         }
-        61 => wire__crate__sdk_api__ClientHandle_news_favorites_impl(
+        62 => wire__crate__sdk_api__ClientHandle_news_favorites_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        62 => wire__crate__sdk_api__ClientHandle_news_remove_favorite_impl(
+        63 => wire__crate__sdk_api__ClientHandle_news_remove_favorite_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        63 => wire__crate__sdk_api__ClientHandle_news_remove_subscription_impl(
+        64 => wire__crate__sdk_api__ClientHandle_news_remove_subscription_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        64 => {
+        65 => {
             wire__crate__sdk_api__ClientHandle_news_search_impl(port, ptr, rust_vec_len, data_len)
         }
-        65 => wire__crate__sdk_api__ClientHandle_news_subscription_articles_impl(
+        66 => wire__crate__sdk_api__ClientHandle_news_subscription_articles_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        66 => wire__crate__sdk_api__ClientHandle_news_subscriptions_impl(
+        67 => wire__crate__sdk_api__ClientHandle_news_subscriptions_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        67 => {
+        68 => {
             wire__crate__sdk_api__ClientHandle_overview_day_impl(port, ptr, rust_vec_len, data_len)
         }
-        68 => wire__crate__sdk_api__ClientHandle_physical_exam_result_impl(
+        69 => wire__crate__sdk_api__ClientHandle_physical_exam_result_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        69 => wire__crate__sdk_api__ClientHandle_prepare_network_profile_fill_impl(
+        70 => wire__crate__sdk_api__ClientHandle_prepare_network_profile_fill_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        70 => wire__crate__sdk_api__ClientHandle_program_completion_result_impl(
+        71 => wire__crate__sdk_api__ClientHandle_program_completion_result_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        71 => wire__crate__sdk_api__ClientHandle_refresh_self_service_captcha_impl(
+        72 => wire__crate__sdk_api__ClientHandle_refresh_self_service_captcha_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        72 => wire__crate__sdk_api__ClientHandle_registrar_exams_impl(
+        73 => wire__crate__sdk_api__ClientHandle_registrar_exams_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        73 => wire__crate__sdk_api__ClientHandle_registrar_grades_impl(
+        74 => wire__crate__sdk_api__ClientHandle_registrar_grades_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        74 => wire__crate__sdk_api__ClientHandle_registrar_semester_schedule_impl(
+        75 => wire__crate__sdk_api__ClientHandle_registrar_semester_schedule_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        75 => wire__crate__sdk_api__ClientHandle_save_network_profile_impl(
+        76 => wire__crate__sdk_api__ClientHandle_save_network_profile_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        76 => wire__crate__sdk_api__ClientHandle_self_service_account_impl(
+        77 => wire__crate__sdk_api__ClientHandle_self_service_account_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        77 => wire__crate__sdk_api__ClientHandle_self_service_disconnect_device_impl(
+        78 => wire__crate__sdk_api__ClientHandle_self_service_disconnect_device_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        78 => wire__crate__sdk_api__ClientHandle_self_service_login_phase_impl(
+        79 => wire__crate__sdk_api__ClientHandle_self_service_login_phase_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        79 => wire__crate__sdk_api__ClientHandle_self_service_online_devices_impl(
+        80 => wire__crate__sdk_api__ClientHandle_self_service_online_devices_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        80 => wire__crate__sdk_api__ClientHandle_self_service_usage_impl(
+        81 => wire__crate__sdk_api__ClientHandle_self_service_usage_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        81 => wire__crate__sdk_api__ClientHandle_send_identity_code_impl(
+        82 => wire__crate__sdk_api__ClientHandle_send_identity_code_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        82 => wire__crate__sdk_api__ClientHandle_service_hall_pending_impl(
+        83 => wire__crate__sdk_api__ClientHandle_service_hall_pending_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        83 => wire__crate__sdk_api__ClientHandle_service_hall_phase_details_impl(
+        84 => wire__crate__sdk_api__ClientHandle_service_hall_phase_details_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        84 => wire__crate__sdk_api__ClientHandle_service_hall_services_impl(
+        85 => wire__crate__sdk_api__ClientHandle_service_hall_services_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        85 => wire__crate__sdk_api__ClientHandle_service_hall_tasks_impl(
+        86 => wire__crate__sdk_api__ClientHandle_service_hall_tasks_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        86 => wire__crate__sdk_api__ClientHandle_sports_records_result_impl(
+        87 => wire__crate__sdk_api__ClientHandle_sports_records_result_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        87 => wire__crate__sdk_api__ClientHandle_sports_resources_result_impl(
+        88 => wire__crate__sdk_api__ClientHandle_sports_resources_result_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        88 => wire__crate__sdk_api__ClientHandle_start_saved_self_service_login_impl(
+        89 => wire__crate__sdk_api__ClientHandle_start_saved_self_service_login_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        89 => wire__crate__sdk_api__ClientHandle_start_self_service_login_impl(
+        90 => wire__crate__sdk_api__ClientHandle_start_self_service_login_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        90 => wire__crate__sdk_api__ClientHandle_submit_identity_code_impl(
+        91 => wire__crate__sdk_api__ClientHandle_submit_identity_code_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        91 => wire__crate__sdk_api__ClientHandle_submit_self_service_captcha_impl(
+        92 => wire__crate__sdk_api__ClientHandle_submit_self_service_captcha_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        92 => wire__crate__sdk_api__ClientHandle_update_network_profile_impl(
+        93 => wire__crate__sdk_api__ClientHandle_update_network_profile_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        93 => wire__crate__sdk_api__ClientHandle_water_brand_labels_impl(
+        94 => wire__crate__sdk_api__ClientHandle_water_brand_labels_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        94 => wire__crate__sdk_api__ClientHandle_water_user_impl(port, ptr, rust_vec_len, data_len),
-        95 => wire__crate__sdk_api__NetworkProfilePasswordHandle_expose_for_form_impl(
+        95 => wire__crate__sdk_api__ClientHandle_water_user_impl(port, ptr, rust_vec_len, data_len),
+        96 => wire__crate__sdk_api__NetworkProfilePasswordHandle_expose_for_form_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        96 => wire__crate__sdk_api__PreparedNetworkProfile_form_fields_impl(
+        97 => wire__crate__sdk_api__PreparedNetworkProfile_form_fields_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        97 => wire__crate__sdk_api__laundry_providers_impl(port, ptr, rust_vec_len, data_len),
-        98 => wire__crate__sdk_api__laundry_statuses_impl(port, ptr, rust_vec_len, data_len),
-        99 => wire__crate__sdk_api__suggest_identity_login_stage_impl(
+        98 => wire__crate__sdk_api__laundry_providers_impl(port, ptr, rust_vec_len, data_len),
+        99 => wire__crate__sdk_api__laundry_statuses_impl(port, ptr, rust_vec_len, data_len),
+        100 => wire__crate__sdk_api__suggest_identity_login_stage_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        100 => wire__crate__sdk_api__water_brands_impl(port, ptr, rust_vec_len, data_len),
+        101 => wire__crate__sdk_api__water_brands_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }

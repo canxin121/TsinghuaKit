@@ -1031,6 +1031,29 @@ impl LibraryClient<'_> {
     pub async fn cancel(&mut self, reference: &LibraryReservationRef) -> Result<(), Error> {
         self.inner.cancel(reference).await
     }
+
+    /// Turns the power socket of one seat on or off.
+    ///
+    /// The seat must belong to one of this client's latest [`Self::seats`]
+    /// results for the same section, which is re-checked against the Runtime's
+    /// own inventory before the request is built.
+    ///
+    /// This route leaves the seat-inventory mapping: it is a JSON POST to the
+    /// campus app origin and carries no library booking token. The write is
+    /// dispatched at most once and an outcome the service does not confirm is
+    /// reported as `outcome_unconfirmed` rather than replayed; the seat
+    /// reference is deliberately not spent, so [`Self::sockets`] stays usable
+    /// for re-reading the state this write changed.
+    pub async fn set_socket_state(
+        &mut self,
+        availability: &LibraryAvailability,
+        seat: &SeatRef,
+        is_available: bool,
+    ) -> Result<(), Error> {
+        self.inner
+            .set_socket_state(availability, seat, is_available)
+            .await
+    }
 }
 
 impl ClassroomsClient<'_> {

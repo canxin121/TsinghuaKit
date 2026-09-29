@@ -269,6 +269,24 @@ abstract class ClientHandle implements RustOpaqueInterface {
   Future<LibrarySectionsResultDto> librarySections(
       {required String floorReferenceId, required LibraryDayDto day});
 
+  /// Turns on or off the power socket of a seat from this Client's latest
+  /// socket read.
+  ///
+  /// Both handles must come from the same Client's own reads: the availability
+  /// result names the section and the seat handle names one seat of it, and the
+  /// Runtime re-checks the seat against the inventory it read.
+  ///
+  /// Unlike [`Self::library_reserve`], the seat handle is **not** consumed.
+  /// That is deliberate: the socket state is read back through
+  /// [`Self::library_sockets`], which is keyed by this very seat handle, so
+  /// spending it would leave the caller unable to learn what happened after an
+  /// outcome reported as `outcome_unconfirmed`. The write itself is still
+  /// dispatched at most once by the Runtime.
+  Future<void> librarySetSocketState(
+      {required String availabilityReferenceId,
+      required String seatReferenceId,
+      required bool isAvailable});
+
   /// Reads socket states for the seats in a prior availability result.
   Future<LibrarySocketsResultDto> librarySockets(
       {required String availabilityReferenceId});

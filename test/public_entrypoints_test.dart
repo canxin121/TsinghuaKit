@@ -92,6 +92,18 @@ void main() {
     expect(_publicType<library_api.LibraryReservationReference>(), isNull);
     expect(_publicType<library_api.LibraryReservation>(), isNull);
     expect(_publicType<library_api.LibraryReservations>(), isNull);
+    // The socket switch is a write that introduces no public type of its own: it
+    // takes the same availability and seat handles the reads above hand out, and
+    // its result is read back with the socket read.  That read is what makes the
+    // write checkable, so its own shape is checked here.
+    expect(library_api.LibrarySocketState.available.name, 'available');
+    expect(library_api.LibrarySocketState.unavailable.name, 'unavailable');
+    expect(library_api.LibrarySocketState.unknown.name, 'unknown');
+    final sockets = library_api.LibrarySockets(statuses: const []);
+    expect(sockets.statuses, isEmpty);
+    // The list is unmodifiable, so a caller cannot present a socket state the
+    // service did not send.
+    expect(sockets.statuses.clear, throwsUnsupportedError);
     // A row the service printed without its own cancellation control carries no
     // reference: an absent reference is the service's answer, not a read error.
     const reservation = library_api.LibraryReservation(

@@ -1547,3 +1547,57 @@ SDK `public_api` 增补 `compile_sports_api` 编译检查与两项活动断言�
 `docs/api-surface-baseline.json` 已按本节源码与重新渲染的 Rustdoc 刷新：模块列表 65 → 66（新增 `library_write`）、引擎根 `pub use` 52 → 53、渲染项计数 `struct 313→320` / `enum 151→155` / `fn 55→58` / `constant 51→55`（`trait` 与 `type` 不变）、`runtime.line_count` 28278 → 28436、`direct_state_field_count` 115 → 120、runtime DTO 74 → 76、runtime 公开方法 98 → 101。本次刷新同时更正两处**本次之前就存在**的记录错误：上一版的 `runtime.line_count` 记成 28279，而该文件在上一版修订上实测 28278（本文件因此看起来移动了 157 行，实际是 158 行）；上一版 98 条方法的行号取自更早的源码状态，本次按当前源码**逐条重新抽取**（98 条全部右移 63 行），因此行号与签名现在与 `struct.CampusRuntime` 的当前源码一致。
 
 **未验证**：三条路由的线上可用性**未验证**，需要另行真实只读验收——预约与取消本轮**未对任何真实账号发起**（§59 的写操作约定不变）；预约记录这一条读也尚未在真实账号上执行过。在此之前不得用 fixture 或空结果冒充线上证据。
+
+## 65. 2026-09-30 图书馆插座开关（一次性写）
+
+计划阶段 3 的第二个子域：图书馆**插座开关**（把某座位的电源插座打开或关闭）。这条写与前一个子域（座位预约）**不共用同一套请求路径**：它落在独立托管的校园 App 源 `app.cs.tsinghua.edu.cn`，走 `POST /api/socket`，请求体是 JSON `{"seatId": <u64>, "isavailable": <bool>}`，**不带**图书馆预约令牌、也**不带**账号 id。这一段的只读侧（`GET /api/socket?sectionid=<id>`）引擎早已实现（`library_read.rs` 的 `LibrarySocketStatusAdapter`），本子域补的是它的写方向。
+
+**未新增 selector、未新增映射、未新增 `ServiceId`**：源与路径都在既有的 socket 常量里（`LIBRARY_SOCKET_STATUS_ORIGIN` / `_HOST` / `_PATH`），服务仍是既有的 `Service::Library`。因此这个子域不需要任何新的认证或允许名单条目。
+
+**为什么它不是 `LibraryWriteAdapter` 的第三个操作**
+
+预约与取消都把座位库存映射当成自己的上下文，并且都在表单里带 `access_token` 与 `userid`。插座路由两样都不是。若把 `SetSocketState` 塞进 `LibraryWriteOperation` 与 `LibraryWritePlan`，就会存在一条能把**带到预约令牌的表单**发到**另一个源**的路径。因此本轮新增的是**独立的计划类型**（`LibrarySocketWritePlan`）与**独立的适配器**（`LibrarySocketWriteAdapter`）：
+
+- `LibrarySocketWritePlan` 的字段是 `operation` / `method` / `path` / 私有 `seat_id` / 私有 `is_available`；`body_fields()` 只回 `["seatId", "isavailable"]`，`body()` 只插入这两个字段，`Debug` 只打印 `operation` / `method` / `has_relative_path` / `body_fields`——**座位号不进 `Debug`**。
+- 因为两个计划类型彼此不可互换，`LibraryWriteAdapter` 无法被喂进一个 socket 计划、反之亦然，这一点由类型系统而不是运行期检查保证；跑不出来的那个方向无从测试，可编译的那个方向由 `socket_state_request(0, _)` 的 `InvalidIdentifier` 覆盖。
+- 适配器复用 `library_read.rs` 里那两个原本私有的 socket 源校验函数（`validate_socket_base_url` / `normalize_socket_base_url`，本子域把它们升为 `pub(crate)`），而不是复制一遍源/路径校验。`LibraryAdapter::app_socket_write_adapter()` 是它唯一的正式构造入口，刻意与 `write_adapter()` 分开。
+
+**验收规则是本模块自己的判定，不是从参考实现继承来的**
+
+参考实现对这条路由**没有任何验收证据**可抄：`thu-info-lib/src/lib/library.ts` 的 `toggleSocketState` 发完 `uFetch(APP_SOCKET_STATUS_URL, …, "application/json")` 就 `.then(() => {})`，而 `uFetch` 只在非 200/201 时抛错；`f856fe5d` 之前的 `webApi.ts` 版本形状相同（`if (!resp.ok) throw`）。在整个 `thu_reference`（16 个仓库 + 文档 + mock）里检索 `api/socket|isavailable|toggleSocket` 只命中这三处 `thu-info-lib`，且 App 侧**没有 `toggleSocketState` 的调用点**。所以"HTTP 200 就算成功"并不是观测到的语义，只是参考库的省略。
+
+本模块因此**显式写下**自己的判定（`classify_socket_write`），并把这一事实写进测试名 `backend_repair_library_socket_write_acceptance_rule_is_stated_not_inherited`：
+
+- **接受**：空体 / 纯空白体 / 大小写不敏感的 `OK` / JSON 外层里 `status` 或 `result` 或 `success` 为整数 `1` / 布尔 `true` / 字符串 `"success"`（且无失败标记）。空体被接受是唯一从部署行为推断而非从标志位读出的形状，注释里写明了这一点。
+- **拒绝**（`Refused`）：JSON 里的 `success == false`、`result == false`、或其他整数的 `status`/`result`/`success`、或非 `"success"` 的字符串，或 `message`/`msg`/`error`/`errorMessage` 里带失败措辞。数值 `status: 0` **不**单独算失败标记（与只读侧的判断保持一致），它作为整数走上面的规则。
+- **不可读**（`Unrecognized`）：HTML、超过 `MAX_WRITE_RESPONSE_BYTES`、未知 JSON 形状、非整数数字。`Unrecognized` **不重放**。
+
+**座位证据来自本 Runtime 自己的读，但座位句柄不花掉**
+
+`set_socket_state(section_id, seat_id, is_available)` 的两项证据与预约同源：
+
+1. section ∈ 当前已验证目录发出的 section 集合（`library_seat_hierarchy_active` 打开时），否则 `library_section_unconfirmed`；
+2. `(section_id, _)` 下本 Runtime 确认过的座位清单里含该 `seat_id`，否则 `library_seat_unconfirmed`。
+
+**刻意不查** `area_type` 与 `is_available`——插座服务有它自己的状态，这里要的只是座位的出处。会话证据用的是 `ensure_library_reader_session` 而**不是** `ensure_library_write_session`：这条请求不带预约令牌也不带账号 id，父 INFO 写证明在这里既不必要也不成立；"只发一次"仍由 `execute_once_exclusive`（取整个 gate、不跟随重定向）保证。
+
+插座**不能**像座位那样在派发前花掉句柄：`library_sockets` 正是以那个座位句柄为键的，花掉它就会让"结果不确定时重新读插座"这条恢复路径变得不可达。所以桥接层与 SDK 都保留该句柄，只靠适配器与 runtime 保证单次派发。
+
+**SDK / FFI / Dart**
+
+- 引擎：`library_write.rs` 新增 `SetSocketState`、`LibrarySocketWriteProfile` / `LibrarySocketWritePlan` / `classify_socket_write` / `has_socket_write_failure_marker` / `LibrarySocketWriteAdapter`；`library_read.rs` 新增 `LibraryAdapter::app_socket_write_adapter()` 并把两个 socket 源校验函数升为 `pub(crate)`；`api/runtime_library_write.rs` 新增 `set_socket_state`，`CampusRuntime` 新增一个委托方法；`library_write_tests.rs` 新增 7 项。
+- SDK：`LibraryClient` 新增 `set_socket_state(&LibraryAvailability, &SeatRef, bool)`（薄包装，委托引擎客户端）。
+- FFI：`ClientHandle` 新增 `library_set_socket_state`；`library_writes_only_accept_handles_this_client_returned` 增补两条插座用例（伪造的一对、伪造窗口 + 空座位，都断言 `service == "library"` 且 `code == "context_mismatch"`）；FRB 2.13.0 重新生成，生成物未手工编辑。
+- Dart：`lib/src/library.dart` 新增 `setSocketState(availability, seat, available: …)`——它不引入任何新公开类型，用的就是既有的 `LibraryAvailabilityReference` / `LibrarySeatReference`。
+
+**验证**
+
+引擎定向（loopback fixture，无任何真实账号 / Cookie / 座位号）：`library_write` **29 项通过**（前一个子域的 22 项 + 本子域 7 项）。插座 7 项断言：恰好 1 次请求且是 `POST /api/socket`；`Content-Type: application/json`；体内恰好出现 `"seatId":701` 与 `"isavailable":true`；体内**不出现** `access_token` 与 `userid`；`LibrarySocketWritePlan` 的 `Debug` 不出现 `701`；关方向序列化为 `"isavailable":false`；空体被接受而失败措辞被归类为 `Refused`；HTML 与未知 JSON 形状都是 `Unrecognized` 且**只发一次**；会话过期页归 `LoginRequired`；`seat_id == 0` 在**零请求**前被拒。判定表本身另有一项纯函数用例逐项固定上述四种接受形状与六种不接受形状。
+
+桥接层 `cargo test -p tsinghua_kit_ffi --lib --features ffi-bridge` **47 项通过**；SDK `public_api` **20 项通过**（`compile_library_api` 增补插座调用与"写完之后插座读仍可用"的编译检查）；`cargo check -p tsinghua_kit_ffi --all-targets --features ffi-bridge` 无新增警告（顺带清掉了 `sdk_api.rs` 里**本轮之前就存在**的 6 个未使用导入警告）；`cargo fmt --all -- --check` 干净；`git diff --check` 干净；严格 `RUSTDOCFLAGS="-D warnings" cargo doc -p tsinghua_kit` 退出 0；`flutter analyze lib test` 无问题；`flutter test test/public_entrypoints_test.dart` 通过。
+
+同 `library` 过滤器下的 **4 项 HEAD 既有失败**（`backend_repair_cached_library_read_uses_existing_expiry_gate`、`backend_repair_proven_library_action_survives_unavailable_info_bootstrap`、`backend_repair_runtime_library_segments_and_seats_reach_safe_dtos`、`backend_repair_binding_library_timestamp_date_must_match_segment_day`）与 §64 记录的是同一批：它们直接安装 library 证明却从不填充 `library_seat_section_ids`，因此 `load_library_day_segments` 以 `library_section_unconfirmed` 拒绝该 section。本轮**未修**，原因同 §64（与新增写路径无关）。本子域在 `library` 过滤器下新增 7 项、全绿，因此这一轮该过滤器共 91 项、87 通过 / 4 失败。
+
+`docs/api-surface-baseline.json` 已按本节源码与重新渲染的 Rustdoc 刷新到第七版：模块列表 66 项**不变**、根 `pub use` 53 条**不变**、runtime DTO 76 个**不变**、`direct_state_field_count` 120 **不变**；移动的是渲染项计数 `struct 320→323` / `fn 58→59`（`enum`/`constant`/`trait`/`type` 不变）、runtime 公开方法 101 → 102（新增 `set_library_socket_state`，插入在 `cancel_library_booking` 与 `load_info_news` 之间，其后 52 条方法统一右移 20 行——与 `git diff --numstat` 的 `20 0` 一致）、`runtime.line_count` 28436 → 28455。本次刷新同时更正两处**本节之前就存在**的记录错误：`runtime.public_free_functions` 的 6 条行号自 `37d4182` 起四轮未随源码更新（`[376, 400, 3127, 3179, 3187, 3218]` → `[390, 414, 3238, 3290, 3298, 3329]`）；上一版的 `line_count` 记成 28436，而该修订实测 28435（本版按 `wc -l` 口径记 28455）。
+
+**未验证**：这条路由的线上可用性**未验证**，需要另行真实只读验收——插座写本轮**未对任何真实账号发起**（§59 的写操作约定不变）；在此之前不得用 fixture 或空结果冒充线上证据。
