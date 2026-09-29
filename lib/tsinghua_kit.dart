@@ -27,6 +27,8 @@ part 'src/program.dart';
 part 'src/assessment.dart';
 part 'src/invoice.dart';
 part 'src/bank.dart';
+part 'src/laundry.dart';
+part 'src/water.dart';
 part 'src/course_score.dart';
 part 'src/learn.dart';
 part 'src/registrar_calendar.dart';
@@ -325,6 +327,8 @@ class TsinghuaKitClient {
         assessment = AssessmentClient._(handle),
         invoice = InvoiceClient._(handle),
         bank = BankClient._(handle),
+        laundry = LaundryClient._(handle),
+        water = WaterClient._(handle),
         courseScore = CourseScoreClient._(handle),
         learn = LearnClient._(handle),
         news = NewsClient._(handle),
@@ -374,6 +378,14 @@ class TsinghuaKitClient {
 
   /// Bank payroll receipts and graduate-income statements.
   final BankClient bank;
+
+  /// Dormitory laundry rooms on the third-party vendors this deployment uses.
+  /// Account-independent: no campus session is required.
+  final LaundryClient laundry;
+
+  /// 清紫源泉 bottled-water delivery account lookup. Account-independent:
+  /// no campus session is required.
+  final WaterClient water;
 
   /// One course result looked up by course number.
   final CourseScoreClient courseScore;

@@ -256,6 +256,35 @@ pub mod self_service {
     };
 }
 
+/// Dormitory laundry rooms served by the three third-party vendors the
+/// deployment uses.
+///
+/// These vendors have no campus account binding, so a read is
+/// account-independent: it needs no proven campus session and reports the
+/// vendor's own snapshot time rather than pretending to be account data.
+/// Only building lists and device status are reachable; no ordering,
+/// payment, or other write is modelled.
+pub mod laundry {
+    pub use tsinghua_kit_engine::laundry_api::{
+        LAUNDRY_PROVIDERS, LAUNDRY_STATUSES, LaundryBuilding, LaundryBuildingGroup, LaundryError,
+        LaundryMachine, LaundryRoom, LaundryRoomsReport, read_laundry_buildings,
+        read_laundry_rooms,
+    };
+}
+
+/// 清紫源泉 bottled-water delivery account lookup.
+///
+/// The vendor runs its own plain-HTTP service with no campus account binding,
+/// so this is a third-party read: the caller supplies the room's own delivery
+/// number and receives the vendor's record.  The vendor's ordering endpoint
+/// places a real order and is deliberately not modelled here.
+pub mod water {
+    pub use tsinghua_kit_engine::laundry_api::{WaterLookupError, read_water_user};
+    pub use tsinghua_kit_engine::water_read::{
+        WATER_BRANDS, WATER_ORIGIN, WaterAdapter, WaterError, WaterUser, water_brand_name,
+    };
+}
+
 pub use client::{Client, ClientBuilder};
 pub use error::Error;
 

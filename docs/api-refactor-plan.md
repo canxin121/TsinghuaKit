@@ -1333,3 +1333,48 @@ SDK `cargo test -p tsinghua_kit --all-targets` 28 项通过（`client_api` 12 + 
 **边界**
 
 本轮**未执行任何真实账号登录或学校服务请求**；本域的线上可用性仍未验证，需另行真实只读验收（且当前只读验收口径**不覆盖**提交动作：写路径只能靠 fixture 证据）。真实提交表单、评语与分数都不进 DTO、日志、台账与 Git；`thu_reference` 侧的相关实现仅作为路径/字段/选择器/可观察行为的证据使用，未复制其源码、夹具或资源。
+
+## 60. 2026-09-29 宿舍洗衣与清紫源泉订水的第三方只读域
+
+本轮补上 `thu_reference` 已有、TsinghuaKit 完全缺失的两类宿舍生活能力：**宿舍洗衣机状态**（杰力洗衣 / 海乐生活 / 小蓝洗衣三家第三方厂商）与**清紫源泉桶装水订水户查询**。两者都不是学校服务、都没有校园账号绑定、都不在 WebVPN 允许名单内，因此本节的重点是"为什么它们可以进这个仓库"以及"边界画在哪里"，而不是路径。
+
+**为什么不需要新增 selector、映射或`Service` 认证**
+
+这三家洗衣厂商各自运营自己的主机（`api.cleverschool.cn`、`yshz-user.haier-ioc.com`、`wash-ltd-thu.aajax.top`），订水厂商是 `dingshui.bjqzhd.com`（**明文 HTTP**，该部署没有 TLS 监听）。它们既不识别校园账号，也不接受任何校园凭据。参考实现让用户在主页面里自己输入楼栋与订水编号，从不经过 INFO 登录。因此本轮**不新增允许名单条目、不新增 `Service` 变体、不扩展 `map_additional_roaming`**：把它们登记进 INFO 的 roam 允许名单会凭空造出一个并不存在的账号绑定。
+
+**请求姿势：Cookie-free 但仍在统一门禁内**
+
+两个适配器都用 `CampusHttpTransport::with_timeout` 建**自己的**传输层（`washers` 用 `THYou/laundry`，水用 `THYou/water`）：
+
+- 它自带一个全新的 `CampusCookieStore`，所以哪怕复用同一个传输类型，也不可能把校园 Cookie 带到第三方主机上。
+- `execute_once` 对非 loopback 目标仍然走 `crate::request_gate::campus_request_gate()`，且 POST 依旧按 `dispatch_requires_exclusivity` 走独占派发。因此"所有实际请求仍经过 Rust `CampusHttpTransport` 的统一节流入口"与"不绕过 transport 直接调 reqwest"两条同时成立。
+- 适配器只暴露 `client()` 来**构造**请求，`send` / `execute` 仍是 `pub(crate)`，第三方域拿不到旁路。
+
+**读是账号无关的，所以不套校园登录**
+
+`laundry_api.rs` 的模块文档把这条写成硬规则：读第三方厂商**不需要** `ensure_identity_user_for_live_read()`，也不需要 `service_session_is_proven()`。给一个不存在的绑定加门禁，会在 UI 上变成"没登录就不能看洗衣机"，而那是假的。同理**没有任何缓存与持久化**：设备状态按分钟变化，厂商自己的快照时间（`fetched_at_unix`）原样上报，存一份下来写下去的瞬间就是错的。
+
+**"坏掉的部署"与"空结果"必须分开**
+
+三家厂商的响应形状差异很大（杰力的 `errorCode`、海乐的分页 `nearPosition` / `deviceDetailPage`、小蓝的 `buildings/<id>` 信封），而"字段缺失"既可能是厂商改版也可能是真的没数据。判定规则：**观测到的契约里恒定出现的字段**（海乐 `floorName` / `macUnionCode`、小蓝 `deviceId` / `facilities` / `devices` / `buildings`）一旦缺失就是 `UnexpectedDeployment`（"改版了"），而不是静默跳过；只有厂商自己声明为可选的东西才允许为空。杰力一旦给出 `errorCode` 就是 `BusinessFailure`，绝不当作空列表。海乐按分类（`00` 洗衣机 / `01` 洗鞋机 / `02` 烘干机）分别请求，某一类失败时把它的 key 收进 `failed_categories` 一起返回，于是"读全了"和"读了一半"在调用方看来是两件事。海乐的设备跨两个搜索点返回，按设备码去重后**只保留清华点**（用 `清华` 且非 `中学` 过滤），避免把隔壁中学的洗衣机混进来。
+
+杰力的状态文案走白名单：只有 `待机`/`工作`/`运转` 会离开初始的 `Error`，`剩余` 给 ETA，`更新` 跳过。**无法识别的文案一律报 `Error`**，理由写在注释里：一台停止上报可识别状态的机器，正是学生需要看到的东西。小蓝按 `isOnline` / `fault` / `runState`（7 空闲 / 5 工作 / 1 待机）判定。
+
+**订水：下单端点被结构性排除**
+
+`water_read.rs` 只建模 `/auser/getuser.html`（POST 表单 `name=pw&param=<编号>`）。参考库里真实的**下单**端点 `/buy/subs.html` 会把桶装水真送到门口——本模块**根本没有它的常量、方法和类型**，一个测试专门断言模块里不存在 `subs.html` 或 `/buy/` 字面量。不可达的操作比被守卫的操作更强。编号是调用方自己的输入，在进入 body 之前被约束成短 ASCII 令牌（空、超长、含空格或 `/`、`?`、`<` 一律 `InvalidDeliveryId` 且**零请求**），且从不进入 `Debug`。明文 HTTP 被保留（该部署只有这一个监听），代价被三件事收窄：只发编号、响应不是厂商自己的 JSON 信封就拒绝、整次交换不写入任何持久记录。
+
+**SDK / FFI / Dart**
+
+- 引擎：新增 `washer_read.rs`（适配器 + 三家解析器）、`water_read.rs`、`laundry_api.rs`（公开门面与 serde DTO）。`laundry_api` 的 `LaundryError` / `WaterLookupError` 各自带 `diagnostic_code()`；水品牌的 `WATER_BRANDS` 表把厂商自己的标识映射成中文名，表外的品牌原样返回而不是被抹成空。
+- SDK：`pub mod laundry` 与 `pub mod water`，`tsinghua-kit/src/lib.rs` 不新增 `Client` 访问器（这两个读不需要 Client 的会话状态，与 `classify_login_stage` 同类，直接是自由函数）。
+- FFI：`ClientHandle` 上新增 `laundry_buildings` / `laundry_rooms` / `water_user` / `water_brand_labels`，四个自由函数 `laundry_providers()` / `laundry_statuses()` / `water_brands()`。所有新 DTO 的 `Debug` 手工脱敏（楼栋只打 `id_present` / `name_present` 与厂商 key、楼栋组只打 `building_count`、机器名/类型/房间只打 `*_present`、房间只打 `machine_count`、一次读只打 `room_count` 与厂商自己的失败分类、订水记录只打 `name_present` 与 `address_len`），因为楼栋名、房间号、机器名和住户姓名都是账号相关或个人信息。选项表（厂商/状态/品牌）本身就是厂商的公开标签，保持 `derive(Debug)`。引擎错误到桥接码的映射集中在 `laundry_vendor_code` / `water_error`：配置与调用方输入 ⇒ `invalid_input`、传输失败 ⇒ `network_unavailable`、非 2xx ⇒ `service_unavailable`、越出原点 ⇒ `redirect_refused`、改版/非 JSON/厂商业务失败 ⇒ `invalid_response`；两条映射各自带上自己的 `service`（`laundry` / `water`），订水的错误不冒充洗衣，因此 App 侧的两个回退文案行不会互相串。FRB 2.13.0 重新生成，生成物未手工编辑。
+- Dart：`lib/src/laundry.dart` + `lib/laundry.dart`、`lib/src/water.dart` + `lib/water.dart`，`TsinghuaKitClient` 增 `laundry` / `water` 两个 facade（与 `bank` / `invoice` 同构），`LaundryClient.providers()` / `statuses()` 与 `WaterClient.brands()` 是静态的，因为它们不需要 Client 实例。
+
+**验证**
+
+`cargo test --manifest-path rust/Cargo.toml -p tsinghua_kit_engine --lib -- washer_read water_read laundry_api` **33 项通过**（洗衣 18 + 订水 9 + 门面 5）：杰力分组与排序、业务失败不是空列表、状态文案含不可识别项时的降级、杰力设备缺房间 ⇒ 改版、海乐跨搜索点去重与过滤（要清华、不要中学）、海乐分类失败上报、小蓝完整信封（5 台覆盖四种状态加一台无状态码）、小蓝未知楼栋/缺设备列表/缺 organization ⇒ 改版、HTML ⇒ `NotJson`、503 ⇒ `HttpStatus`、原点校验拒绝 ftp/userinfo/query/fragment/非 URL、相对路径不能越出原点、厂商 key 往返、状态 key 稳定、未来与过去的完成时间、诊断码互不相同、`Debug` 脱敏；订水的记录读取与表单字段断言、被拒编号零请求、HTML ⇒ `NotJson`、502 ⇒ `HttpStatus`、原点校验、路径封闭、品牌表、诊断码互不相同、`Debug` 不含编号；门面的厂商/状态表闭合、部分读取保留厂商自己的失败分类、未知厂商零请求、诊断码前缀。
+
+桥接层另有 4 项定向测试：楼栋与楼栋组的 `Debug` 只留存在性与计数（`private-building` / `private-key` / `private-label` 都不出现）、机器与房间的 `Debug` 不出现机器名/类型/房间号、一次读的 `Debug` 保留 `room_count` 与厂商自己的失败分类、订水记录只留 `name_present` 与 `address_len`；`laundry_providers()` / `laundry_statuses()` / `water_brands()` 三张表闭合且标签非空；被拒的厂商 key、楼栋 id 与订水编号都在**没有任何请求**的前提下以 `invalid_input` 返回，且 `auth_status` 仍是 `SignedOut`。SDK crate 的 `public_api` 增补这两个域的公开类型与两条自由函数的编译检查（16 项通过，`client_api` 12 项通过）。`cargo check --manifest-path rust/Cargo.toml --workspace --all-targets` 退出 0（新增的 `LAUNDRY_PROVIDERS` / `water_brand_name` 未使用导入在收尾时修正，engine lib 的 warning 数与 HEAD 逐条相同，均为既有无关项）；严格 `RUSTDOCFLAGS="-D warnings" cargo doc -p tsinghua_kit` 通过；`flutter analyze lib test` 无问题；`flutter test test/public_entrypoints_test.dart` 通过并覆盖 `LaundryClient` / `LaundryBuilding` / `LaundryBuildingGroup` / `LaundryMachine` / `LaundryRoom` / `LaundryRoomsReport` / `LaundryProviderOption` / `LaundryStatus` 六个状态与部分读取、`WaterClient` / `WaterUser` / `WaterBrandOption`。`docs/api-surface-baseline.json` 已刷新：模块列表 61 → 64（新增 `laundry_api` / `washer_read` / `water_read`）、`root_public_use` 计数仍 51（引擎根 `pub use` 未变）、`runtime.line_count` 仍 27896（本轮未动 runtime）、`scope` 追加本轮说明。
+
+**未验证**：三个洗衣厂商与订水厂商的线上可用性**均未验证**，需要另行真实只读验收；在此之前不得用 fixture 或空结果冒充线上证据。**未执行任何真实账号登录或第三方服务请求**；未实现宿舍卫生分（§58 的结论不变）。

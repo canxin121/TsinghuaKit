@@ -32,6 +32,7 @@ pub mod info_client;
 pub mod info_news;
 pub mod info_session;
 pub mod invoice_read;
+pub mod laundry_api;
 pub mod learn;
 pub mod learn_announcements;
 pub mod learn_api;
@@ -71,6 +72,8 @@ pub mod tunet_client;
 pub mod usereg;
 pub mod usereg_adapter;
 pub mod usereg_client;
+pub mod washer_read;
+pub mod water_read;
 pub mod webvpn_identity;
 
 mod campus_html;

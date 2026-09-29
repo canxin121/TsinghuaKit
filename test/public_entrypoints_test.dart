@@ -8,6 +8,7 @@ import 'package:tsinghua_kit/core.dart' as core;
 import 'package:tsinghua_kit/course_score.dart' as course_score;
 import 'package:tsinghua_kit/electricity.dart' as electricity;
 import 'package:tsinghua_kit/invoice.dart' as invoice;
+import 'package:tsinghua_kit/laundry.dart' as laundry;
 import 'package:tsinghua_kit/learn.dart' as learn;
 import 'package:tsinghua_kit/library.dart' as library_api;
 import 'package:tsinghua_kit/network.dart' as network;
@@ -19,6 +20,7 @@ import 'package:tsinghua_kit/read.dart' as read;
 import 'package:tsinghua_kit/registrar_calendar.dart' as calendar;
 import 'package:tsinghua_kit/self_service.dart' as self_service;
 import 'package:tsinghua_kit/service_hall.dart' as service_hall;
+import 'package:tsinghua_kit/water.dart' as water;
 
 T? _publicType<T>() => null;
 
@@ -137,6 +139,45 @@ void main() {
     expect(
       course_score.CourseScore(name: '课程', credit: 2, grade: 'A', empty: false),
       isA<course_score.CourseScore>(),
+    );
+    expect(_publicType<laundry.LaundryClient>(), isNull);
+    expect(_publicType<laundry.LaundryBuildingGroup>(), isNull);
+    expect(_publicType<laundry.LaundryBuilding>(), isNull);
+    expect(_publicType<laundry.LaundryRoom>(), isNull);
+    expect(_publicType<laundry.LaundryMachine>(), isNull);
+    expect(_publicType<laundry.LaundryRoomsReport>(), isNull);
+    expect(_publicType<laundry.LaundryProviderOption>(), isNull);
+    // The machine states are the closed set the Rust parsers can produce.
+    expect(
+      laundry.LaundryStatus.values.map((value) => value.name).toList(),
+      ['idle', 'working', 'error', 'offline', 'standby', 'unknown'],
+    );
+    // A building carries the vendor key it belongs to, so a building id can
+    // only be read back through the vendor it came from.
+    expect(
+      const laundry.LaundryBuilding(
+        id: '51',
+        name: '紫荆1号楼',
+        provider: 'jieli',
+      ),
+      isA<laundry.LaundryBuilding>(),
+    );
+    // A partial read says what it is missing rather than arriving short.
+    final rooms = laundry.LaundryRoomsReport(
+      provider: 'haile',
+      rooms: const [],
+      failedCategories: const ['01'],
+      fetchedAt: null,
+    );
+    expect(rooms.provider, 'haile');
+    expect(rooms.failedCategories, ['01']);
+    expect(rooms.rooms, isEmpty);
+    expect(_publicType<water.WaterClient>(), isNull);
+    expect(_publicType<water.WaterUser>(), isNull);
+    expect(_publicType<water.WaterBrandOption>(), isNull);
+    expect(
+      const water.WaterUser(name: '合成住户', address: '紫荆公寓1号楼101'),
+      isA<water.WaterUser>(),
     );
   });
 }

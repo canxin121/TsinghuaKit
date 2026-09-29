@@ -37,6 +37,11 @@ use tsinghua_kit_sdk::{
     course_score::CourseScore,
     electricity::{ElectricityPaymentHistory, ElectricityRemainder},
     invoice::{InvoiceDocument, InvoicePage, InvoiceRef},
+    laundry::{
+        LAUNDRY_PROVIDERS, LaundryBuilding, LaundryBuildingGroup, LaundryError, LaundryMachine,
+        LaundryRoom, LaundryRoomsReport, read_laundry_buildings as sdk_read_laundry_buildings,
+        read_laundry_rooms as sdk_read_laundry_rooms,
+    },
     learn::{
         CourseAnnouncements, CourseCatalog, CourseDiscussions, CourseFileCategories, CourseFileRef,
         CourseFiles, CourseRef, HomeworkAttachmentKind, HomeworkDetail, HomeworkList, HomeworkRef,
@@ -75,6 +80,7 @@ use tsinghua_kit_sdk::{
         PendingTasks, PhaseDetails, ServiceDirectory, ServiceHallReadPolicy, TaskView,
         WorkflowTaskList, WorkflowTaskRef,
     },
+    water::{WATER_BRANDS, WaterLookupError, read_water_user as sdk_read_water_user},
 };
 
 /// The account state of one of the two independent Auth domains.
@@ -5697,6 +5703,324 @@ impl ClientHandle {
             .map(|password| password.map(|inner| NetworkProfilePasswordHandle { inner }))
             .map_err(Into::into)
     }
+
+    /// Reads one laundry vendor's building groups.
+    ///
+    /// `provider` is one of [`LAUNDRY_PROVIDERS`]' keys.  The read talks to
+    /// that vendor's own origin with a Cookie-free transport, so it carries no
+    /// campus credential and is not gated on a campus login.  A provider this
+    /// client does not read is refused before any request is built.
+    pub async fn laundry_buildings(
+        &mut self,
+        provider: String,
+    ) -> Result<Vec<LaundryBuildingGroupDto>, SdkErrorDto> {
+        sdk_read_laundry_buildings(&provider)
+            .await
+            .map(|groups| groups.into_iter().map(laundry_group_dto).collect())
+            .map_err(|error| laundry_error(&error))
+    }
+
+    /// Reads one building's rooms and machines from one laundry vendor.
+    ///
+    /// `building_id` comes from a previous [`Self::laundry_buildings`] call.
+    /// It is the caller's own value, so a value this client will not send is
+    /// reported as invalid input without a request.
+    pub async fn laundry_rooms(
+        &mut self,
+        provider: String,
+        building_id: String,
+    ) -> Result<LaundryRoomsDto, SdkErrorDto> {
+        sdk_read_laundry_rooms(&provider, &building_id)
+            .await
+            .map(laundry_rooms_dto)
+            .map_err(|error| laundry_error(&error))
+    }
+
+    /// Looks up the water vendor's record for one delivery number.
+    ///
+    /// The number is the caller's own input; a refused value costs no request.
+    /// The vendor places real orders through a different endpoint, which this
+    /// bridge does not expose at all.
+    pub async fn water_user(&mut self, delivery_id: String) -> Result<WaterUserDto, SdkErrorDto> {
+        sdk_read_water_user(&delivery_id)
+            .await
+            .map(|user| WaterUserDto {
+                name: user.name,
+                address: user.address,
+            })
+            .map_err(|error| water_error(&error))
+    }
+
+    /// The vendor's water brands with the labels it prints for them.
+    ///
+    /// A brand the vendor adds outside this table stays visible under its own
+    /// identifier rather than being silently relabelled or dropped.
+    pub fn water_brand_labels(&self) -> Vec<LaundryOptionDto> {
+        water_brands()
+    }
+}
+
+/// One laundry building as the bridge reports it.
+///
+/// A building's name and vendor identifier are the vendor's own labels, so the
+/// `Debug` form prints only its presence and the vendor key.
+#[derive(Clone, PartialEq, Eq)]
+pub struct LaundryBuildingDto {
+    pub id: String,
+    pub name: String,
+    /// The vendor's stable machine key.
+    pub provider: String,
+}
+
+impl fmt::Debug for LaundryBuildingDto {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("LaundryBuildingDto")
+            .field("id_present", &!self.id.is_empty())
+            .field("name_present", &!self.name.is_empty())
+            .field("provider", &self.provider)
+            .finish()
+    }
+}
+
+/// One group of laundry buildings.
+#[derive(Clone, PartialEq, Eq)]
+pub struct LaundryBuildingGroupDto {
+    pub key: String,
+    pub label: String,
+    pub buildings: Vec<LaundryBuildingDto>,
+}
+
+impl fmt::Debug for LaundryBuildingGroupDto {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("LaundryBuildingGroupDto")
+            .field("key_present", &!self.key.is_empty())
+            .field("label_present", &!self.label.is_empty())
+            .field("building_count", &self.buildings.len())
+            .finish()
+    }
+}
+
+/// One washing machine.
+///
+/// A device's name and room are the vendor's own labels, so the `Debug` form
+/// prints only their presence and the machine's state.
+#[derive(Clone, PartialEq, Eq)]
+pub struct LaundryMachineDto {
+    pub name: String,
+    pub kind: String,
+    pub room: String,
+    /// One of `idle` / `working` / `error` / `offline` / `standby` / `unknown`.
+    pub status: String,
+    pub eta_minutes: Option<u32>,
+}
+
+impl fmt::Debug for LaundryMachineDto {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("LaundryMachineDto")
+            .field("name_present", &!self.name.is_empty())
+            .field("kind_present", &!self.kind.is_empty())
+            .field("room_present", &!self.room.is_empty())
+            .field("status", &self.status)
+            .field("eta_minutes", &self.eta_minutes)
+            .finish()
+    }
+}
+
+/// One laundry room and its machines.
+#[derive(Clone, PartialEq, Eq)]
+pub struct LaundryRoomDto {
+    pub name: String,
+    pub machines: Vec<LaundryMachineDto>,
+}
+
+impl fmt::Debug for LaundryRoomDto {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("LaundryRoomDto")
+            .field("name_present", &!self.name.is_empty())
+            .field("machine_count", &self.machines.len())
+            .finish()
+    }
+}
+
+/// One building's rooms, plus what the vendor did not answer for.
+///
+/// A room is the building's own layout, so the `Debug` form prints the counts
+/// and the failure categories rather than the rooms themselves.
+#[derive(Clone, PartialEq, Eq)]
+pub struct LaundryRoomsDto {
+    pub provider: String,
+    pub rooms: Vec<LaundryRoomDto>,
+    /// Vendor categories that answered with a failure.  A non-empty list means
+    /// the read is incomplete in exactly the way it says.
+    pub failed_categories: Vec<String>,
+    pub fetched_at_unix: Option<i64>,
+}
+
+impl fmt::Debug for LaundryRoomsDto {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("LaundryRoomsDto")
+            .field("provider", &self.provider)
+            .field("room_count", &self.rooms.len())
+            .field("failed_categories", &self.failed_categories)
+            .field("fetched_at_present", &self.fetched_at_unix.is_some())
+            .finish()
+    }
+}
+
+/// The water vendor's record for one delivery number.
+///
+/// The name and address are the account holder's own data, so the `Debug` form
+/// prints only their presence and length.
+#[derive(Clone, PartialEq, Eq)]
+pub struct WaterUserDto {
+    pub name: String,
+    pub address: String,
+}
+
+impl fmt::Debug for WaterUserDto {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("WaterUserDto")
+            .field("name_present", &!self.name.is_empty())
+            .field("address_len", &self.address.chars().count())
+            .finish()
+    }
+}
+
+/// The laundry vendors and their display labels.
+pub fn laundry_providers() -> Vec<LaundryOptionDto> {
+    LAUNDRY_PROVIDERS
+        .iter()
+        .map(|(key, label)| LaundryOptionDto {
+            key: (*key).to_owned(),
+            label: (*label).to_owned(),
+        })
+        .collect()
+}
+
+/// The laundry machine states and their display labels.
+pub fn laundry_statuses() -> Vec<LaundryOptionDto> {
+    tsinghua_kit_engine::laundry_api::LAUNDRY_STATUSES
+        .iter()
+        .map(|(key, label)| LaundryOptionDto {
+            key: (*key).to_owned(),
+            label: (*label).to_owned(),
+        })
+        .collect()
+}
+
+/// The water vendor's brands and their display labels.
+pub fn water_brands() -> Vec<LaundryOptionDto> {
+    WATER_BRANDS
+        .iter()
+        .map(|(key, label)| LaundryOptionDto {
+            key: (*key).to_owned(),
+            label: (*label).to_owned(),
+        })
+        .collect()
+}
+
+/// One stable key with its display label.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LaundryOptionDto {
+    pub key: String,
+    pub label: String,
+}
+
+fn laundry_group_dto(group: LaundryBuildingGroup) -> LaundryBuildingGroupDto {
+    LaundryBuildingGroupDto {
+        key: group.key,
+        label: group.label,
+        buildings: group
+            .buildings
+            .into_iter()
+            .map(|building: LaundryBuilding| LaundryBuildingDto {
+                id: building.id,
+                name: building.name,
+                provider: building.provider,
+            })
+            .collect(),
+    }
+}
+
+fn laundry_rooms_dto(report: LaundryRoomsReport) -> LaundryRoomsDto {
+    LaundryRoomsDto {
+        provider: report.provider,
+        rooms: report
+            .rooms
+            .into_iter()
+            .map(|room: LaundryRoom| LaundryRoomDto {
+                name: room.name,
+                machines: room
+                    .machines
+                    .into_iter()
+                    .map(|machine: LaundryMachine| LaundryMachineDto {
+                        name: machine.name,
+                        kind: machine.kind,
+                        room: machine.room,
+                        status: machine.status,
+                        eta_minutes: machine.eta_minutes,
+                    })
+                    .collect(),
+            })
+            .collect(),
+        failed_categories: report.failed_categories,
+        fetched_at_unix: report.fetched_at_unix,
+    }
+}
+
+fn laundry_error(error: &LaundryError) -> SdkErrorDto {
+    SdkErrorDto {
+        service: "laundry".to_owned(),
+        code: laundry_vendor_code(error).to_owned(),
+        retry_after_ms: None,
+        diagnostic_id: error.diagnostic_code().to_owned(),
+    }
+}
+
+fn laundry_vendor_code(error: &LaundryError) -> &'static str {
+    match error {
+        LaundryError::UnknownProvider => "invalid_input",
+        LaundryError::Vendor(vendor) => match vendor {
+            tsinghua_kit_engine::washer_read::WasherError::InvalidBaseUrl
+            | tsinghua_kit_engine::washer_read::WasherError::InvalidBuildingId => "invalid_input",
+            tsinghua_kit_engine::washer_read::WasherError::Transport(_) => "network_unavailable",
+            tsinghua_kit_engine::washer_read::WasherError::HttpStatus { .. } => {
+                "service_unavailable"
+            }
+            tsinghua_kit_engine::washer_read::WasherError::UnexpectedOrigin => "redirect_refused",
+            tsinghua_kit_engine::washer_read::WasherError::UnexpectedDeployment
+            | tsinghua_kit_engine::washer_read::WasherError::NotJson
+            | tsinghua_kit_engine::washer_read::WasherError::BusinessFailure => "invalid_response",
+        },
+    }
+}
+
+fn water_error(error: &WaterLookupError) -> SdkErrorDto {
+    SdkErrorDto {
+        service: "water".to_owned(),
+        code: match error {
+            WaterLookupError::Vendor(vendor) => match vendor {
+                tsinghua_kit_engine::water_read::WaterError::InvalidBaseUrl
+                | tsinghua_kit_engine::water_read::WaterError::InvalidDeliveryId => "invalid_input",
+                tsinghua_kit_engine::water_read::WaterError::Transport(_) => "network_unavailable",
+                tsinghua_kit_engine::water_read::WaterError::HttpStatus { .. } => {
+                    "service_unavailable"
+                }
+                tsinghua_kit_engine::water_read::WaterError::UnexpectedOrigin => "redirect_refused",
+                tsinghua_kit_engine::water_read::WaterError::UnexpectedDeployment
+                | tsinghua_kit_engine::water_read::WaterError::NotJson => "invalid_response",
+            },
+        }
+        .to_owned(),
+        retry_after_ms: None,
+        diagnostic_id: error.diagnostic_code().to_owned(),
+    }
 }
 
 fn map_account_status(value: &AccountAuthStatus) -> AccountStatusDto {
@@ -6362,6 +6686,141 @@ mod tests {
         assert!(!rendered.contains("private-handle"));
         assert!(!rendered.contains("private-comment"));
         assert!(!rendered.contains("private-answer"));
+    }
+
+    #[test]
+    fn laundry_bridge_debug_omits_building_rooms_and_machine_names() {
+        let building = LaundryBuildingDto {
+            id: "private-building-id".into(),
+            name: "private-building".into(),
+            provider: "jieli".into(),
+        };
+        let rendered = format!("{building:?}");
+        assert!(rendered.contains("LaundryBuildingDto"));
+        assert!(rendered.contains("jieli"));
+        assert!(!rendered.contains("private-building"));
+
+        let group = LaundryBuildingGroupDto {
+            key: "private-key".into(),
+            label: "private-label".into(),
+            buildings: vec![building],
+        };
+        let rendered = format!("{group:?}");
+        assert!(rendered.contains("building_count"));
+        assert!(!rendered.contains("private-key"));
+        assert!(!rendered.contains("private-label"));
+
+        let machine = LaundryMachineDto {
+            name: "private-machine".into(),
+            kind: "private-kind".into(),
+            room: "private-room".into(),
+            status: "working".into(),
+            eta_minutes: Some(35),
+        };
+        let rendered = format!("{machine:?}");
+        assert!(rendered.contains("LaundryMachineDto"));
+        assert!(rendered.contains("working"));
+        assert!(rendered.contains("35"));
+        assert!(!rendered.contains("private-machine"));
+        assert!(!rendered.contains("private-kind"));
+        assert!(!rendered.contains("private-room"));
+
+        let room = LaundryRoomDto {
+            name: "private-room".into(),
+            machines: vec![machine],
+        };
+        let rendered = format!("{room:?}");
+        assert!(rendered.contains("machine_count"));
+        assert!(!rendered.contains("private-room"));
+
+        let report = LaundryRoomsDto {
+            provider: "haile".into(),
+            rooms: vec![room],
+            failed_categories: vec!["01".into()],
+            fetched_at_unix: Some(1_700_000_000),
+        };
+        let rendered = format!("{report:?}");
+        assert!(rendered.contains("LaundryRoomsDto"));
+        assert!(rendered.contains("room_count"));
+        // A partial read stays visible as a partial read in the debug form.
+        assert!(rendered.contains("01"));
+        assert!(!rendered.contains("private-room"));
+        assert!(!rendered.contains("private-machine"));
+    }
+
+    #[test]
+    fn water_bridge_debug_omits_the_delivery_record_values() {
+        let user = WaterUserDto {
+            name: "private-resident".into(),
+            address: "private-address".into(),
+        };
+        let rendered = format!("{user:?}");
+        assert!(rendered.contains("WaterUserDto"));
+        assert!(rendered.contains("name_present"));
+        assert!(rendered.contains("address_len"));
+        assert!(!rendered.contains("private-resident"));
+        assert!(!rendered.contains("private-address"));
+    }
+
+    #[test]
+    fn laundry_and_water_option_tables_are_closed_and_labelled() {
+        let providers = laundry_providers();
+        assert_eq!(
+            providers
+                .iter()
+                .map(|option| option.key.as_str())
+                .collect::<Vec<_>>(),
+            vec!["jieli", "haile", "xiaolan"]
+        );
+        assert!(providers.iter().all(|option| !option.label.is_empty()));
+
+        let statuses = laundry_statuses();
+        assert_eq!(
+            statuses
+                .iter()
+                .map(|option| option.key.as_str())
+                .collect::<Vec<_>>(),
+            vec!["idle", "working", "error", "offline", "standby", "unknown"]
+        );
+
+        let brands = water_brands();
+        assert_eq!(brands.len(), 9);
+        assert!(
+            brands
+                .iter()
+                .all(|option| !option.key.is_empty() && !option.label.is_empty())
+        );
+        assert!(brands.iter().any(|option| option.key == "12"));
+    }
+
+    #[tokio::test]
+    async fn laundry_and_water_refusals_need_no_account_and_no_request() {
+        // Both domains are account-independent third-party reads: an unknown
+        // provider or a refused delivery number is rejected before any request
+        // is built, and neither results in a login attempt.
+        let mut client = client();
+        let provider = client
+            .laundry_buildings("other".to_owned())
+            .await
+            .unwrap_err();
+        assert_eq!(provider.service, "laundry");
+        assert_eq!(provider.code, "invalid_input");
+
+        let building = client
+            .laundry_rooms("jieli".to_owned(), "not a building".to_owned())
+            .await
+            .unwrap_err();
+        assert_eq!(building.service, "laundry");
+        assert_eq!(building.code, "invalid_input");
+
+        let delivery = client.water_user("10 01".to_owned()).await.unwrap_err();
+        assert_eq!(delivery.service, "water");
+        assert_eq!(delivery.code, "invalid_input");
+
+        assert_eq!(
+            client.auth_status().identity.state,
+            AccountStateDto::SignedOut
+        );
     }
 
     #[tokio::test]

@@ -51,6 +51,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
           dynamic raw);
 
   @protected
+  ClientHandle
+      dco_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
+          dynamic raw);
+
+  @protected
   NetworkProfilePasswordHandle
       dco_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerNetworkProfilePasswordHandle(
           dynamic raw);
@@ -334,6 +339,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   InvoiceRecordDto dco_decode_invoice_record_dto(dynamic raw);
 
   @protected
+  LaundryBuildingDto dco_decode_laundry_building_dto(dynamic raw);
+
+  @protected
+  LaundryBuildingGroupDto dco_decode_laundry_building_group_dto(dynamic raw);
+
+  @protected
+  LaundryMachineDto dco_decode_laundry_machine_dto(dynamic raw);
+
+  @protected
+  LaundryOptionDto dco_decode_laundry_option_dto(dynamic raw);
+
+  @protected
+  LaundryRoomDto dco_decode_laundry_room_dto(dynamic raw);
+
+  @protected
+  LaundryRoomsDto dco_decode_laundry_rooms_dto(dynamic raw);
+
+  @protected
   LearnAnnouncementDto dco_decode_learn_announcement_dto(dynamic raw);
 
   @protected
@@ -545,6 +568,22 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<InvoiceRecordDto> dco_decode_list_invoice_record_dto(dynamic raw);
+
+  @protected
+  List<LaundryBuildingDto> dco_decode_list_laundry_building_dto(dynamic raw);
+
+  @protected
+  List<LaundryBuildingGroupDto> dco_decode_list_laundry_building_group_dto(
+      dynamic raw);
+
+  @protected
+  List<LaundryMachineDto> dco_decode_list_laundry_machine_dto(dynamic raw);
+
+  @protected
+  List<LaundryOptionDto> dco_decode_list_laundry_option_dto(dynamic raw);
+
+  @protected
+  List<LaundryRoomDto> dco_decode_list_laundry_room_dto(dynamic raw);
 
   @protected
   List<LearnAnnouncementDto> dco_decode_list_learn_announcement_dto(
@@ -949,6 +988,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BigInt dco_decode_usize(dynamic raw);
 
   @protected
+  WaterUserDto dco_decode_water_user_dto(dynamic raw);
+
+  @protected
   ClientHandle
       sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
           SseDeserializer deserializer);
@@ -966,6 +1008,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   ClientHandle
       sse_decode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
+          SseDeserializer deserializer);
+
+  @protected
+  ClientHandle
+      sse_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
           SseDeserializer deserializer);
 
   @protected
@@ -1289,6 +1336,27 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   InvoiceRecordDto sse_decode_invoice_record_dto(SseDeserializer deserializer);
 
   @protected
+  LaundryBuildingDto sse_decode_laundry_building_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  LaundryBuildingGroupDto sse_decode_laundry_building_group_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  LaundryMachineDto sse_decode_laundry_machine_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  LaundryOptionDto sse_decode_laundry_option_dto(SseDeserializer deserializer);
+
+  @protected
+  LaundryRoomDto sse_decode_laundry_room_dto(SseDeserializer deserializer);
+
+  @protected
+  LaundryRoomsDto sse_decode_laundry_rooms_dto(SseDeserializer deserializer);
+
+  @protected
   LearnAnnouncementDto sse_decode_learn_announcement_dto(
       SseDeserializer deserializer);
 
@@ -1534,6 +1602,26 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<InvoiceRecordDto> sse_decode_list_invoice_record_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  List<LaundryBuildingDto> sse_decode_list_laundry_building_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  List<LaundryBuildingGroupDto> sse_decode_list_laundry_building_group_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  List<LaundryMachineDto> sse_decode_list_laundry_machine_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  List<LaundryOptionDto> sse_decode_list_laundry_option_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  List<LaundryRoomDto> sse_decode_list_laundry_room_dto(
       SseDeserializer deserializer);
 
   @protected
@@ -2003,6 +2091,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BigInt sse_decode_usize(SseDeserializer deserializer);
 
   @protected
+  WaterUserDto sse_decode_water_user_dto(SseDeserializer deserializer);
+
+  @protected
   void
       sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
           ClientHandle self, SseSerializer serializer);
@@ -2020,6 +2111,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void
       sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
+          ClientHandle self, SseSerializer serializer);
+
+  @protected
+  void
+      sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
           ClientHandle self, SseSerializer serializer);
 
   @protected
@@ -2356,6 +2452,30 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
       InvoiceRecordDto self, SseSerializer serializer);
 
   @protected
+  void sse_encode_laundry_building_dto(
+      LaundryBuildingDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_laundry_building_group_dto(
+      LaundryBuildingGroupDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_laundry_machine_dto(
+      LaundryMachineDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_laundry_option_dto(
+      LaundryOptionDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_laundry_room_dto(
+      LaundryRoomDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_laundry_rooms_dto(
+      LaundryRoomsDto self, SseSerializer serializer);
+
+  @protected
   void sse_encode_learn_announcement_dto(
       LearnAnnouncementDto self, SseSerializer serializer);
 
@@ -2603,6 +2723,26 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_invoice_record_dto(
       List<InvoiceRecordDto> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_laundry_building_dto(
+      List<LaundryBuildingDto> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_laundry_building_group_dto(
+      List<LaundryBuildingGroupDto> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_laundry_machine_dto(
+      List<LaundryMachineDto> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_laundry_option_dto(
+      List<LaundryOptionDto> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_laundry_room_dto(
+      List<LaundryRoomDto> self, SseSerializer serializer);
 
   @protected
   void sse_encode_list_learn_announcement_dto(
@@ -3076,6 +3216,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_usize(BigInt self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_water_user_dto(WaterUserDto self, SseSerializer serializer);
 }
 
 // Section: wire_class

@@ -24,6 +24,11 @@ use tsinghua_kit::{
     config::NetworkProfileStoragePolicy,
     electricity::{ElectricityPaymentHistory, ElectricityPaymentRecord, ElectricityRemainder},
     error::{ErrorCode, Service},
+    laundry::{
+        LAUNDRY_PROVIDERS, LAUNDRY_STATUSES, LaundryBuilding, LaundryBuildingGroup, LaundryError,
+        LaundryMachine, LaundryRoom, LaundryRoomsReport, read_laundry_buildings,
+        read_laundry_rooms,
+    },
     learn::{CourseCatalog, CourseRef, HomeworkDetail, HomeworkList, HomeworkRef, HomeworkState},
     library::{
         LibraryAvailability, LibraryDay, LibraryDirectory, LibrarySocketAvailability,
@@ -45,6 +50,7 @@ use tsinghua_kit::{
         PendingTasks, ServiceDirectory, ServiceHallReadPolicy, TaskView, WorkflowTaskList,
         WorkflowTaskRef,
     },
+    water::{WATER_BRANDS, WaterError, WaterLookupError, WaterUser, read_water_user},
 };
 
 fn succeeds() -> Result<()> {
@@ -256,6 +262,41 @@ async fn compile_electricity_api(client: &mut tsinghua_kit::Client) -> Result<()
     Ok(())
 }
 
+/// Both third-party reads are free functions rather than `Client` methods:
+/// they carry no campus account binding, so neither can require a session.
+/// They report their own error types rather than the campus `Error`, so this
+/// check returns them as they come.
+#[allow(dead_code)]
+async fn compile_third_party_read_api() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    let groups = read_laundry_buildings("jieli").await?;
+    let (_key, _label): (&str, &str) = match groups.first() {
+        Some(group) => (group.key.as_str(), group.label.as_str()),
+        None => ("", ""),
+    };
+    if let Some(building) = groups
+        .iter()
+        .flat_map(|group| group.buildings.iter())
+        .next()
+    {
+        let _: &LaundryBuilding = building;
+        let report = read_laundry_rooms(&building.provider, &building.id).await?;
+        let _: &LaundryRoomsReport = &report;
+        let _: &[LaundryRoom] = &report.rooms;
+        if let Some(machine) = report
+            .rooms
+            .iter()
+            .flat_map(|room| room.machines.iter())
+            .next()
+        {
+            let _: &LaundryMachine = machine;
+            let _status = machine.status.as_str();
+            let _eta = machine.eta_minutes;
+        }
+    }
+    let _: WaterUser = read_water_user("12345").await?;
+    Ok(())
+}
+
 fn compile_network_profiles_api(client: &mut tsinghua_kit::Client) -> Result<()> {
     let mut network = client.network();
     let mut profiles = network.profiles();
@@ -381,6 +422,23 @@ fn rust_consumers_can_import_curated_domain_modules_without_ffi() {
     accepts_public_types::<ElectricityRemainder>(None);
     accepts_public_types::<ElectricityPaymentRecord>(None);
     accepts_public_types::<ElectricityPaymentHistory>(None);
+    accepts_public_types::<LaundryBuilding>(None);
+    accepts_public_types::<LaundryBuildingGroup>(None);
+    accepts_public_types::<LaundryMachine>(None);
+    accepts_public_types::<LaundryRoom>(None);
+    accepts_public_types::<LaundryRoomsReport>(None);
+    accepts_public_types::<LaundryError>(None);
+    accepts_public_types::<WaterUser>(None);
+    accepts_public_types::<WaterError>(None);
+    accepts_public_types::<WaterLookupError>(None);
+    assert_eq!(LAUNDRY_PROVIDERS.len(), 3);
+    assert_eq!(LAUNDRY_STATUSES.len(), 6);
+    assert!(
+        WATER_BRANDS
+            .iter()
+            .all(|(id, name)| !id.is_empty() && !name.is_empty())
+    );
+    let _ = compile_third_party_read_api;
     let _ = compile_news_api;
     let _ = compile_learn_api;
     let _ = compile_registrar_api;
