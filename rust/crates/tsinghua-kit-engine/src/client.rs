@@ -42,6 +42,7 @@ use crate::{
         ClassroomRoomAvailability, ClassroomSlotStatus, ClassroomWeek, ClassroomWeekSelection,
         dates_are_monday_first, safe_label as safe_classroom_label,
     },
+    course_score::CourseScore,
     electricity_api::{ElectricityPaymentHistory, ElectricityRemainder},
     error::{Error, ErrorCode, Service},
     invoice_read::{
@@ -959,6 +960,13 @@ impl Client {
         }
     }
 
+    /// Borrows the read-only per-course score lookup.
+    pub fn course_score(&mut self) -> CourseScoreClient<'_> {
+        CourseScoreClient {
+            runtime: &mut self.runtime,
+        }
+    }
+
     /// Borrows school-wide and academic-term calendar reads.
     pub fn calendar(&mut self) -> CalendarClient<'_> {
         CalendarClient {
@@ -1161,6 +1169,46 @@ impl ServiceHallClient<'_> {
                 .map_err(|_| service_hall_failure(self.runtime))?,
         };
         map_service_hall_phase_details(dto, reference)
+    }
+}
+
+/// Read-only per-course score lookup.
+///
+/// The lookup is read live on every call and never served from a cached copy:
+/// a grade can be revised by the registrar at any time, so a retained value
+/// would present a superseded result as current.
+///
+/// The account's own student id, which the service's query also needs, is
+/// derived inside the Runtime from the proven identity; it is not a parameter
+/// here and never appears in the result.
+pub struct CourseScoreClient<'client> {
+    runtime: &'client mut CampusRuntime,
+}
+
+impl CourseScoreClient<'_> {
+    /// Looks up one course result by the caller's course number.
+    ///
+    /// The course number is validated before any request, so a value this
+    /// client will not send is reported as invalid input rather than becoming a
+    /// service-side query.
+    pub async fn lookup(&mut self, course_id: &str) -> Result<ReadResult<CourseScore>, Error> {
+        let dto = self
+            .runtime
+            .load_course_score_result(course_id)
+            .await
+            .map_err(|_| course_score_failure(self.runtime))?;
+        let metadata = cached_read_metadata(
+            Service::CourseScore,
+            &dto.generated_at,
+            &dto.source,
+            &dto.status,
+            false,
+            ReadSource::Live,
+        )?;
+        Ok(ReadResult::new(
+            CourseScore::from_parts(dto.name, dto.credit, dto.grade),
+            metadata,
+        ))
     }
 }
 
@@ -1849,6 +1897,35 @@ fn graduate_income_failure(runtime: &CampusRuntime) -> Error {
         AccountAuthState::Authenticated => ErrorCode::ServiceUnavailable,
     };
     Error::new(Service::GraduateIncome, code)
+}
+
+/// Maps one course-score failure to its own service boundary.
+///
+/// The course number is the caller's argument, so a value this client refuses
+/// is reported as invalid input on the course-score boundary rather than as a
+/// service-hall reference that expired.
+fn course_score_failure(runtime: &CampusRuntime) -> Error {
+    if let Some(diagnostic) = runtime.last_course_score_failure_code() {
+        let code = match diagnostic {
+            "course_score_input" => ErrorCode::InvalidInput,
+            "course_score_auth_required" => ErrorCode::SessionExpired,
+            "course_score_network" => ErrorCode::NetworkUnavailable,
+            "course_score_route" => ErrorCode::RedirectRefused,
+            "course_score_http" => ErrorCode::ServiceUnavailable,
+            _ => ErrorCode::InvalidResponse,
+        };
+        return Error::new(Service::CourseScore, code);
+    }
+    let code = match runtime.auth_status().identity().state() {
+        AccountAuthState::SignedOut | AccountAuthState::RestoredUnverified => {
+            ErrorCode::SessionRequired
+        }
+        AccountAuthState::Expired => ErrorCode::SessionExpired,
+        AccountAuthState::NeedsInteraction => ErrorCode::InteractionRequired,
+        AccountAuthState::Authenticating => ErrorCode::InteractionInProgress,
+        AccountAuthState::Authenticated => ErrorCode::ServiceUnavailable,
+    };
+    Error::new(Service::CourseScore, code)
 }
 
 fn classrooms_failure(runtime: &CampusRuntime) -> Error {

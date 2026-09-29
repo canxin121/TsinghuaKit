@@ -28,6 +28,11 @@ const DRAFTS: &str = "/fp/fp/draft/pageDraft";
 const UNREAD: &str = "/fp/fp/carboncopy/getDYSXList";
 const PHASES: &str = "/fp/fp/aggregation/getAggItemList";
 const PHASE_STEPS: &str = "/fp/aggregation/getActWork";
+const SELECT_ONE: &str = "/fp/fp/Uniformcommon/selectOnePresetData";
+/// The service's own identifier for the "one course result" preset.  It is a
+/// preset name, not a credential, and it is a body parameter rather than part
+/// of any URL.
+const COURSE_SCORE_PRESET_KEY: &str = "103765749452800";
 const MAX_PAGES: u32 = 100;
 const MAX_BODY: usize = 4 * 1024 * 1024;
 
@@ -39,6 +44,8 @@ pub(crate) enum ThosError {
     Route,
     Response,
     Business,
+    /// The caller's course number is not one this client will send.
+    InvalidInput,
 }
 
 impl ThosError {
@@ -50,6 +57,23 @@ impl ThosError {
             Self::Route => "网上服务大厅返回了未允许的地址，已停止读取",
             Self::Response => "网上服务大厅待办数据格式未确认，请稍后重试",
             Self::Business => "网上服务大厅未能完成待办查询，请稍后重试",
+            Self::InvalidInput => "课程号格式未确认，已停止查询",
+        }
+    }
+
+    /// Folds one course-score failure back into this client's error, so the
+    /// Runtime keeps a single place that classifies service-hall transport
+    /// failures.
+    fn from_course_score(error: crate::course_score::CourseScoreError) -> Self {
+        use crate::course_score::CourseScoreError;
+        match error {
+            CourseScoreError::Transport(error) => error,
+            // A username that is not a student id is a session-level problem,
+            // not a caller argument: the Runtime's bound account is what the
+            // query cannot use.
+            CourseScoreError::NotAStudentId => Self::Session,
+            CourseScoreError::InvalidInput => Self::InvalidInput,
+            CourseScoreError::Response => Self::Response,
         }
     }
 }
@@ -169,6 +193,7 @@ impl ThosClient {
             UNREAD,
             PHASES,
             PHASE_STEPS,
+            SELECT_ONE,
         ]
         .contains(&path)
         {
@@ -181,6 +206,31 @@ impl ThosClient {
 
     pub(crate) async fn counts(&self) -> Result<ThosCounts, ThosError> {
         parse_counts(&self.read(COUNTS, json!({})).await?)
+    }
+
+    /// Reads one course result through the service hall's shared preset query.
+    ///
+    /// `student_id` is the bound account's own login id, derived by the
+    /// Runtime from the proven identity.  It is a parameter here rather than a
+    /// caller argument so the student id can never reach a caller, a DTO, or a
+    /// log line: it only ever exists inside the request body this method
+    /// builds.  The course number is the caller's, and it is validated before
+    /// the body is built.
+    pub(crate) async fn course_score(
+        &self,
+        course_id: &str,
+        student_id: &str,
+    ) -> Result<CourseScore, ThosError> {
+        use crate::course_score::{parse_course_score, student_id_for_request};
+        let course_id = course_id_for_request(course_id)?;
+        let student_id =
+            student_id_for_request(student_id).map_err(ThosError::from_course_score)?;
+        let body = json!({
+            "presetKey": COURSE_SCORE_PRESET_KEY,
+            "param": {"XH": student_id, "KCH": course_id},
+        });
+        parse_course_score(&self.read(SELECT_ONE, body).await?)
+            .map_err(ThosError::from_course_score)
     }
 
     async fn read(&self, path: &str, params: Value) -> Result<Value, ThosError> {
@@ -699,8 +749,12 @@ fn login_message(value: &str) -> bool {
 fn parse_body(body: &str) -> Result<Value, ThosError> {
     if body.trim_start().starts_with('<') {
         let lower = body.to_ascii_lowercase();
+        let classified = crate::campus_html::classify_page(body);
         return Err(
-            if login_message(body)
+            if matches!(
+                classified,
+                crate::campus_html::PageClass::Login | crate::campus_html::PageClass::Expired
+            ) || login_message(body)
                 || lower.contains("<title>登录</title>")
                 || lower.contains("name=\"i_user\"")
                 || lower.contains("name='i_user'")
@@ -765,6 +819,17 @@ fn parse_counts(value: &Value) -> Result<ThosCounts, ThosError> {
     Ok(ThosCounts {
         todo: number(object, "AuditSvsNum")?,
     })
+}
+
+/// One course result read from the service hall's preset query.
+///
+/// The parser and the input validation live in [`crate::course_score`]; this
+/// client only supplies the transport-verified request and body.
+pub(crate) use crate::course_score::CourseScore;
+
+/// Validates one caller-supplied course number before it can enter a body.
+pub(crate) fn course_id_for_request(course_id: &str) -> Result<&str, ThosError> {
+    crate::course_score::course_id_for_request(course_id).map_err(ThosError::from_course_score)
 }
 
 fn parse_page(value: &Value, page: u32) -> Result<(&Vec<Value>, u32), ThosError> {

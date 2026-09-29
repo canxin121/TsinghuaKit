@@ -222,6 +222,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   CourseGradeDto dco_decode_course_grade_dto(dynamic raw);
 
   @protected
+  CourseScoreDto dco_decode_course_score_dto(dynamic raw);
+
+  @protected
+  CourseScoreResultDto dco_decode_course_score_result_dto(dynamic raw);
+
+  @protected
   DailyOverviewDto dco_decode_daily_overview_dto(dynamic raw);
 
   @protected
@@ -1111,6 +1117,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   CourseGradeDto sse_decode_course_grade_dto(SseDeserializer deserializer);
+
+  @protected
+  CourseScoreDto sse_decode_course_score_dto(SseDeserializer deserializer);
+
+  @protected
+  CourseScoreResultDto sse_decode_course_score_result_dto(
+      SseDeserializer deserializer);
 
   @protected
   DailyOverviewDto sse_decode_daily_overview_dto(SseDeserializer deserializer);
@@ -2121,6 +2134,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_course_grade_dto(
       CourseGradeDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_course_score_dto(
+      CourseScoreDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_course_score_result_dto(
+      CourseScoreResultDto self, SseSerializer serializer);
 
   @protected
   void sse_encode_daily_overview_dto(

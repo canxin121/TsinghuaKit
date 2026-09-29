@@ -3,7 +3,7 @@
 
 use super::*;
 use crate::{
-    api::thos::{ThosPhaseStepsDto, ThosServicesDto, ThosTaskListDto},
+    api::thos::{ThosCourseScoreDto, ThosPhaseStepsDto, ThosServicesDto, ThosTaskListDto},
     auth::AccountAuthState,
     error::{Error, ErrorCode, Service},
     read::{CacheFreshness, ReadMetadata, ReadResult, ReadSource},
@@ -273,6 +273,7 @@ fn map_thos_error(error: ThosError) -> Error {
         // not be reported as an unconfirmed payload format.
         ThosError::Route => ErrorCode::RedirectRefused,
         ThosError::Response => ErrorCode::InvalidResponse,
+        ThosError::InvalidInput => ErrorCode::InvalidInput,
     };
     service_hall_error(code)
 }
@@ -547,6 +548,121 @@ pub(super) async fn read_phase_steps(
         .insert(task_id, (std::time::Instant::now(), result.clone()));
     runtime.persist_resume_state_after_live_read(&user, "info");
     Ok(result)
+}
+
+/// Translates one course-score failure into a credential-free reason code.
+///
+/// Session-level failures are reported through [`course_score_reason`]'s own
+/// transport arm, so both the local-argument and the transport errors land on
+/// the same small set of codes.
+fn course_score_reason(error: ThosError) -> &'static str {
+    match error {
+        ThosError::InvalidInput => "course_score_input",
+        ThosError::Session => "course_score_auth_required",
+        ThosError::Network => "course_score_network",
+        ThosError::Route => "course_score_route",
+        ThosError::Response => "course_score_response",
+        ThosError::Http | ThosError::Business => "course_score_http",
+    }
+}
+
+/// Translates one local course-score refusal into the same reason codes.
+fn course_score_argument_reason(error: crate::course_score::CourseScoreError) -> &'static str {
+    use crate::course_score::CourseScoreError;
+    match error {
+        CourseScoreError::InvalidInput => "course_score_input",
+        CourseScoreError::NotAStudentId => "course_score_auth_required",
+        CourseScoreError::Response => "course_score_response",
+        CourseScoreError::Transport(error) => course_score_reason(error),
+    }
+}
+
+/// Looks up one course result by the caller's course number.
+///
+/// The account's own student id is the service's other query parameter.  It is
+/// read here from the proven identity and handed straight to the request body,
+/// so it is never a caller argument, a result field, or a log field.
+#[cfg_attr(feature = "ffi-bridge", flutter_rust_bridge::frb(ignore))]
+pub(super) async fn read_course_score(
+    runtime: &mut CampusRuntime,
+    course_id: &str,
+) -> Result<ThosCourseScoreDto, String> {
+    runtime.allow_live_operation()?;
+    // The course number is the caller's own argument, so it is validated
+    // before any session work: an invalid value must not cost a handoff, and
+    // its free text must never reach the service.
+    if let Err(error) = crate::course_score::course_id_for_request(course_id) {
+        let reason = course_score_argument_reason(error);
+        runtime.last_course_score_failure_code = Some(reason);
+        return Err(runtime.record_business_failure("course_score", "course_score_lookup", reason));
+    }
+    let user = runtime.ensure_identity_user_for_live_read().await?;
+    runtime.ensure_info_reader_session(&user).await?;
+    if !runtime.service_session_is_proven(ServiceId::Identity)
+        || !runtime.service_session_is_proven(ServiceId::Info)
+        || runtime
+            .coordinator
+            .registry()
+            .snapshot_for(ServiceId::Info)
+            .user
+            .as_ref()
+            != Some(&user)
+    {
+        return Err("课程成绩查询账号会话未确认，请重新登录".into());
+    }
+    let info = runtime
+        .info_adapter
+        .as_ref()
+        .ok_or("课程成绩查询缺少门户会话")?;
+    let transport = runtime.identity.transport().clone();
+    if !Arc::ptr_eq(info.transport().cookie_jar(), transport.cookie_jar()) {
+        return Err("课程成绩查询账号会话未确认，请重新登录".into());
+    }
+    runtime.thos.bind(&user, &transport);
+    // The student id the query needs comes from this bound account, never from
+    // the caller.  A username that is not an all-digit student id is refused
+    // inside the client rather than sent as one.
+    let student_id = user.username.clone();
+    let client = ThosClient::new(&info.config().webvpn_base_url, transport)
+        .map_err(|error| error.message().to_owned())?;
+    match client.counts().await {
+        Ok(_) => {}
+        Err(ThosError::Session) if !runtime.thos.handoff_attempted => {
+            runtime.thos.handoff_attempted = true;
+            info.additional_roaming(crate::thos::ROAM_ID)
+                .await
+                .map_err(|_| "网上服务大厅会话续接未确认，请重新建立登录会话".to_owned())?;
+            client
+                .counts()
+                .await
+                .map_err(|error| error.message().to_owned())?;
+        }
+        Err(error) => return Err(error.message().into()),
+    }
+    let score = match client.course_score(course_id, &student_id).await {
+        Ok(score) => score,
+        Err(error) => {
+            let reason = course_score_reason(error);
+            runtime.last_course_score_failure_code = Some(reason);
+            return Err(runtime.record_business_failure(
+                "course_score",
+                "course_score_lookup",
+                reason,
+            ));
+        }
+    };
+    runtime.allow_live_operation()?;
+    runtime.last_course_score_failure_code = None;
+    runtime.persist_resume_state_after_live_read(&user, "info");
+    Ok(ThosCourseScoreDto {
+        name: score.name().to_owned(),
+        credit: score.credit(),
+        grade: score.grade().to_owned(),
+        empty: score.is_empty(),
+        generated_at: Utc::now().to_rfc3339(),
+        source: "live".into(),
+        status: "ready".into(),
+    })
 }
 
 #[cfg(test)]

@@ -31,6 +31,7 @@ use tsinghua_kit_sdk::{
         ClientCachePolicy, CredentialStoragePolicy, IdentitySessionStoragePolicy,
         NetworkProfileStoragePolicy,
     },
+    course_score::CourseScore,
     electricity::{ElectricityPaymentHistory, ElectricityRemainder},
     invoice::{InvoiceDocument, InvoicePage, InvoiceRef},
     learn::{
@@ -1108,6 +1109,22 @@ fn physical_exam_result(value: ReadResult<PhysicalExamReport>) -> PhysicalExamRe
             reference_total: report.reference_total(),
             reference_total_label: PhysicalExamReport::REFERENCE_TOTAL_LABEL.to_owned(),
             items: item_dtos,
+        },
+        metadata: ReadMetadataDto::from(&metadata),
+    }
+}
+
+/// Flattens one course-score lookup into bridge-safe scalars.  Every field is
+/// the service's own answer about this account and course; nothing in it
+/// identifies the account.
+fn course_score_result(value: ReadResult<CourseScore>) -> CourseScoreResultDto {
+    let (score, metadata) = value.into_parts();
+    CourseScoreResultDto {
+        data: CourseScoreDto {
+            name: score.name().to_owned(),
+            credit: score.credit(),
+            grade: score.grade().to_owned(),
+            empty: score.is_empty(),
         },
         metadata: ReadMetadataDto::from(&metadata),
     }
@@ -2418,6 +2435,39 @@ impl fmt::Debug for PhysicalExamDataDto {
 #[derive(Debug, Clone, PartialEq)]
 pub struct PhysicalExamResultDto {
     pub data: PhysicalExamDataDto,
+    pub metadata: ReadMetadataDto,
+}
+
+/// One course result looked up by course number.
+///
+/// The account's student id the service's query also needs is never a field
+/// here: it is derived inside Rust from the proven identity.  `name` and
+/// `grade` are personal academic data, so the `Debug` form prints only their
+/// presence and shape.
+#[derive(Clone, PartialEq)]
+pub struct CourseScoreDto {
+    pub name: String,
+    pub credit: Option<f64>,
+    pub grade: String,
+    /// True when the service reported no result at all for this course.
+    pub empty: bool,
+}
+
+impl fmt::Debug for CourseScoreDto {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("CourseScoreDto")
+            .field("name_present", &!self.name.is_empty())
+            .field("credit", &self.credit)
+            .field("grade_present", &!self.grade.is_empty())
+            .field("empty", &self.empty)
+            .finish()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CourseScoreResultDto {
+    pub data: CourseScoreDto,
     pub metadata: ReadMetadataDto,
 }
 
@@ -4931,6 +4981,21 @@ impl ClientHandle {
     pub async fn assessment_list_result(&mut self) -> Result<AssessmentListResultDto, SdkErrorDto> {
         let result = self.inner.assessment().list().await?;
         Ok(assessment_list_result(result))
+    }
+
+    /// Looks up one course result by the caller's course number.
+    ///
+    /// The account's own student id, which the service's query also needs, is
+    /// derived inside Rust from the proven identity; it is never an argument
+    /// here and never appears in the result.  The course number is validated
+    /// before any request, so a value this client will not send is reported as
+    /// invalid input rather than becoming a service-side query.
+    pub async fn course_score_result(
+        &mut self,
+        course_id: String,
+    ) -> Result<CourseScoreResultDto, SdkErrorDto> {
+        let result = self.inner.course_score().lookup(&course_id).await?;
+        Ok(course_score_result(result))
     }
 
     /// Reads one live page of issued e-invoices.

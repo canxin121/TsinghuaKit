@@ -27,6 +27,7 @@ part 'src/program.dart';
 part 'src/assessment.dart';
 part 'src/invoice.dart';
 part 'src/bank.dart';
+part 'src/course_score.dart';
 part 'src/learn.dart';
 part 'src/registrar_calendar.dart';
 part 'src/news.dart';
@@ -324,6 +325,7 @@ class TsinghuaKitClient {
         assessment = AssessmentClient._(handle),
         invoice = InvoiceClient._(handle),
         bank = BankClient._(handle),
+        courseScore = CourseScoreClient._(handle),
         learn = LearnClient._(handle),
         news = NewsClient._(handle),
         serviceHall = ServiceHallClient._(handle),
@@ -372,6 +374,9 @@ class TsinghuaKitClient {
 
   /// Bank payroll receipts and graduate-income statements.
   final BankClient bank;
+
+  /// One course result looked up by course number.
+  final CourseScoreClient courseScore;
 
   /// Learn courses, announcements, assignments, files, and discussions.
   final LearnClient learn;

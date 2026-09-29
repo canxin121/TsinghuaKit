@@ -3,6 +3,7 @@
 use std::{fmt, path::PathBuf};
 
 use tsinghua_kit_engine::{
+    CourseScore,
     assessment_read::AssessmentList as EngineAssessmentList,
     auth::{AccountAuthStatus, AuthStatus, SecondFactorMethod, SelfServiceLoginPhase},
     bank_read::{BankLedger, BankPaymentLedger, GraduateIncomePage},
@@ -19,6 +20,7 @@ use tsinghua_kit_engine::{
         CalendarClient as EngineCalendarClient, CampusCardClient as EngineCampusCardClient,
         ClassroomsClient as EngineClassroomsClient, Client as EngineClient,
         ClientBuilder as EngineClientBuilder, ClientCachePolicy as EngineCachePolicy,
+        CourseScoreClient as EngineCourseScoreClient,
         CredentialStoragePolicy as EngineCredentialStoragePolicy,
         ElectricityClient as EngineElectricityClient, IdentityLoginOutcome, IdentityLoginRequest,
         IdentitySessionStoragePolicy as EngineIdentitySessionStoragePolicy,
@@ -312,6 +314,13 @@ impl Client {
     pub fn bank(&mut self) -> BankClient<'_> {
         BankClient {
             inner: self.inner.bank(),
+        }
+    }
+
+    /// Borrows the read-only per-course score lookup.
+    pub fn course_score(&mut self) -> CourseScoreClient<'_> {
+        CourseScoreClient {
+            inner: self.inner.course_score(),
         }
     }
 
@@ -805,6 +814,30 @@ impl BankClient<'_> {
         end: &str,
     ) -> Result<ReadResult<GraduateIncomePage>, Error> {
         self.inner.graduate_income(begin, end).await
+    }
+}
+
+/// One course result looked up by course number.
+///
+/// The lookup is read live on every call and never served from a cached copy:
+/// a grade can be revised by the registrar at any time, so a retained value
+/// would present a superseded result as current.
+///
+/// The account's own student id, which the service's query also needs, is
+/// derived inside Rust from the proven identity; it is never an argument, a
+/// result field, or a log field.
+pub struct CourseScoreClient<'client> {
+    inner: EngineCourseScoreClient<'client>,
+}
+
+impl CourseScoreClient<'_> {
+    /// Looks up one course result by the caller's course number.
+    ///
+    /// The course number is validated before any request, so a value this
+    /// client will not send is reported as invalid input rather than becoming a
+    /// service-side query.
+    pub async fn lookup(&mut self, course_id: &str) -> Result<ReadResult<CourseScore>, Error> {
+        self.inner.lookup(course_id).await
     }
 }
 

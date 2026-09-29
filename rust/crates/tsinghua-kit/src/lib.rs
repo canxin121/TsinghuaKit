@@ -229,6 +229,16 @@ pub mod service_hall {
     };
 }
 
+/// One course result looked up by course number.
+///
+/// The account's own student id, which the service's query also needs, is
+/// derived inside Rust from the proven identity; it is never an argument, a
+/// result field, or a log field.
+pub mod course_score {
+    pub use crate::client::CourseScoreClient;
+    pub use tsinghua_kit_engine::CourseScore;
+}
+
 pub mod self_service {
     pub use crate::client::SelfServiceClient;
     pub use tsinghua_kit_engine::self_service::{

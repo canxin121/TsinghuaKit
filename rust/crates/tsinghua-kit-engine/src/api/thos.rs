@@ -1,6 +1,8 @@
 //! Presentation-only results for the online service hall (THOS).
 //! Authentication material and server-issued navigation URLs stay in Rust.
 
+use std::fmt;
+
 use crate::{
     read::{ReadResult, ReadSource},
     service_hall::PendingTasks,
@@ -90,6 +92,46 @@ pub struct ThosServicesDto {
     pub source: String,
     pub status: String,
     pub error: Option<String>,
+}
+
+/// One course result looked up by course number.
+///
+/// The course number the caller supplied and the account's own student id are
+/// deliberately absent: the first is the caller's own argument, and the second
+/// is derived inside Rust and never leaves a request body.
+#[derive(Clone, PartialEq)]
+pub struct ThosCourseScoreDto {
+    /// The course's own name.
+    pub name: String,
+    /// The credit value the service printed, when it printed one.
+    pub credit: Option<f64>,
+    /// The grade as the service rendered it, empty when it printed none.
+    pub grade: String,
+    /// True when the service reported no result at all for this course.
+    ///
+    /// This is the service's own answer about this account and course, so the
+    /// caller can tell it from a response that failed to parse.
+    pub empty: bool,
+    pub generated_at: String,
+    pub source: String,
+    pub status: String,
+}
+
+/// A grade result is personal academic data, so its `Debug` prints only the
+/// presence and shape of each field and never the values themselves.
+impl fmt::Debug for ThosCourseScoreDto {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ThosCourseScoreDto")
+            .field("name_present", &!self.name.is_empty())
+            .field("credit", &self.credit)
+            .field("grade_present", &!self.grade.is_empty())
+            .field("empty", &self.empty)
+            .field("generated_at", &self.generated_at)
+            .field("source", &self.source)
+            .field("status", &self.status)
+            .finish()
+    }
 }
 
 pub(crate) fn pending_dto(result: ReadResult<PendingTasks>) -> ThosPendingDto {

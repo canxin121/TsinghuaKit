@@ -1226,3 +1226,46 @@ test/public_entrypoints_test.dart | 1 +
 **边界**
 
 本轮**未执行任何真实账号登录或学校服务请求**；两个域的线上可用性仍未验证，需另行真实只读验收。两个主机名是推断而非证据。到款域只读，不含任何支付、充值或退订动作；`thu_reference` 侧的相关实现仅作为路径/字段/选择器/可观察行为的证据使用，未复制其源码、夹具或资源。
+
+## 57. 2026-09-29 网上服务大厅按课程号查成绩
+
+`thu_reference` 的 `getScoreByCourseId` 走服务大厅自己的预设查询：`POST /fp/fp/Uniformcommon/selectOnePresetData`，体为 `{"presetKey":"103765749452800","param":{"XH":<学号>,"KCH":<课程号>}}`，映射 token 与既有的 thos 域**完全相同**（`56B13DDF68BB3DEA13D98E1E3E776D3E`），因此本轮**不需要**新增 selector、映射或主机名：新域落在既有的 `thos.rs` 允许名单、既有 transport、既有 request gate 与既有账号绑定之内。
+
+**学号必须由 Rust 派生，绝不接受调用方传入**
+
+参考实现把 `helper.userId` 直接放进请求体。引擎侧不能照搬：`ThosClient::course_score(course_id, student_id)` 的 **course 号** 是调用方参数并先经 `course_id_for_request` 校验，**student 号** 只能由 `api::runtime_thos::read_course_score` 从已证明的 `UserIdentity` 取（`user.username.clone()`），并且在进入 body 之前还要过 `student_id_for_request`（纯数字，长度有界）。因此学号不会成为 SDK/FFI/Dart 的任何参数、任何返回字段、任何日志字段；`ThosCourseScoreDto` 与 `CourseScore` / `CourseScoreDto` 的 `Debug` 都只打印字段的存在性与形状（`name_present` / `grade_present` / `credit`），不打印课程名与成绩原文。
+
+**"服务说没有"与"解析失败"必须分开**
+
+参考实现只做 `JSON.parse` 后取三个键。引擎侧新增 crate-private `course_score.rs`：
+
+- 三个字段全部缺失（或为 `null`、或为空串）⇒ `CourseScore::is_empty() == true`，这是**服务自己关于该账号该课程的陈述**，是合法的空结果；
+- 字段存在但格式不对（`XF` 不是可解析的小数、越界、是布尔/对象/数组，`KCMC`/`DJZCJ` 不是字符串）⇒ `CourseScoreError::Response`，**绝不**降级成空结果。
+
+`XF` 走 `is_plausible_credit`（有限且在 `0.0..=100.0`），字符串与 JSON 数字都接受但空串是"没印"而不是零。`from_parts` 内部派生 `empty`，所以调用方无法一边带值一边宣称空。
+
+**读 POST 不重放、登录页是会话失败**
+
+`parse_body` 现在同时用共享的 `campus_html::classify_page` 判定：`您即将登陆/清华大学WebVPN`（`PageClass::Login`）与 `用户登陆超时或访问内容不存在`（`PageClass::Expired`）都归为 `ThosError::Session`，与既有的 `login_message` / `<title>登录</title>` / `i_user` / `/do/off/ui/auth/login` 判定并列；其余 HTML 仍是 `ThosError::Response`，不会变成"空成绩"。读取仍走 `execute_once`，302/307 一律 `ThosError::Route`，绝不把读 POST 重放到重定向目标。
+
+**新的 Service 边界**
+
+`error_sdk.rs` 新增 `Service::CourseScore`（`as_str() == "course_score"`）。不复用 `ServiceHall` 是因为课程号是**调用方参数**：`ServiceHall` 的 `invalid_input` 在 App 投影里是"阶段性事项引用已失效，请刷新列表后重试"，用在这里会是一句假话。`course_score_failure` 把 `course_score_input` 映到 `InvalidInput`、`course_score_auth_required` 映到 `SessionExpired`、`course_score_network` 映到 `NetworkUnavailable`、`course_score_route` 映到 `RedirectRefused`、`course_score_http` 映到 `ServiceUnavailable`，其余落到 `InvalidResponse`，并在无诊断码时回退到 identity auth 状态。
+
+**无缓存**
+
+成绩是可变学术数据，`load_course_score_result` 每次实读，`cached_read_metadata` 以 `ReadSource::Live` 构造元数据，不存在"缓存副本被当成当前成绩"的路径。
+
+**FFI / Dart**
+
+`sdk_api.rs` 新增 `CourseScoreDto` / `CourseScoreResultDto`（脱敏 `Debug`）与 `ClientHandle::course_score_result(course_id: String)`；FRB 2.13.0 重新生成，生成物未手工编辑。Dart 侧新增 `lib/src/course_score.dart` part 文件与 `lib/course_score.dart` 入口（导出 `CourseScore` / `CourseScoreClient` / `ReadResult` / `TsinghuaKitClient`），`TsinghuaKitClient.courseScore` 暴露该 facade，`test/public_entrypoints_test.dart` 增补对应断言。
+
+**验证**
+
+`cargo test -p tsinghua_kit_engine --lib course_score` **11 项通过**（`course_score_tests` 7 项 + `api::runtime::course_score_tests` 4 项）：pinned preset path 与 `presetKey`/`param.XH`/`param.KCH` 的请求体逐字段断言、`Debug` 不含课程名/成绩/学号/课程号、三字段全缺是合法空结果而"有课名无成绩"不是空、格式错误字段与越界学分被拒、课程号与学号两侧的边界（空串、空格、斜杠、`..`、`<script>`、超长、全角数字）被拒、**坏参数在任何请求之前**即以 `course_score_input` 返回且零请求、登录页/WebVPN 标题/超时页/`code:401` 归为 `Session`、非预期 HTML 与坏 `XF` 仍是失败、读 POST 遇 302 报 `Route` 且只发一次；Runtime 4 项覆盖：读取落在既有 thos 映射根内且 body 的 `XH` 等于绑定账号（并断言 DTO 与 `Debug` 都不含学号）、拒绝的课程号零请求、非数字登录名以 `course_score_auth_required` 到达调用方且预设查询**从未发出**、空结果是 `empty == true` 而 HTML/`code:401` 分别报 `course_score_response` / `course_score_auth_required` 且只做一次 pinned handoff。已通过的 `thos` 定向 17 项与 CLI 7 项同轮复跑通过。
+
+`cargo check --manifest-path rust/Cargo.toml -p tsinghua_kit_engine --lib` 与 `-p tsinghua_kit --lib`、`-p tsinghua_kit_ffi --lib --features ffi-bridge` 退出 0；严格 `RUSTDOCFLAGS="-D warnings" cargo doc -p tsinghua_kit` 通过；`flutter analyze lib test` 无问题；`flutter test test/public_entrypoints_test.dart` 通过并覆盖 `CourseScoreClient` / `CourseScore`。`docs/api-surface-baseline.json` 已按本节源码与重新渲染的 Rustdoc 刷新（`source_revision`、根 `pub use` 计数 51、DTO 清单新增 `ThosCourseScoreDto`、`direct_state_field_count`、渲染项计数）。
+
+**边界**
+
+本轮**未执行任何真实账号登录或学校服务请求**；本域线上可用性仍未验证，课程预设查询的真实响应形状（字段名与是否分页）只有参考实现作为证据。三个映射与主机名沿用既有 thos 域，未新增任何 selector。资金、支付、退订、挂失类动作不在本节范围内。

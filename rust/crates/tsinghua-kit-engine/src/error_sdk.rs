@@ -48,6 +48,13 @@ pub enum Service {
     BankPayment,
     /// Graduate-student income records.
     GraduateIncome,
+    /// One course result looked up by course number.
+    ///
+    /// This is its own boundary rather than a service-hall read: its input is a
+    /// course number the caller types, so an invalid one must be reportable as
+    /// invalid input without borrowing the service hall's reference-expiry
+    /// wording.
+    CourseScore,
     /// Independent CAB study-room booking service.
     LibraryRoom,
     /// Course-reserve textbook catalogue search.
@@ -84,6 +91,7 @@ impl Service {
             Self::Invoice => "invoice",
             Self::BankPayment => "bank_payment",
             Self::GraduateIncome => "graduate_income",
+            Self::CourseScore => "course_score",
             Self::LibraryRoom => "library_room",
             Self::Reserves => "reserves",
             Self::Sports => "sports",

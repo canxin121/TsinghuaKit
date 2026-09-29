@@ -5,6 +5,7 @@ import 'package:tsinghua_kit/bank.dart' as bank;
 import 'package:tsinghua_kit/campus_card.dart' as campus_card;
 import 'package:tsinghua_kit/classrooms.dart' as classrooms;
 import 'package:tsinghua_kit/core.dart' as core;
+import 'package:tsinghua_kit/course_score.dart' as course_score;
 import 'package:tsinghua_kit/electricity.dart' as electricity;
 import 'package:tsinghua_kit/invoice.dart' as invoice;
 import 'package:tsinghua_kit/learn.dart' as learn;
@@ -105,5 +106,11 @@ void main() {
     expect(bank.BankLedger.foundation.name, 'foundation');
     expect(_publicType<bank.GraduateIncomePage>(), isNull);
     expect(_publicType<bank.GraduateIncomeRecord>(), isNull);
+    expect(_publicType<course_score.CourseScoreClient>(), isNull);
+    expect(_publicType<course_score.CourseScore>(), isNull);
+    expect(
+      course_score.CourseScore(name: '课程', credit: 2, grade: 'A', empty: false),
+      isA<course_score.CourseScore>(),
+    );
   });
 }

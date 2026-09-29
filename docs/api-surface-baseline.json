@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "source_revision": "5e546ab70ade6dbb205ad0d096f9e86f6fbc2b73",
+  "source_revision": "6770d505a05676e8a07321ef4f6fce9431123d12",
   "source_date": "2026-09-29",
-  "scope": "Current source and the existing Rustdoc rendered from it; not an exhaustive semver API report or a live-validation result. The 2026-09-29 refresh adds the bank-payroll and graduate-income statement read slice on top of the e-invoice, degree-program, physical-education, and teaching-evaluation slices; no live campus request was made for it.",
+  "scope": "Current source and the existing Rustdoc rendered from it; not an exhaustive semver API report or a live-validation result. The 2026-09-29 refresh adds the per-course score lookup on top of the bank-payroll and graduate-income, e-invoice, degree-program, physical-education, and teaching-evaluation slices; no live campus request was made for it.",
   "methodology": "Public module/method/DTO declarations are counted from source. Rustdoc item links are deduplicated by class and href on the rendered crate root. Counts include deprecated or compatibility items; source line counts include inline tests.",
   "root_public_modules": [
     "api",
@@ -67,9 +67,9 @@
     "usereg_client",
     "webvpn_identity"
   ],
-  "root_pub_use_statement_count": 50,
+  "root_pub_use_statement_count": 51,
   "rendered_crate_root_item_counts": {
-    "struct": 291,
+    "struct": 292,
     "enum": 141,
     "fn": 50,
     "constant": 42,
@@ -78,8 +78,8 @@
   },
   "runtime": {
     "path": "rust/crates/tsinghua-kit-engine/src/api/runtime.rs",
-    "line_count": 27579,
-    "direct_state_field_count": 108,
+    "line_count": 27615,
+    "direct_state_field_count": 109,
     "dto_structs": [
       "CampusRuntimeStatusDto",
       "UseregCaptchaDto",
@@ -141,7 +141,8 @@
       "BankReceiptMonthDto",
       "BankReceiptDto",
       "GraduateIncomeResultDto",
-      "GraduateIncomeRecordDto"
+      "GraduateIncomeRecordDto",
+      "ThosCourseScoreDto"
     ],
     "public_methods": [
       {

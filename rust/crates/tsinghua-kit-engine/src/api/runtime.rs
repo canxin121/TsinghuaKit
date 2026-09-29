@@ -222,6 +222,10 @@ mod invoice_tests;
 mod bank_tests;
 
 #[cfg(test)]
+#[path = "runtime_course_score_tests.rs"]
+mod course_score_tests;
+
+#[cfg(test)]
 #[path = "runtime_library_cache_tests.rs"]
 mod library_cache_tests;
 
@@ -2845,6 +2849,9 @@ pub struct CampusRuntime {
     // too, so their failures are mapped from a stable code as well.
     last_bank_payment_failure_code: Option<&'static str>,
     last_graduate_income_failure_code: Option<&'static str>,
+    // The course-number query is the caller's argument, so its failures are
+    // recorded here rather than inferred from the service hall's wording.
+    last_course_score_failure_code: Option<&'static str>,
     // The WebVPN/OAuth/Identity origin graph is part of the Rust runtime's
     // authenticated transport boundary. Production uses the current THU
     // deployment; loopback fixtures may inject a fully validated graph so
@@ -3512,6 +3519,7 @@ impl CampusRuntime {
             last_invoice_failure_code: None,
             last_bank_payment_failure_code: None,
             last_graduate_income_failure_code: None,
+            last_course_score_failure_code: None,
             webvpn_identity_config,
         };
 
@@ -4920,6 +4928,23 @@ impl CampusRuntime {
             "info",
             "load_thos_phase_steps",
             thos_runtime::read_phase_steps(self, task_id, force_refresh),
+        )
+        .await
+    }
+
+    /// Looks up one course result by the caller's course number.
+    ///
+    /// The student id the service's query needs is derived inside this Runtime
+    /// from the proven identity, so it never appears as an argument, a return
+    /// value, or a log field.
+    pub async fn load_course_score_result(
+        &mut self,
+        course_id: &str,
+    ) -> Result<super::thos::ThosCourseScoreDto, String> {
+        crate::telemetry::observe(
+            "course_score",
+            "load_course_score_result",
+            thos_runtime::read_course_score(self, course_id),
         )
         .await
     }
@@ -17227,6 +17252,11 @@ impl CampusRuntime {
     /// The graduate-income service's own failure code from the last read.
     pub(crate) fn last_graduate_income_failure_code(&self) -> Option<&'static str> {
         self.last_graduate_income_failure_code
+    }
+
+    /// The course-score query's own failure code from the last read.
+    pub(crate) fn last_course_score_failure_code(&self) -> Option<&'static str> {
+        self.last_course_score_failure_code
     }
 
     fn record_error(&mut self, error: impl std::fmt::Display) -> String {

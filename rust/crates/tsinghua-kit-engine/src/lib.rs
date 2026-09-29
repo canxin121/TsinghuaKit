@@ -75,6 +75,7 @@ pub mod webvpn_identity;
 
 mod campus_html;
 mod captcha_image;
+mod course_score;
 mod credential_store;
 mod error_legacy;
 mod error_sdk;
@@ -156,6 +157,7 @@ pub use client::{
     Client, ClientBuilder, ClientCachePolicy, CredentialStoragePolicy, IdentityLoginOutcome,
     IdentityLoginRequest, IdentitySessionStoragePolicy, LoginStage, ServiceHallClient,
 };
+pub use course_score::CourseScore;
 pub use domain::*;
 pub use dorm_electricity_read::{
     DormElectricityAdapter, DormElectricityAdapterConfig, DormElectricityAdapterError,
@@ -338,6 +340,9 @@ mod invoice_tests;
 
 #[cfg(test)]
 mod bank_tests;
+
+#[cfg(test)]
+mod course_score_tests;
 
 #[cfg(test)]
 mod reference_test_support;
