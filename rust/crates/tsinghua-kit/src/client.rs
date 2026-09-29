@@ -34,7 +34,7 @@ use tsinghua_kit_engine::{
         PhysicalExamClient as EnginePhysicalExamClient, ProgramClient as EngineProgramClient,
         RegistrarClient as EngineRegistrarClient, SelfServiceCaptcha,
         SelfServiceClient as EngineSelfServiceClient, SelfServiceLoginOutcome,
-        ServiceHallClient as EngineServiceHallClient,
+        ServiceHallClient as EngineServiceHallClient, SportsClient as EngineSportsClient,
     },
     electricity_api::{ElectricityPaymentHistory, ElectricityRemainder},
     error::Error,
@@ -65,6 +65,7 @@ use tsinghua_kit_engine::{
         PendingTasks, PhaseDetails, ServiceDirectory, ServiceHallReadPolicy, TaskView,
         WorkflowTaskList, WorkflowTaskRef,
     },
+    sports_read::{SportsReservationRecord, SportsResources},
 };
 use zeroize::Zeroize;
 
@@ -325,6 +326,13 @@ impl Client {
     pub fn course_score(&mut self) -> CourseScoreClient<'_> {
         CourseScoreClient {
             inner: self.inner.course_score(),
+        }
+    }
+
+    /// Borrows the read-only sports-venue resources and reservation records.
+    pub fn sports(&mut self) -> SportsClient<'_> {
+        SportsClient {
+            inner: self.inner.sports(),
         }
     }
 
@@ -845,6 +853,38 @@ impl BankClient<'_> {
         end: &str,
     ) -> Result<ReadResult<GraduateIncomePage>, Error> {
         self.inner.graduate_income(begin, end).await
+    }
+}
+
+/// Sports-venue resources and reservation records.
+///
+/// Both reads go live on every call and are never served from a cached copy: a
+/// venue's availability changes minute by minute and a reservation list is a
+/// booking state, so a retained copy would present a taken court as free or a
+/// cancelled booking as live.
+pub struct SportsClient<'client> {
+    inner: EngineSportsClient<'client>,
+}
+
+impl SportsClient<'_> {
+    /// Reads one venue's limits, configured phone number, and slot list for one
+    /// `YYYY-MM-DD` date.
+    ///
+    /// `gym_id` and `item_id` must be digit strings and `date` a real calendar
+    /// day; a value that is not is refused before any request, so caller text
+    /// never becomes a service-side filter.
+    pub async fn resources(
+        &mut self,
+        gym_id: &str,
+        item_id: &str,
+        date: &str,
+    ) -> Result<ReadResult<SportsResources>, Error> {
+        self.inner.resources(gym_id, item_id, date).await
+    }
+
+    /// Reads the account's unpaid reservations followed by its paid ones.
+    pub async fn records(&mut self) -> Result<ReadResult<Vec<SportsReservationRecord>>, Error> {
+        self.inner.records().await
     }
 }
 

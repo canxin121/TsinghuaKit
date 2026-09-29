@@ -288,6 +288,19 @@ pub mod water {
 pub use client::{Client, ClientBuilder};
 pub use error::Error;
 
+/// Sports-venue resources and reservation records (`体育场馆`).
+///
+/// The venue's availability and the account's own reservation list are read
+/// live on every call; nothing here orders, pays, or cancels, so the venue's
+/// captcha and payment routes are not reachable through this SDK.
+pub mod sports {
+    pub use crate::client::SportsClient;
+    pub use tsinghua_kit_engine::sports_read::{
+        PAID_METHOD, SPORTS_MAPPING_TOKEN, SPORTS_WEBVPN_TARGET, SportsLimits,
+        SportsReservationRecord, SportsResource, SportsResources,
+    };
+}
+
 /// The standard result type for public SDK operations.
 pub type Result<T> = std::result::Result<T, Error>;
 

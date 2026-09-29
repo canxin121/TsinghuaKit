@@ -80,6 +80,7 @@ use tsinghua_kit_sdk::{
         PendingTasks, PhaseDetails, ServiceDirectory, ServiceHallReadPolicy, TaskView,
         WorkflowTaskList, WorkflowTaskRef,
     },
+    sports::{SportsReservationRecord, SportsResources},
     water::{WATER_BRANDS, WaterLookupError, read_water_user as sdk_read_water_user},
 };
 
@@ -1396,6 +1397,61 @@ fn graduate_income_result(value: ReadResult<GraduateIncomePage>) -> GraduateInco
     }
 }
 
+/// Flattens one sports-venue slot list into bridge-safe scalars.
+fn sports_resources_result(value: ReadResult<SportsResources>) -> SportsResourcesResultDto {
+    let (resources, metadata) = value.into_parts();
+    SportsResourcesResultDto {
+        data: SportsResourcesDto {
+            count: resources.count,
+            init: resources.init,
+            phone: resources.phone,
+            data: resources
+                .data
+                .into_iter()
+                .map(|slot| SportsResourceDto {
+                    res_id: slot.res_id,
+                    res_hash: slot.res_hash,
+                    time_session: slot.time_session,
+                    field_name: slot.field_name,
+                    overlay_size: slot.overlay_size,
+                    can_net_book: slot.can_net_book,
+                    cost: slot.cost,
+                    book_id: slot.book_id,
+                    locked: slot.locked,
+                    user_type: slot.user_type,
+                    payment_status: slot.payment_status,
+                })
+                .collect(),
+        },
+        metadata: ReadMetadataDto::from(&metadata),
+    }
+}
+
+/// Flattens the reservation list into bridge-safe scalars.
+fn sports_records_result(
+    value: ReadResult<Vec<SportsReservationRecord>>,
+) -> SportsRecordsResultDto {
+    let (records, metadata) = value.into_parts();
+    SportsRecordsResultDto {
+        data: SportsRecordsDataDto {
+            records: records
+                .into_iter()
+                .map(|record| SportsReservationRecordDto {
+                    name: record.name,
+                    field: record.field,
+                    time: record.time,
+                    price: record.price,
+                    method: record.method,
+                    book_timestamp: record.book_timestamp,
+                    book_id: record.book_id,
+                    pay_id: record.pay_id,
+                })
+                .collect(),
+        },
+        metadata: ReadMetadataDto::from(&metadata),
+    }
+}
+
 fn library_directory_result(
     value: ReadResult<LibraryDirectory>,
     references: &mut HashMap<String, LibraryRef>,
@@ -2504,6 +2560,117 @@ impl fmt::Debug for PhysicalExamDataDto {
 #[derive(Debug, Clone, PartialEq)]
 pub struct PhysicalExamResultDto {
     pub data: PhysicalExamDataDto,
+    pub metadata: ReadMetadataDto,
+}
+
+/// One sports-venue slot as the bridge reports it.
+///
+/// `res_hash` and `book_id` are single-purpose booking tokens, so neither
+/// appears in the `Debug` form; the bridge carries them only so a caller can
+/// name a slot back, never so it can address the service with them.
+#[derive(Clone, PartialEq)]
+pub struct SportsResourceDto {
+    pub res_id: String,
+    pub res_hash: String,
+    pub time_session: String,
+    pub field_name: String,
+    pub overlay_size: Option<u32>,
+    pub can_net_book: bool,
+    /// The service's own cost token, preserved verbatim.  The observed
+    /// evidence does not establish a unit for it, so it is not converted into
+    /// a currency amount.
+    pub cost: Option<String>,
+    pub book_id: Option<String>,
+    pub locked: Option<bool>,
+    pub user_type: Option<String>,
+    pub payment_status: Option<bool>,
+}
+
+impl fmt::Debug for SportsResourceDto {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("SportsResourceDto")
+            .field("res_id", &self.res_id)
+            .field("time_session", &self.time_session)
+            .field("field_name", &self.field_name)
+            .field("overlay_size", &self.overlay_size)
+            .field("can_net_book", &self.can_net_book)
+            .field("cost", &self.cost)
+            .field("has_res_hash", &!self.res_hash.is_empty())
+            .field("has_book_id", &self.book_id.is_some())
+            .field("locked", &self.locked)
+            .field("user_type", &self.user_type)
+            .field("payment_status", &self.payment_status)
+            .finish()
+    }
+}
+
+/// One venue's slot list for one date.
+#[derive(Clone, PartialEq)]
+pub struct SportsResourcesDto {
+    pub count: u32,
+    pub init: u32,
+    /// Present only when the account has configured a number.  It is personal
+    /// data, so the `Debug` form prints only whether it is there.
+    pub phone: Option<String>,
+    pub data: Vec<SportsResourceDto>,
+}
+
+impl fmt::Debug for SportsResourcesDto {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("SportsResourcesDto")
+            .field("count", &self.count)
+            .field("init", &self.init)
+            .field("phone_present", &self.phone.is_some())
+            .field("slot_count", &self.data.len())
+            .finish()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SportsResourcesResultDto {
+    pub data: SportsResourcesDto,
+    pub metadata: ReadMetadataDto,
+}
+
+/// One reservation row as the bridge reports it.
+#[derive(Clone, PartialEq)]
+pub struct SportsReservationRecordDto {
+    pub name: String,
+    pub field: String,
+    pub time: String,
+    pub price: String,
+    pub method: String,
+    pub book_timestamp: Option<i64>,
+    pub book_id: Option<String>,
+    pub pay_id: Option<String>,
+}
+
+impl fmt::Debug for SportsReservationRecordDto {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("SportsReservationRecordDto")
+            .field("name", &self.name)
+            .field("field", &self.field)
+            .field("time", &self.time)
+            .field("price", &self.price)
+            .field("method", &self.method)
+            .field("book_timestamp", &self.book_timestamp)
+            .field("has_book_id", &self.book_id.is_some())
+            .field("has_pay_id", &self.pay_id.is_some())
+            .finish()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SportsRecordsDataDto {
+    pub records: Vec<SportsReservationRecordDto>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SportsRecordsResultDto {
+    pub data: SportsRecordsDataDto,
     pub metadata: ReadMetadataDto,
 }
 
@@ -5161,6 +5328,31 @@ impl ClientHandle {
         Ok(program_completion_result(result))
     }
 
+    /// Reads one sports venue's limits, configured phone number, and slot list
+    /// for one `YYYY-MM-DD` date.  `gym_id` and `item_id` must be digit strings
+    /// and `date` a real calendar day; anything else is refused in Rust before
+    /// any request.
+    pub async fn sports_resources_result(
+        &mut self,
+        gym_id: String,
+        item_id: String,
+        date: String,
+    ) -> Result<SportsResourcesResultDto, SdkErrorDto> {
+        let result = self
+            .inner
+            .sports()
+            .resources(&gym_id, &item_id, &date)
+            .await?;
+        Ok(sports_resources_result(result))
+    }
+
+    /// Reads the account's unpaid sports reservations followed by its paid
+    /// ones.  Nothing here orders, pays, or cancels.
+    pub async fn sports_records_result(&mut self) -> Result<SportsRecordsResultDto, SdkErrorDto> {
+        let result = self.inner.sports().records().await?;
+        Ok(sports_records_result(result))
+    }
+
     /// Reads the teaching-evaluation questionnaires the account may fill in.
     /// A closed questionnaire window is the service's own "not available"
     /// state, never a validated empty list.
@@ -6816,6 +7008,85 @@ mod tests {
         let delivery = client.water_user("10 01".to_owned()).await.unwrap_err();
         assert_eq!(delivery.service, "water");
         assert_eq!(delivery.code, "invalid_input");
+
+        assert_eq!(
+            client.auth_status().identity.state,
+            AccountStateDto::SignedOut
+        );
+    }
+
+    /// Every sports field that identifies the account or addresses one of its
+    /// own bookings is a token, so `Debug` keeps only its presence.
+    #[test]
+    fn sports_bridge_debug_omits_booking_tokens_and_the_configured_phone() {
+        let slot = SportsResourceDto {
+            res_id: "3998000".into(),
+            res_hash: "private-hash".into(),
+            time_session: "20:00-21:00".into(),
+            field_name: "1号场".into(),
+            overlay_size: None,
+            can_net_book: true,
+            cost: Some("20".into()),
+            book_id: Some("private-book".into()),
+            locked: Some(false),
+            user_type: None,
+            payment_status: None,
+        };
+        let rendered = format!("{slot:?}");
+        assert!(rendered.contains("SportsResourceDto"));
+        assert!(rendered.contains("3998000"));
+        assert!(rendered.contains("20:00-21:00"));
+        assert!(rendered.contains("has_res_hash"));
+        assert!(rendered.contains("has_book_id"));
+        assert!(!rendered.contains("private-hash"));
+        assert!(!rendered.contains("private-book"));
+
+        let resources = SportsResourcesDto {
+            count: 1,
+            init: 1,
+            phone: Some("private-phone".into()),
+            data: vec![slot],
+        };
+        let rendered = format!("{resources:?}");
+        assert!(rendered.contains("phone_present"));
+        assert!(!rendered.contains("private-phone"));
+
+        let record = SportsReservationRecordDto {
+            name: "气膜馆羽毛球场".into(),
+            field: "1号场".into(),
+            time: "2026-09-30 20:00-21:00".into(),
+            price: "20".into(),
+            method: "已支付".into(),
+            book_timestamp: Some(1759204800000),
+            book_id: Some("private-book".into()),
+            pay_id: Some("private-pay".into()),
+        };
+        let rendered = format!("{record:?}");
+        assert!(rendered.contains("SportsReservationRecordDto"));
+        assert!(rendered.contains("已支付"));
+        assert!(rendered.contains("has_book_id"));
+        assert!(rendered.contains("has_pay_id"));
+        assert!(!rendered.contains("private-book"));
+        assert!(!rendered.contains("private-pay"));
+    }
+
+    /// A refused venue argument is answered by Rust with no request and no
+    /// session work, and the account is left exactly as it was.
+    #[tokio::test]
+    async fn sports_refusals_need_no_account_and_no_request() {
+        let mut client = client();
+        for (gym, item, date) in [
+            ("", "4045681", "2026-09-30"),
+            ("3998000", "4045681x", "2026-09-30"),
+            ("3998000", "4045681", "2026-02-30"),
+        ] {
+            let error = client
+                .sports_resources_result(gym.to_owned(), item.to_owned(), date.to_owned())
+                .await
+                .unwrap_err();
+            assert_eq!(error.service, "sports");
+            assert_eq!(error.code, "invalid_input");
+        }
 
         assert_eq!(
             client.auth_status().identity.state,

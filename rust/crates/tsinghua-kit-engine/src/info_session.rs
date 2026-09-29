@@ -780,6 +780,19 @@ impl InfoSessionAdapter {
                 "77726476706e69737468656265737421faef469069336153301c9aa596522b20e33c1eb39606919f",
             ),
             crate::thos::ROAM_ID => ("thos.tsinghua.edu.cn", "https", crate::thos::MAPPING),
+            // The sports-venue booking application is its own campus host
+            // behind its own mapping.  THUInfo reaches it with the `default`
+            // roam policy, and its own constants carry the `50.tsinghua.edu.cn`
+            // hostname inside the order URL, which is why the host below is
+            // evidenced rather than inferred.  The arm grants nothing on its
+            // own: the shared checks below still pin the scheme, port,
+            // userinfo and percent-encoding, and an input that arrives already
+            // mapped must sit inside this module's own mapping constant.
+            crate::sports_read::SPORTS_WEBVPN_TARGET => (
+                "50.tsinghua.edu.cn",
+                "http",
+                crate::sports_read::SPORTS_MAPPING_TOKEN,
+            ),
             // The e-invoice application's original URL is `dzpj.tsinghua.edu.cn`
             // — the reference derives that hostname from its own host table by
             // taking the name before `.tsinghua.edu.cn`, and its roaming branch

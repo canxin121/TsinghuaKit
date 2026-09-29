@@ -29,6 +29,7 @@ part 'src/invoice.dart';
 part 'src/bank.dart';
 part 'src/laundry.dart';
 part 'src/water.dart';
+part 'src/sports.dart';
 part 'src/course_score.dart';
 part 'src/learn.dart';
 part 'src/registrar_calendar.dart';
@@ -329,6 +330,7 @@ class TsinghuaKitClient {
         bank = BankClient._(handle),
         laundry = LaundryClient._(handle),
         water = WaterClient._(handle),
+        sports = SportsClient._(handle),
         courseScore = CourseScoreClient._(handle),
         learn = LearnClient._(handle),
         news = NewsClient._(handle),
@@ -386,6 +388,10 @@ class TsinghuaKitClient {
   /// 清紫源泉 bottled-water delivery account lookup. Account-independent:
   /// no campus session is required.
   final WaterClient water;
+
+  /// Sports-venue availability and this account's reservation records.
+  /// Read-only: no order, payment, or cancellation is reachable.
+  final SportsClient sports;
 
   /// One course result looked up by course number.
   final CourseScoreClient courseScore;

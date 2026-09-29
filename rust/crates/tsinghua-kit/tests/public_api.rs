@@ -50,6 +50,7 @@ use tsinghua_kit::{
         PendingTasks, ServiceDirectory, ServiceHallReadPolicy, TaskView, WorkflowTaskList,
         WorkflowTaskRef,
     },
+    sports::{PAID_METHOD, SportsLimits, SportsReservationRecord, SportsResource, SportsResources},
     water::{WATER_BRANDS, WaterError, WaterLookupError, WaterUser, read_water_user},
 };
 
@@ -262,6 +263,29 @@ async fn compile_electricity_api(client: &mut tsinghua_kit::Client) -> Result<()
     Ok(())
 }
 
+/// Sports reads are `Client` methods because both are account-bound, and both
+/// are read-only: this module has no order, payment, or cancellation to reach.
+#[allow(dead_code)]
+async fn compile_sports_api(client: &mut tsinghua_kit::Client) -> Result<()> {
+    let mut sports = client.sports();
+    let resources = sports.resources("3998000", "4045681", "2026-09-30").await?;
+    let _: &SportsResources = resources.data();
+    let _limits = SportsLimits {
+        count: resources.data().count,
+        init: resources.data().init,
+    };
+    if let Some(slot) = resources.data().data.first() {
+        let _: &SportsResource = slot;
+        let _hash: &str = slot.res_hash.as_str();
+    }
+    let records = sports.records().await?;
+    if let Some(record) = records.data().first() {
+        let _: &SportsReservationRecord = record;
+        let _is_paid = record.method == PAID_METHOD;
+    }
+    Ok(())
+}
+
 /// Both third-party reads are free functions rather than `Client` methods:
 /// they carry no campus account binding, so neither can require a session.
 /// They report their own error types rather than the campus `Error`, so this
@@ -378,6 +402,9 @@ fn rust_consumers_can_import_curated_domain_modules_without_ffi() {
     accepts_public_types::<WorkflowTaskRef>(None);
     accepts_public_types::<DeviceRef>(None);
     accepts_public_types::<NewsQuery>(None);
+    accepts_public_types::<SportsResources>(None);
+    accepts_public_types::<SportsResource>(None);
+    accepts_public_types::<SportsReservationRecord>(None);
     accepts_public_types::<NewsCatalog>(None);
     accepts_public_types::<NewsFavorites>(None);
     accepts_public_types::<NewsSubscription>(None);
@@ -561,6 +588,49 @@ async fn electricity_reads_require_identity_and_return_service_scoped_errors() {
         client.auth().status().identity().state(),
         AccountAuthState::SignedOut
     );
+}
+
+#[tokio::test]
+async fn sports_reads_require_identity_and_return_service_scoped_errors() {
+    let mut client = tsinghua_kit::Client::builder().build().unwrap();
+    let (resources_error, records_error) = {
+        let mut sports = client.sports();
+        (
+            sports
+                .resources("3998000", "4045681", "2026-09-30")
+                .await
+                .unwrap_err(),
+            sports.records().await.unwrap_err(),
+        )
+    };
+
+    for error in [resources_error, records_error] {
+        assert_eq!(error.service(), Service::Sports);
+        assert_eq!(error.code(), ErrorCode::SessionRequired);
+    }
+    assert_eq!(
+        client.auth().status().identity().state(),
+        AccountAuthState::SignedOut
+    );
+}
+
+/// A refused venue argument is a caller-input error, and it must be decided
+/// before any session is even considered: the account is signed out here, yet
+/// the answer is `InvalidInput` rather than `SessionRequired`.
+#[tokio::test]
+async fn sports_refuses_an_unusable_venue_argument_before_any_session_check() {
+    let mut client = tsinghua_kit::Client::builder().build().unwrap();
+    let mut sports = client.sports();
+    for (gym, item, date) in [
+        ("", "4045681", "2026-09-30"),
+        ("3998000", "40 45681", "2026-09-30"),
+        ("3998000", "4045681", "2026-02-30"),
+        ("3998000", "4045681", "2026-9-30"),
+    ] {
+        let error = sports.resources(gym, item, date).await.unwrap_err();
+        assert_eq!(error.service(), Service::Sports);
+        assert_eq!(error.code(), ErrorCode::InvalidInput);
+    }
 }
 
 #[test]

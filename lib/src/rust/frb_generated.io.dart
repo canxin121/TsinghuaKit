@@ -696,6 +696,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
       dco_decode_list_service_hall_workflow_task_dto(dynamic raw);
 
   @protected
+  List<SportsReservationRecordDto>
+      dco_decode_list_sports_reservation_record_dto(dynamic raw);
+
+  @protected
+  List<SportsResourceDto> dco_decode_list_sports_resource_dto(dynamic raw);
+
+  @protected
   LoginStageDto dco_decode_login_stage_dto(dynamic raw);
 
   @protected
@@ -971,6 +978,25 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   ServiceHallWorkflowTaskDto dco_decode_service_hall_workflow_task_dto(
       dynamic raw);
+
+  @protected
+  SportsRecordsDataDto dco_decode_sports_records_data_dto(dynamic raw);
+
+  @protected
+  SportsRecordsResultDto dco_decode_sports_records_result_dto(dynamic raw);
+
+  @protected
+  SportsReservationRecordDto dco_decode_sports_reservation_record_dto(
+      dynamic raw);
+
+  @protected
+  SportsResourceDto dco_decode_sports_resource_dto(dynamic raw);
+
+  @protected
+  SportsResourcesDto dco_decode_sports_resources_dto(dynamic raw);
+
+  @protected
+  SportsResourcesResultDto dco_decode_sports_resources_result_dto(dynamic raw);
 
   @protected
   int dco_decode_u_32(dynamic raw);
@@ -1758,6 +1784,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
           SseDeserializer deserializer);
 
   @protected
+  List<SportsReservationRecordDto>
+      sse_decode_list_sports_reservation_record_dto(
+          SseDeserializer deserializer);
+
+  @protected
+  List<SportsResourceDto> sse_decode_list_sports_resource_dto(
+      SseDeserializer deserializer);
+
+  @protected
   LoginStageDto sse_decode_login_stage_dto(SseDeserializer deserializer);
 
   @protected
@@ -2073,6 +2108,30 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ServiceHallWorkflowTaskDto sse_decode_service_hall_workflow_task_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  SportsRecordsDataDto sse_decode_sports_records_data_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  SportsRecordsResultDto sse_decode_sports_records_result_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  SportsReservationRecordDto sse_decode_sports_reservation_record_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  SportsResourceDto sse_decode_sports_resource_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  SportsResourcesDto sse_decode_sports_resources_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  SportsResourcesResultDto sse_decode_sports_resources_result_dto(
       SseDeserializer deserializer);
 
   @protected
@@ -2877,6 +2936,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
       List<ServiceHallWorkflowTaskDto> self, SseSerializer serializer);
 
   @protected
+  void sse_encode_list_sports_reservation_record_dto(
+      List<SportsReservationRecordDto> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_sports_resource_dto(
+      List<SportsResourceDto> self, SseSerializer serializer);
+
+  @protected
   void sse_encode_login_stage_dto(LoginStageDto self, SseSerializer serializer);
 
   @protected
@@ -3201,6 +3268,30 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_service_hall_workflow_task_dto(
       ServiceHallWorkflowTaskDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_sports_records_data_dto(
+      SportsRecordsDataDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_sports_records_result_dto(
+      SportsRecordsResultDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_sports_reservation_record_dto(
+      SportsReservationRecordDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_sports_resource_dto(
+      SportsResourceDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_sports_resources_dto(
+      SportsResourcesDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_sports_resources_result_dto(
+      SportsResourcesResultDto self, SseSerializer serializer);
 
   @protected
   void sse_encode_u_32(int self, SseSerializer serializer);

@@ -89,6 +89,7 @@ use crate::{
         PendingTasks, PhaseDetails, PhaseStep, PhaseStepItem, ServiceDirectory, ServiceEntry,
         ServiceHallReadPolicy, TaskView, WorkflowTask, WorkflowTaskList, WorkflowTaskRef,
     },
+    sports_read::{SportsReservationRecord, SportsResources},
 };
 
 /// Cache-directory behavior for a client instance.
@@ -969,6 +970,13 @@ impl Client {
         }
     }
 
+    /// Borrows the read-only sports-venue resources and reservation records.
+    pub fn sports(&mut self) -> SportsClient<'_> {
+        SportsClient {
+            runtime: &mut self.runtime,
+        }
+    }
+
     /// Borrows school-wide and academic-term calendar reads.
     pub fn calendar(&mut self) -> CalendarClient<'_> {
         CalendarClient {
@@ -1324,6 +1332,64 @@ impl ProgramClient<'_> {
             ReadSource::Live,
         )?;
         Ok(ReadResult::new(dto.report, metadata))
+    }
+}
+
+/// Read-only sports-venue resources and reservation records.
+///
+/// Both reads go live on every call and are never served from a cached copy: a
+/// venue's availability changes minute by minute and a reservation list is a
+/// booking state, so a retained copy would present a taken court as free or a
+/// cancelled booking as live.
+pub struct SportsClient<'client> {
+    runtime: &'client mut CampusRuntime,
+}
+
+impl SportsClient<'_> {
+    /// Reads one venue's limits, configured phone number, and slot list for one
+    /// `YYYY-MM-DD` date.
+    ///
+    /// `gym_id` and `item_id` must be digit strings and `date` a real calendar
+    /// day; a value that is not is refused before any request, so caller text
+    /// never becomes a service-side filter.
+    pub async fn resources(
+        &mut self,
+        gym_id: &str,
+        item_id: &str,
+        date: &str,
+    ) -> Result<ReadResult<SportsResources>, Error> {
+        let dto = self
+            .runtime
+            .load_sports_resources_result(gym_id, item_id, date)
+            .await
+            .map_err(|_| sports_failure(self.runtime))?;
+        let metadata = cached_read_metadata(
+            Service::Sports,
+            &dto.generated_at,
+            &dto.source,
+            &dto.status,
+            dto.error.is_some(),
+            ReadSource::Live,
+        )?;
+        Ok(ReadResult::new(dto.resources, metadata))
+    }
+
+    /// Reads the account's unpaid reservations followed by its paid ones.
+    pub async fn records(&mut self) -> Result<ReadResult<Vec<SportsReservationRecord>>, Error> {
+        let dto = self
+            .runtime
+            .load_sports_records_result()
+            .await
+            .map_err(|_| sports_failure(self.runtime))?;
+        let metadata = cached_read_metadata(
+            Service::Sports,
+            &dto.generated_at,
+            &dto.source,
+            &dto.status,
+            dto.error.is_some(),
+            ReadSource::Live,
+        )?;
+        Ok(ReadResult::new(dto.records, metadata))
     }
 }
 
@@ -1806,6 +1872,35 @@ fn program_failure(runtime: &CampusRuntime) -> Error {
         AccountAuthState::Authenticated => ErrorCode::ServiceUnavailable,
     };
     Error::new(Service::Program, code)
+}
+
+fn sports_failure(runtime: &CampusRuntime) -> Error {
+    // The recorded code is checked first: a refused venue argument and the
+    // venue's own deployment shape are both more specific than the account
+    // state, and neither is a session problem.
+    if let Some(diagnostic) = runtime.last_sports_failure_code() {
+        let code = match diagnostic {
+            "sports_input" => ErrorCode::InvalidInput,
+            "sports_config" => ErrorCode::InvalidInput,
+            "sports_auth_required" => ErrorCode::SessionExpired,
+            "sports_network" => ErrorCode::NetworkUnavailable,
+            "sports_origin" | "sports_path" => ErrorCode::RedirectRefused,
+            "sports_http" => ErrorCode::ServiceUnavailable,
+            "sports_too_large" => ErrorCode::IncompleteResult,
+            _ => ErrorCode::InvalidResponse,
+        };
+        return Error::new(Service::Sports, code);
+    }
+    let code = match runtime.auth_status().identity().state() {
+        AccountAuthState::SignedOut | AccountAuthState::RestoredUnverified => {
+            ErrorCode::SessionRequired
+        }
+        AccountAuthState::Expired => ErrorCode::SessionExpired,
+        AccountAuthState::NeedsInteraction => ErrorCode::InteractionRequired,
+        AccountAuthState::Authenticating => ErrorCode::InteractionInProgress,
+        AccountAuthState::Authenticated => ErrorCode::ServiceUnavailable,
+    };
+    Error::new(Service::Sports, code)
 }
 
 /// Maps one teaching-evaluation failure to its stable code.

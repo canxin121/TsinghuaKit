@@ -90,6 +90,9 @@ use crate::{
     registrar_client::{RegistrarClient, RegistrarClientConfig},
     services::{CampusDataSource, CampusOverviewRecoveryHints},
     session::{BoundCsrfToken, SessionCoordinator},
+    sports_read::{
+        SportsAdapter, SportsBusinessProof, SportsProfile, SportsReservationRecord, SportsResources,
+    },
     tunet_client::{
         TunetClient, TunetClientConfig, TunetOnlineState, TunetStatusRecord, TunetStatusSignal,
     },
@@ -118,6 +121,7 @@ const INVOICE_WEBVPN_BASE_URL: &str = "https://webvpn.tsinghua.edu.cn/https/7772
 const BANK_WEBVPN_BASE_URL: &str = "https://webvpn.tsinghua.edu.cn/http/77726476706e69737468656265737421e9ff459a69247b59700f81b9991b26317dbd36ae/";
 /// The graduate-income host's WebVPN mapping.
 const GRADUATE_INCOME_WEBVPN_BASE_URL: &str = "https://webvpn.tsinghua.edu.cn/http/77726476706e69737468656265737421eaed4b9069377a517a1d88b89d1b37269c624d2b1c6925f37faea82b8d/";
+const SPORTS_WEBVPN_BASE_URL: &str = "https://webvpn.tsinghua.edu.cn/http/77726476706e69737468656265737421a5a70f8834396657761d88e29d51367b6a00/";
 const WEBVPN_BASE_URL: &str = "https://webvpn.tsinghua.edu.cn/";
 const INFO_DIRECT_ORIGIN: &str = "https://info.tsinghua.edu.cn/";
 // Current THUInfo public clients perform one target-application identity roam
@@ -1581,6 +1585,28 @@ pub struct GraduateIncomeResultDto {
     pub error: Option<String>,
 }
 
+/// Source-aware sports-venue slot list.  The slot list is re-read from the
+/// live service on every request: a venue's availability changes minute by
+/// minute, so a retained copy would present a taken court as free.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SportsResourcesResultDto {
+    pub resources: SportsResources,
+    pub generated_at: String,
+    pub source: String,
+    pub status: String,
+    pub error: Option<String>,
+}
+
+/// Source-aware sports-venue reservation list.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SportsRecordsResultDto {
+    pub records: Vec<SportsReservationRecord>,
+    pub generated_at: String,
+    pub source: String,
+    pub status: String,
+    pub error: Option<String>,
+}
+
 /// One graduate-income row with exact integer cents.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GraduateIncomeRecordDto {
@@ -2866,6 +2892,11 @@ pub struct CampusRuntime {
     // The graduate-income adapter is prepared on its own mapping.
     graduate_income_adapter: Option<GraduateIncomeAdapter>,
     graduate_income_proof: Option<GraduateIncomeBusinessProof>,
+    // The sports-venue adapter is prepared per confirmed INFO session, on its
+    // own mapping.  It holds no order: this runtime reads resources and
+    // records only, so no booking token can be acted on from here.
+    sports_adapter: Option<SportsAdapter>,
+    sports_proof: Option<SportsBusinessProof>,
     card_client: Option<CampusCardClient>,
     card_session: Option<CampusCardSession>,
     // One initial target-auth chain per explicit login. Retain after failure
@@ -3008,6 +3039,10 @@ pub struct CampusRuntime {
     // The course-number query is the caller's argument, so its failures are
     // recorded here rather than inferred from the service hall's wording.
     last_course_score_failure_code: Option<&'static str>,
+    // The venue arguments are the caller's input and the venue's own pages are
+    // its own shape, so both are mapped from a stable code here rather than
+    // from the recorded message text.
+    last_sports_failure_code: Option<&'static str>,
     // The WebVPN/OAuth/Identity origin graph is part of the Rust runtime's
     // authenticated transport boundary. Production uses the current THU
     // deployment; loopback fixtures may inject a fully validated graph so
@@ -3601,6 +3636,8 @@ impl CampusRuntime {
             bank_payment_proof: None,
             graduate_income_adapter: None,
             graduate_income_proof: None,
+            sports_adapter: None,
+            sports_proof: None,
             card_client: None,
             card_session: None,
             card_auth_attempted: false,
@@ -3677,6 +3714,7 @@ impl CampusRuntime {
             last_bank_payment_failure_code: None,
             last_graduate_income_failure_code: None,
             last_course_score_failure_code: None,
+            last_sports_failure_code: None,
             webvpn_identity_config,
         };
 
@@ -15717,6 +15755,201 @@ impl CampusRuntime {
         .await
     }
 
+    /// Prepares the sports-venue adapter inside the already-confirmed INFO
+    /// session.  The venue application has its own campus host and WebVPN
+    /// mapping, so it is prepared on its own handoff.
+    async fn ensure_sports_reader_session(&mut self, user: &UserIdentity) -> Result<(), String> {
+        if self.sports_service_is_proven() {
+            return Ok(());
+        }
+        let context_exists = self.sports_adapter.is_some()
+            || self.sports_proof.is_some()
+            || self.info_session_context_exists();
+        if context_exists && !self.service_session_is_proven(ServiceId::Info) {
+            self.refresh_nonacademic_service_after_expiry(ServiceId::Info)
+                .await
+                .map_err(|error| self.record_error(format!("INFO 自动续接失败: {error}")))?;
+        }
+        self.prepare_sports_adapter(user).await
+    }
+
+    async fn prepare_sports_adapter(&mut self, user: &UserIdentity) -> Result<(), String> {
+        self.invalidate_sports_session();
+        self.ensure_info_session(user).await?;
+
+        let transport = self.identity.transport().clone();
+        let handoff = match self.info_adapter.as_ref() {
+            Some(info) => {
+                info.additional_roaming(crate::sports_read::SPORTS_WEBVPN_TARGET)
+                    .await
+            }
+            None => return Err(self.record_error("INFO 服务会话尚未建立")),
+        };
+        let roaming_url = handoff.map_err(|error| {
+            self.record_business_failure("sports", "sports_handoff", info_failure_code(&error))
+        })?;
+        let mut base_url = Url::parse(roaming_url.as_str())
+            .map_err(|_| self.record_error("sports roaming URL is invalid"))?;
+        let expected = Url::parse(SPORTS_WEBVPN_BASE_URL).expect("static sports mapping");
+        if !base_url.path().starts_with(expected.path()) {
+            return Err(self.record_business_failure(
+                "sports",
+                "sports_handoff",
+                "sports_mapping_rejected",
+            ));
+        }
+        // The handoff query is consumed here.  Only the proved target mapping
+        // configures the read endpoints that follow.
+        base_url.set_path(expected.path());
+        base_url.set_query(None);
+        base_url.set_fragment(None);
+        let adapter = SportsAdapter::try_with_transport(base_url, transport)
+            .map_err(|error| self.record_error(format!("sports adapter: {error}")))?;
+        self.sports_adapter = Some(adapter);
+        Ok(())
+    }
+
+    /// Reads one venue's limits, configured phone number, and slot list for one
+    /// date.
+    ///
+    /// The venue's availability is read live on every request and never served
+    /// from a cached copy: a retained slot list would present a taken court as
+    /// free.
+    pub async fn load_sports_resources_result(
+        &mut self,
+        gym_id: &str,
+        item_id: &str,
+        date: &str,
+    ) -> Result<SportsResourcesResultDto, String> {
+        crate::telemetry::observe("sports", "load_sports_resources_result", async {
+            self.allow_live_operation()?;
+            // The venue arguments are caller input, so they are bounded before
+            // any session work: a refused argument must not cost a handoff, and
+            // its text must never reach the service.
+            if let Err(error) = SportsProfile::standard().resources_requests(gym_id, item_id, date)
+            {
+                let reason = error.diagnostic_code();
+                self.last_sports_failure_code = Some(reason);
+                return Err(self.record_business_failure("sports", "sports_resources", reason));
+            }
+            let user = self.ensure_identity_user_for_live_read().await?;
+            self.ensure_sports_reader_session(&user).await?;
+
+            let mut result = {
+                let Some(adapter) = self.sports_adapter.as_ref() else {
+                    return self.fail("体育场馆服务会话未建立");
+                };
+                adapter
+                    .read_resources_with_proof(gym_id, item_id, date)
+                    .await
+            };
+            if matches!(&result, Err(error) if error.is_session_expired()) {
+                self.invalidate_sports_session();
+                if let Err(error) = self
+                    .refresh_nonacademic_service_after_expiry(ServiceId::Info)
+                    .await
+                {
+                    return Err(self.record_error(format!("体育场馆自动续接失败: {error}")));
+                }
+                let user = self.ensure_identity_user_for_live_read().await?;
+                self.prepare_sports_adapter(&user).await?;
+                let Some(adapter) = self.sports_adapter.as_ref() else {
+                    return self.fail("体育场馆自动续接后会话未建立");
+                };
+                result = adapter
+                    .read_resources_with_proof(gym_id, item_id, date)
+                    .await;
+                if matches!(&result, Err(error) if error.is_session_expired()) {
+                    self.invalidate_sports_session();
+                    return self.fail("体育场馆自动续接后仍已过期，请重新建立");
+                }
+            }
+            match result {
+                Ok(read) => {
+                    self.sports_proof = Some(read.proof);
+                    if !self.sports_service_is_proven() {
+                        return self.fail("体育场馆服务会话证明未确认，请重新建立服务会话");
+                    }
+                    self.last_error = None;
+                    self.last_sports_failure_code = None;
+                    self.persist_resume_state_after_live_read(&user, "sports");
+                    Ok(SportsResourcesResultDto {
+                        resources: read.value,
+                        generated_at: Utc::now().to_rfc3339(),
+                        source: "live".to_owned(),
+                        status: "ready".to_owned(),
+                        error: None,
+                    })
+                }
+                Err(error) => {
+                    let reason = error.diagnostic_code();
+                    self.last_sports_failure_code = Some(reason);
+                    Err(self.record_business_failure("sports", "sports_resources", reason))
+                }
+            }
+        })
+        .await
+    }
+
+    /// Reads the account's unpaid reservations followed by its paid ones.
+    pub async fn load_sports_records_result(&mut self) -> Result<SportsRecordsResultDto, String> {
+        crate::telemetry::observe("sports", "load_sports_records_result", async {
+            self.allow_live_operation()?;
+            let user = self.ensure_identity_user_for_live_read().await?;
+            self.ensure_sports_reader_session(&user).await?;
+
+            let mut result = {
+                let Some(adapter) = self.sports_adapter.as_ref() else {
+                    return self.fail("体育场馆服务会话未建立");
+                };
+                adapter.read_records_with_proof().await
+            };
+            if matches!(&result, Err(error) if error.is_session_expired()) {
+                self.invalidate_sports_session();
+                if let Err(error) = self
+                    .refresh_nonacademic_service_after_expiry(ServiceId::Info)
+                    .await
+                {
+                    return Err(self.record_error(format!("体育场馆自动续接失败: {error}")));
+                }
+                let user = self.ensure_identity_user_for_live_read().await?;
+                self.prepare_sports_adapter(&user).await?;
+                let Some(adapter) = self.sports_adapter.as_ref() else {
+                    return self.fail("体育场馆自动续接后会话未建立");
+                };
+                result = adapter.read_records_with_proof().await;
+                if matches!(&result, Err(error) if error.is_session_expired()) {
+                    self.invalidate_sports_session();
+                    return self.fail("体育场馆自动续接后仍已过期，请重新建立");
+                }
+            }
+            match result {
+                Ok(read) => {
+                    self.sports_proof = Some(read.proof);
+                    if !self.sports_service_is_proven() {
+                        return self.fail("体育场馆服务会话证明未确认，请重新建立服务会话");
+                    }
+                    self.last_error = None;
+                    self.last_sports_failure_code = None;
+                    self.persist_resume_state_after_live_read(&user, "sports");
+                    Ok(SportsRecordsResultDto {
+                        records: read.value,
+                        generated_at: Utc::now().to_rfc3339(),
+                        source: "live".to_owned(),
+                        status: "ready".to_owned(),
+                        error: None,
+                    })
+                }
+                Err(error) => {
+                    let reason = error.diagnostic_code();
+                    self.last_sports_failure_code = Some(reason);
+                    Err(self.record_business_failure("sports", "sports_records", reason))
+                }
+            }
+        })
+        .await
+    }
+
     async fn ensure_campus_card_reader_session(&mut self) -> Result<(), String> {
         if self.service_session_is_proven(ServiceId::CampusCard) {
             return Ok(());
@@ -17117,6 +17350,20 @@ impl CampusRuntime {
         self.graduate_income_proof = None;
     }
 
+    fn invalidate_sports_session(&mut self) {
+        self.sports_adapter = None;
+        self.sports_proof = None;
+    }
+
+    fn sports_service_is_proven(&self) -> bool {
+        self.service_session_is_proven(ServiceId::Info)
+            && self
+                .sports_adapter
+                .as_ref()
+                .zip(self.sports_proof.as_ref())
+                .is_some_and(|(adapter, proof)| adapter.business_proof_matches(proof))
+    }
+
     fn classroom_service_is_proven(&self) -> bool {
         self.service_session_is_proven(ServiceId::Info)
             && self.classroom_adapter.is_some()
@@ -17537,6 +17784,11 @@ impl CampusRuntime {
     /// The course-score query's own failure code from the last read.
     pub(crate) fn last_course_score_failure_code(&self) -> Option<&'static str> {
         self.last_course_score_failure_code
+    }
+
+    /// The sports venue's own failure code from the last read.
+    pub(crate) fn last_sports_failure_code(&self) -> Option<&'static str> {
+        self.last_sports_failure_code
     }
 
     fn record_error(&mut self, error: impl std::fmt::Display) -> String {

@@ -64,6 +64,7 @@ pub mod service_catalog;
 pub mod service_hall;
 pub mod services;
 pub mod session;
+pub mod sports_read;
 pub mod telemetry;
 pub mod transport;
 pub mod tunet;
@@ -303,6 +304,15 @@ pub use session::{
     SessionCredentialKind, SessionError, SessionRegistry, SessionRegistrySnapshot, SessionSnapshot,
     SessionTransition,
 };
+pub use sports_read::{
+    PAID_METHOD, SPORTS_BOOK_PATH, SPORTS_DETAIL_PATH, SPORTS_MAPPING_TOKEN, SPORTS_PAY_PATH,
+    SPORTS_WEBVPN_TARGET, SportsAdapter, SportsAdapterConfig, SportsAdapterError,
+    SportsBusinessProof, SportsLimits, SportsMethod, SportsOperation, SportsParseError,
+    SportsProfile, SportsRecordsRead, SportsRequest, SportsReservationRecord, SportsResource,
+    SportsResources, SportsResourcesRead, SportsSessionPrerequisite, parse_sports_limits_html,
+    parse_sports_paid_records_html, parse_sports_phone_body, parse_sports_resources_html,
+    parse_sports_unpaid_records_html,
+};
 pub use transport::{CampusHttpTransport, TransportError};
 pub use tunet_auth::{
     SrunLoginError, SrunLoginMaterial, SrunPasswordDigestScheme, build_srun_login_material,
@@ -341,6 +351,9 @@ mod program_tests;
 
 #[cfg(test)]
 mod physical_exam_tests;
+
+#[cfg(test)]
+mod sports_tests;
 
 #[cfg(test)]
 mod invoice_tests;

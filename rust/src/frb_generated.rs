@@ -40,7 +40,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 413382344;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1369641020;
 
 // Section: executor
 
@@ -4639,6 +4639,128 @@ fn wire__crate__sdk_api__ClientHandle_service_hall_tasks_impl(
         },
     )
 }
+fn wire__crate__sdk_api__ClientHandle_sports_records_result_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "ClientHandle_sports_records_result",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<ClientHandle>,
+            >>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, crate::sdk_api::SdkErrorDto>(
+                    (move || async move {
+                        let mut api_that_guard = None;
+                        let decode_indices_ =
+                            flutter_rust_bridge::for_generated::lockable_compute_decode_order(
+                                vec![flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                    &api_that, 0, true,
+                                )],
+                            );
+                        for i in decode_indices_ {
+                            match i {
+                                0 => {
+                                    api_that_guard =
+                                        Some(api_that.lockable_decode_async_ref_mut().await)
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
+                        let mut api_that_guard = api_that_guard.unwrap();
+                        let output_ok = crate::sdk_api::ClientHandle::sports_records_result(
+                            &mut *api_that_guard,
+                        )
+                        .await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__sdk_api__ClientHandle_sports_resources_result_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "ClientHandle_sports_resources_result",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<ClientHandle>,
+            >>::sse_decode(&mut deserializer);
+            let api_gym_id = <String>::sse_decode(&mut deserializer);
+            let api_item_id = <String>::sse_decode(&mut deserializer);
+            let api_date = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, crate::sdk_api::SdkErrorDto>(
+                    (move || async move {
+                        let mut api_that_guard = None;
+                        let decode_indices_ =
+                            flutter_rust_bridge::for_generated::lockable_compute_decode_order(
+                                vec![flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                    &api_that, 0, true,
+                                )],
+                            );
+                        for i in decode_indices_ {
+                            match i {
+                                0 => {
+                                    api_that_guard =
+                                        Some(api_that.lockable_decode_async_ref_mut().await)
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
+                        let mut api_that_guard = api_that_guard.unwrap();
+                        let output_ok = crate::sdk_api::ClientHandle::sports_resources_result(
+                            &mut *api_that_guard,
+                            api_gym_id,
+                            api_item_id,
+                            api_date,
+                        )
+                        .await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
 fn wire__crate__sdk_api__ClientHandle_start_saved_self_service_login_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -7814,6 +7936,34 @@ impl SseDecode for Vec<crate::sdk_api::ServiceHallWorkflowTaskDto> {
     }
 }
 
+impl SseDecode for Vec<crate::sdk_api::SportsReservationRecordDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::sdk_api::SportsReservationRecordDto>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::sdk_api::SportsResourceDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::sdk_api::SportsResourceDto>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for crate::sdk_api::LoginStageDto {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -9037,6 +9187,111 @@ impl SseDecode for crate::sdk_api::ServiceHallWorkflowTaskDto {
     }
 }
 
+impl SseDecode for crate::sdk_api::SportsRecordsDataDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_records =
+            <Vec<crate::sdk_api::SportsReservationRecordDto>>::sse_decode(deserializer);
+        return crate::sdk_api::SportsRecordsDataDto {
+            records: var_records,
+        };
+    }
+}
+
+impl SseDecode for crate::sdk_api::SportsRecordsResultDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_data = <crate::sdk_api::SportsRecordsDataDto>::sse_decode(deserializer);
+        let mut var_metadata = <crate::sdk_api::ReadMetadataDto>::sse_decode(deserializer);
+        return crate::sdk_api::SportsRecordsResultDto {
+            data: var_data,
+            metadata: var_metadata,
+        };
+    }
+}
+
+impl SseDecode for crate::sdk_api::SportsReservationRecordDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_name = <String>::sse_decode(deserializer);
+        let mut var_field = <String>::sse_decode(deserializer);
+        let mut var_time = <String>::sse_decode(deserializer);
+        let mut var_price = <String>::sse_decode(deserializer);
+        let mut var_method = <String>::sse_decode(deserializer);
+        let mut var_bookTimestamp = <Option<i64>>::sse_decode(deserializer);
+        let mut var_bookId = <Option<String>>::sse_decode(deserializer);
+        let mut var_payId = <Option<String>>::sse_decode(deserializer);
+        return crate::sdk_api::SportsReservationRecordDto {
+            name: var_name,
+            field: var_field,
+            time: var_time,
+            price: var_price,
+            method: var_method,
+            book_timestamp: var_bookTimestamp,
+            book_id: var_bookId,
+            pay_id: var_payId,
+        };
+    }
+}
+
+impl SseDecode for crate::sdk_api::SportsResourceDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_resId = <String>::sse_decode(deserializer);
+        let mut var_resHash = <String>::sse_decode(deserializer);
+        let mut var_timeSession = <String>::sse_decode(deserializer);
+        let mut var_fieldName = <String>::sse_decode(deserializer);
+        let mut var_overlaySize = <Option<u32>>::sse_decode(deserializer);
+        let mut var_canNetBook = <bool>::sse_decode(deserializer);
+        let mut var_cost = <Option<String>>::sse_decode(deserializer);
+        let mut var_bookId = <Option<String>>::sse_decode(deserializer);
+        let mut var_locked = <Option<bool>>::sse_decode(deserializer);
+        let mut var_userType = <Option<String>>::sse_decode(deserializer);
+        let mut var_paymentStatus = <Option<bool>>::sse_decode(deserializer);
+        return crate::sdk_api::SportsResourceDto {
+            res_id: var_resId,
+            res_hash: var_resHash,
+            time_session: var_timeSession,
+            field_name: var_fieldName,
+            overlay_size: var_overlaySize,
+            can_net_book: var_canNetBook,
+            cost: var_cost,
+            book_id: var_bookId,
+            locked: var_locked,
+            user_type: var_userType,
+            payment_status: var_paymentStatus,
+        };
+    }
+}
+
+impl SseDecode for crate::sdk_api::SportsResourcesDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_count = <u32>::sse_decode(deserializer);
+        let mut var_init = <u32>::sse_decode(deserializer);
+        let mut var_phone = <Option<String>>::sse_decode(deserializer);
+        let mut var_data = <Vec<crate::sdk_api::SportsResourceDto>>::sse_decode(deserializer);
+        return crate::sdk_api::SportsResourcesDto {
+            count: var_count,
+            init: var_init,
+            phone: var_phone,
+            data: var_data,
+        };
+    }
+}
+
+impl SseDecode for crate::sdk_api::SportsResourcesResultDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_data = <crate::sdk_api::SportsResourcesDto>::sse_decode(deserializer);
+        let mut var_metadata = <crate::sdk_api::ReadMetadataDto>::sse_decode(deserializer);
+        return crate::sdk_api::SportsResourcesResultDto {
+            data: var_data,
+            metadata: var_metadata,
+        };
+    }
+}
+
 impl SseDecode for u32 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -9517,64 +9772,76 @@ fn pde_ffi_dispatcher_primary_impl(
             rust_vec_len,
             data_len,
         ),
-        79 => wire__crate__sdk_api__ClientHandle_start_saved_self_service_login_impl(
+        79 => wire__crate__sdk_api__ClientHandle_sports_records_result_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        80 => wire__crate__sdk_api__ClientHandle_start_self_service_login_impl(
+        80 => wire__crate__sdk_api__ClientHandle_sports_resources_result_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        81 => wire__crate__sdk_api__ClientHandle_submit_identity_code_impl(
+        81 => wire__crate__sdk_api__ClientHandle_start_saved_self_service_login_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        82 => wire__crate__sdk_api__ClientHandle_submit_self_service_captcha_impl(
+        82 => wire__crate__sdk_api__ClientHandle_start_self_service_login_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        83 => wire__crate__sdk_api__ClientHandle_update_network_profile_impl(
+        83 => wire__crate__sdk_api__ClientHandle_submit_identity_code_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        84 => wire__crate__sdk_api__ClientHandle_water_brand_labels_impl(
+        84 => wire__crate__sdk_api__ClientHandle_submit_self_service_captcha_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        85 => wire__crate__sdk_api__ClientHandle_water_user_impl(port, ptr, rust_vec_len, data_len),
-        86 => wire__crate__sdk_api__NetworkProfilePasswordHandle_expose_for_form_impl(
+        85 => wire__crate__sdk_api__ClientHandle_update_network_profile_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        87 => wire__crate__sdk_api__PreparedNetworkProfile_form_fields_impl(
+        86 => wire__crate__sdk_api__ClientHandle_water_brand_labels_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        88 => wire__crate__sdk_api__laundry_providers_impl(port, ptr, rust_vec_len, data_len),
-        89 => wire__crate__sdk_api__laundry_statuses_impl(port, ptr, rust_vec_len, data_len),
-        90 => wire__crate__sdk_api__suggest_identity_login_stage_impl(
+        87 => wire__crate__sdk_api__ClientHandle_water_user_impl(port, ptr, rust_vec_len, data_len),
+        88 => wire__crate__sdk_api__NetworkProfilePasswordHandle_expose_for_form_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        91 => wire__crate__sdk_api__water_brands_impl(port, ptr, rust_vec_len, data_len),
+        89 => wire__crate__sdk_api__PreparedNetworkProfile_form_fields_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        90 => wire__crate__sdk_api__laundry_providers_impl(port, ptr, rust_vec_len, data_len),
+        91 => wire__crate__sdk_api__laundry_statuses_impl(port, ptr, rust_vec_len, data_len),
+        92 => wire__crate__sdk_api__suggest_identity_login_stage_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        93 => wire__crate__sdk_api__water_brands_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -13752,6 +14019,145 @@ impl flutter_rust_bridge::IntoIntoDart<crate::sdk_api::ServiceHallWorkflowTaskDt
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::sdk_api::SportsRecordsDataDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [self.records.into_into_dart().into_dart()].into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::sdk_api::SportsRecordsDataDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::sdk_api::SportsRecordsDataDto>
+    for crate::sdk_api::SportsRecordsDataDto
+{
+    fn into_into_dart(self) -> crate::sdk_api::SportsRecordsDataDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::sdk_api::SportsRecordsResultDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.data.into_into_dart().into_dart(),
+            self.metadata.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::sdk_api::SportsRecordsResultDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::sdk_api::SportsRecordsResultDto>
+    for crate::sdk_api::SportsRecordsResultDto
+{
+    fn into_into_dart(self) -> crate::sdk_api::SportsRecordsResultDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::sdk_api::SportsReservationRecordDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.name.into_into_dart().into_dart(),
+            self.field.into_into_dart().into_dart(),
+            self.time.into_into_dart().into_dart(),
+            self.price.into_into_dart().into_dart(),
+            self.method.into_into_dart().into_dart(),
+            self.book_timestamp.into_into_dart().into_dart(),
+            self.book_id.into_into_dart().into_dart(),
+            self.pay_id.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::sdk_api::SportsReservationRecordDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::sdk_api::SportsReservationRecordDto>
+    for crate::sdk_api::SportsReservationRecordDto
+{
+    fn into_into_dart(self) -> crate::sdk_api::SportsReservationRecordDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::sdk_api::SportsResourceDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.res_id.into_into_dart().into_dart(),
+            self.res_hash.into_into_dart().into_dart(),
+            self.time_session.into_into_dart().into_dart(),
+            self.field_name.into_into_dart().into_dart(),
+            self.overlay_size.into_into_dart().into_dart(),
+            self.can_net_book.into_into_dart().into_dart(),
+            self.cost.into_into_dart().into_dart(),
+            self.book_id.into_into_dart().into_dart(),
+            self.locked.into_into_dart().into_dart(),
+            self.user_type.into_into_dart().into_dart(),
+            self.payment_status.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::sdk_api::SportsResourceDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::sdk_api::SportsResourceDto>
+    for crate::sdk_api::SportsResourceDto
+{
+    fn into_into_dart(self) -> crate::sdk_api::SportsResourceDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::sdk_api::SportsResourcesDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.count.into_into_dart().into_dart(),
+            self.init.into_into_dart().into_dart(),
+            self.phone.into_into_dart().into_dart(),
+            self.data.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::sdk_api::SportsResourcesDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::sdk_api::SportsResourcesDto>
+    for crate::sdk_api::SportsResourcesDto
+{
+    fn into_into_dart(self) -> crate::sdk_api::SportsResourcesDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::sdk_api::SportsResourcesResultDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.data.into_into_dart().into_dart(),
+            self.metadata.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::sdk_api::SportsResourcesResultDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::sdk_api::SportsResourcesResultDto>
+    for crate::sdk_api::SportsResourcesResultDto
+{
+    fn into_into_dart(self) -> crate::sdk_api::SportsResourcesResultDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::sdk_api::WaterUserDto {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -15610,6 +16016,26 @@ impl SseEncode for Vec<crate::sdk_api::ServiceHallWorkflowTaskDto> {
     }
 }
 
+impl SseEncode for Vec<crate::sdk_api::SportsReservationRecordDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::sdk_api::SportsReservationRecordDto>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::sdk_api::SportsResourceDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::sdk_api::SportsResourceDto>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for crate::sdk_api::LoginStageDto {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -16553,6 +16979,70 @@ impl SseEncode for crate::sdk_api::ServiceHallWorkflowTaskDto {
         <String>::sse_encode(self.application_time, serializer);
         <Option<u32>>::sse_encode(self.progress_percent, serializer);
         <Option<String>>::sse_encode(self.phase_reference_id, serializer);
+    }
+}
+
+impl SseEncode for crate::sdk_api::SportsRecordsDataDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <Vec<crate::sdk_api::SportsReservationRecordDto>>::sse_encode(self.records, serializer);
+    }
+}
+
+impl SseEncode for crate::sdk_api::SportsRecordsResultDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <crate::sdk_api::SportsRecordsDataDto>::sse_encode(self.data, serializer);
+        <crate::sdk_api::ReadMetadataDto>::sse_encode(self.metadata, serializer);
+    }
+}
+
+impl SseEncode for crate::sdk_api::SportsReservationRecordDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.name, serializer);
+        <String>::sse_encode(self.field, serializer);
+        <String>::sse_encode(self.time, serializer);
+        <String>::sse_encode(self.price, serializer);
+        <String>::sse_encode(self.method, serializer);
+        <Option<i64>>::sse_encode(self.book_timestamp, serializer);
+        <Option<String>>::sse_encode(self.book_id, serializer);
+        <Option<String>>::sse_encode(self.pay_id, serializer);
+    }
+}
+
+impl SseEncode for crate::sdk_api::SportsResourceDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.res_id, serializer);
+        <String>::sse_encode(self.res_hash, serializer);
+        <String>::sse_encode(self.time_session, serializer);
+        <String>::sse_encode(self.field_name, serializer);
+        <Option<u32>>::sse_encode(self.overlay_size, serializer);
+        <bool>::sse_encode(self.can_net_book, serializer);
+        <Option<String>>::sse_encode(self.cost, serializer);
+        <Option<String>>::sse_encode(self.book_id, serializer);
+        <Option<bool>>::sse_encode(self.locked, serializer);
+        <Option<String>>::sse_encode(self.user_type, serializer);
+        <Option<bool>>::sse_encode(self.payment_status, serializer);
+    }
+}
+
+impl SseEncode for crate::sdk_api::SportsResourcesDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u32>::sse_encode(self.count, serializer);
+        <u32>::sse_encode(self.init, serializer);
+        <Option<String>>::sse_encode(self.phone, serializer);
+        <Vec<crate::sdk_api::SportsResourceDto>>::sse_encode(self.data, serializer);
+    }
+}
+
+impl SseEncode for crate::sdk_api::SportsResourcesResultDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <crate::sdk_api::SportsResourcesDto>::sse_encode(self.data, serializer);
+        <crate::sdk_api::ReadMetadataDto>::sse_encode(self.metadata, serializer);
     }
 }
 

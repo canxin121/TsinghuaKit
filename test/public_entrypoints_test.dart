@@ -20,6 +20,7 @@ import 'package:tsinghua_kit/read.dart' as read;
 import 'package:tsinghua_kit/registrar_calendar.dart' as calendar;
 import 'package:tsinghua_kit/self_service.dart' as self_service;
 import 'package:tsinghua_kit/service_hall.dart' as service_hall;
+import 'package:tsinghua_kit/sports.dart' as sports;
 import 'package:tsinghua_kit/water.dart' as water;
 
 T? _publicType<T>() => null;
@@ -179,5 +180,51 @@ void main() {
       const water.WaterUser(name: '合成住户', address: '紫荆公寓1号楼101'),
       isA<water.WaterUser>(),
     );
+    expect(_publicType<sports.SportsClient>(), isNull);
+    expect(_publicType<sports.SportsResource>(), isNull);
+    expect(_publicType<sports.SportsResources>(), isNull);
+    expect(_publicType<sports.SportsReservationRecord>(), isNull);
+    // A venue's own cost token is carried verbatim: the service supplies no
+    // unit, so no currency conversion may be implied here.
+    const slot = sports.SportsResource(
+      resId: '3998000',
+      resHash: 'HASH-OPAQUE',
+      timeSession: '20:00-21:00',
+      fieldName: '1号场',
+      overlaySize: null,
+      canNetBook: true,
+      cost: '20',
+      bookId: null,
+      locked: false,
+      userType: null,
+      paymentStatus: null,
+    );
+    expect(slot.cost, '20');
+    expect(slot.bookId, isNull);
+    // The slot list is unmodifiable, so a caller cannot present a venue's
+    // answer as something the service did not send.
+    final resources = sports.SportsResources(
+      count: 1,
+      init: 1,
+      phone: null,
+      data: const [slot],
+    );
+    expect(resources.data, hasLength(1));
+    expect(
+      () => resources.data.add(slot),
+      throwsUnsupportedError,
+    );
+    // A paid row and an unpaid row are both plain reservation records.
+    const record = sports.SportsReservationRecord(
+      name: '气膜馆羽毛球场',
+      field: '1号场',
+      time: '2026-09-30 20:00-21:00',
+      price: '20',
+      method: '已支付',
+      bookTimestamp: null,
+      bookId: null,
+      payId: null,
+    );
+    expect(record.method, '已支付');
   });
 }

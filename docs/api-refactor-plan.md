@@ -1378,3 +1378,45 @@ SDK `cargo test -p tsinghua_kit --all-targets` 28 项通过（`client_api` 12 + 
 桥接层另有 4 项定向测试：楼栋与楼栋组的 `Debug` 只留存在性与计数（`private-building` / `private-key` / `private-label` 都不出现）、机器与房间的 `Debug` 不出现机器名/类型/房间号、一次读的 `Debug` 保留 `room_count` 与厂商自己的失败分类、订水记录只留 `name_present` 与 `address_len`；`laundry_providers()` / `laundry_statuses()` / `water_brands()` 三张表闭合且标签非空；被拒的厂商 key、楼栋 id 与订水编号都在**没有任何请求**的前提下以 `invalid_input` 返回，且 `auth_status` 仍是 `SignedOut`。SDK crate 的 `public_api` 增补这两个域的公开类型与两条自由函数的编译检查（16 项通过，`client_api` 12 项通过）。`cargo check --manifest-path rust/Cargo.toml --workspace --all-targets` 退出 0（新增的 `LAUNDRY_PROVIDERS` / `water_brand_name` 未使用导入在收尾时修正，engine lib 的 warning 数与 HEAD 逐条相同，均为既有无关项）；严格 `RUSTDOCFLAGS="-D warnings" cargo doc -p tsinghua_kit` 通过；`flutter analyze lib test` 无问题；`flutter test test/public_entrypoints_test.dart` 通过并覆盖 `LaundryClient` / `LaundryBuilding` / `LaundryBuildingGroup` / `LaundryMachine` / `LaundryRoom` / `LaundryRoomsReport` / `LaundryProviderOption` / `LaundryStatus` 六个状态与部分读取、`WaterClient` / `WaterUser` / `WaterBrandOption`。`docs/api-surface-baseline.json` 已刷新：模块列表 61 → 64（新增 `laundry_api` / `washer_read` / `water_read`）、`root_public_use` 计数仍 51（引擎根 `pub use` 未变）、`runtime.line_count` 仍 27896（本轮未动 runtime）、`scope` 追加本轮说明。
 
 **未验证**：三个洗衣厂商与订水厂商的线上可用性**均未验证**，需要另行真实只读验收；在此之前不得用 fixture 或空结果冒充线上证据。**未执行任何真实账号登录或第三方服务请求**；未实现宿舍卫生分（§58 的结论不变）。
+
+## 61. 2026-09-29 体育场馆资源与预约记录（只读）
+
+本轮补上 `thu_reference` 已有、TsinghuaKit 完全缺失的**体育场馆**域（`体育场馆`）：场地资源（限额 + 已配置手机号 + 当日的可预约时段表）与本人预约记录（未支付 + 已支付两张表）。选择器 `5539ECF8CD815C7D3F5A8EE0A2D72441`、映射 `a5a70f8834396657761d88e29d51367b6a00`，主机 `50.tsinghua.edu.cn`（参考自己的 `SPORTS_MAKE_ORDER_URL` 里直接写着这个主机名，故主机是**有证据的**；`info_session.rs::map_additional_roaming` 新增的 `SPORTS_WEBVPN_TARGET` 分支只声明"这个选择器属于哪个主机"，本身不授予任何权限）。
+
+**不新增认证、不新增 `ServiceId`**
+
+场馆应用挂在 INFO/WebVPN 的既有漫游握手上，因此 `SportsSessionPrerequisite` 只有 `ExistingInfoWebVpnSession` 一个取值：`ensure_sports_reader_session` 复用 `ensure_info_session` + `info.additional_roaming(...)`，与 `physical_exam_read.rs` / `program_read.rs` 完全同构。`error_sdk.rs` 的 `Service::Sports`（`as_str() == "sports"`）已存在，`protocol.rs::ServiceId` 不新增变体——不存在的第二套登录不会被顺手造出来。整个域没有引入任何 CLI/浏览器/系统资源（与 §60 的第三方域不同）：它的请求一律经 `identity.transport()` 这条统一通道。
+
+**页面把数据放在内联脚本里，所以解析器也必须这样做**
+
+场馆是遗留 JSP 部署，时段表**不在文档文本里**：它由 `resourceArray.push({id:…,time_session:…,field_name:…,overlaySize:…,can_net_book:…})` 构建，由 `addCost(…)` 定价、`markResStatus(…)` / `markStatusColor(…)` 标注，两个限额是 `var limitBookCount = '…'` 与 `var limitBookInit = '…'`。引擎没有 `regex` 依赖，而 `campus_html` 的扫描器按设计只读元素——没有一个元素承载这些值。因此本模块自带一个**有界语句扫描器**：只解析语句的实参列表（引号串、数字、`true`/`false`），永不求值、永不执行、永不跨越 `MAX_SCRIPT_CALLS`（4096 次调用）与 `MAX_SCRIPT_ARG_BYTES`（256 字节/实参）、`MAX_RESOURCES` / `MAX_RECORDS`（各 4096 行）。
+
+**四处有意的收窄（都写在模块文档里，且都有对应测试）**
+
+1. **时段只在页面自己的后续语句重复了它的 id 时才被接受。** 参考实现把 `resourceArray.push` 与紧随其后的 `resourcesm.put('id','hash')` **按位置**配对（跨一个惰性正则），本模块改为**按 id 相等**配对，严格更窄：hash 语句写的是别的 id 时，该时段被**丢弃**，而不是借用邻居的 hash。反过来，一个连 `id` 都读不出来的时段条目是**错误**（`UnrecognizedSlot`），不是"少了一个时段"——坏页面不能伪装成空场馆。
+2. **未支付报表相对"语义路标"读，不用裸下标。** `campus_html` 拒绝位置下标，所以本模块自己拥有这个决定并为之付费：先用行内**自己的文案**（`网上支付` / `现场支付`）定位到"支付方式"单元格，参考报告的四列值再按与它的固定距离（`NAME_OFFSET=8` / `FIELD_OFFSET=6` / `TIME_OFFSET=4` / `PRICE_OFFSET=2`）取。路标缺失或**有歧义**（一行里出现两个支付方式单元格）⇒ `UnrecognizedRow`，而不是拿别列的值顶上。动作单元格在路标后两格，`book_id` / `pay_id` 只从它携带的 `payNow` / `unsubscribeOnline` / `unsubscribe` 调用的实参里取，同样不按下标。`book_timestamp` 取动作单元格内 `<span time="…">` 属性。
+3. **已支付表没有这种路标**（它的行只有一个硬编码方式，参考读的是连续四格），因此本模块只接受页面自己的载体形状——`style="display:none"` 的 `tr` 包一层嵌套 `tbody`，其首行带四格（`PAID_NAME_CELL=2` / `FIELD_CELL=3` / `TIME_CELL=4` / `PRICE_CELL=5`）——载体形状不符 ⇒ `UnrecognizedRow`，而不是一条半填的记录。
+4. **`cost` / `price` 原样保留为 `String`。** 观测到的契约没有为它们确立单位，所以不折算成金额；这与 §55/§56 里"金额一律精确整数分"的域形成对照——那两处有明确的元/分证据，这里没有，就不编。
+
+**写操作结构性排除**
+
+参考库的 `saveGymBook`（下单，需图片验证码）、`unsubscribe`（退订）、`newPay` / `newPayForLater`（支付）、`doUpdateContactInformation`（改手机号）、`Kaptcha.jpg` 以及资金结算 `zjjsfw` 的 `check.do` / `webPay.do` 在本模块**没有任何常量、方法或类型**：不可达的操作比被守卫的操作更强。手机号只读、只解码，且从不进入 `Debug`（`SportsResourcesDto` 只打 `phone_present`）；`res_hash` / `book_id` / `pay_id` 是单用途令牌，`Debug` 同样只打 `has_res_hash` / `has_book_id` / `has_pay_id`。
+
+**失败分类与 SDK 映射**
+
+`SportsAdapterError::diagnostic_code()` 给出 15 个互不相同的码（`sports_config` / `sports_input` / `sports_network` / `sports_http` / `sports_origin` / `sports_path` / `sports_auth_required` / `sports_template` / `sports_body_empty` / `sports_table_missing` / `sports_limit_missing` / `sports_row_unrecognized` / `sports_slot_unrecognized` / `sports_phone` / `sports_too_large`），一次测试断言它们两两不同。runtime 新增 `last_sports_failure_code`（与 `last_graduate_income_failure_code` 同构），`client.rs::sports_failure` **先**读该码再回落到账号状态，因此：被拒的场馆参数 ⇒ `InvalidInput`、越出映射的原点 ⇒ `RedirectRefused`、非 2xx ⇒ `ServiceUnavailable`、响应过大 ⇒ `IncompleteResult`、其余页面形状问题 ⇒ `InvalidResponse`；只有"没有记录码"时才退回 `SessionRequired` / `SessionExpired` / …。
+
+**SDK / FFI / Dart**
+
+- 引擎：新增 `sports_read.rs`（适配器 + 有界语句扫描器 + 4 个公开解析函数）与 `#[cfg(test)] mod sports_tests`；`lib.rs` 导出 `SportsAdapter` / `SportsProfile` / `SportsResources` / `SportsResource` / `SportsReservationRecord` / `PAID_METHOD` / 路径常量等。runtime 新增 `SportsResourcesResultDto` / `SportsRecordsResultDto`、`sports_adapter` / `sports_proof` 两个字段、`ensure_/prepare_/load_*` / `invalidate_sports_session` / `sports_service_is_proven`。
+- SDK：`pub mod sports`；`tsinghua-kit/src/client.rs` 新增 `Client::sports()` 与 `SportsClient::{resources, records}`（薄包装，与 `ElectricityClient` 同构），两者都 `Service::Sports` + `ReadSource::Live`（永不走缓存：留一份时段表等于把已被订走的场地显示为空的）。
+- FFI：`ClientHandle` 新增 `sports_resources_result(gym_id, item_id, date)` 与 `sports_records_result()`，六个桥接 DTO（`SportsResourceDto` / `SportsResourcesDto` / `SportsResourcesResultDto` / `SportsReservationRecordDto` / `SportsRecordsDataDto` / `SportsRecordsResultDto`），`Debug` 全部手工脱敏。FRB 2.13.0 重新生成，生成物未手工编辑。
+- Dart：`lib/src/sports.dart`（part 文件）+ `lib/sports.dart` 入口，`TsinghuaKitClient` 增 `sports` facade。`SportsResources.data` 与 `SportsResourcesResultDto` 的列表都是 `List.unmodifiable`，所以调用方无法把场馆没发的时段表当成场馆发的。
+
+**验证**
+
+`cargo test --manifest-path rust/Cargo.toml -p tsinghua_kit_engine sports_tests` **16 项通过**：一次资源读上报限额、手机号与时段（含一个 hash 语句写了别的 id 的时段被丢弃、一个完全没有 hash 语句的时段被丢弃）、一次记录读上报两张表、无法识别的手机号文案是错误而 `do_not` 是"合法地没有"、路标缺失/歧义 ⇒ `UnrecognizedRow`、无表格 ⇒ `MissingTable`、空表格 ⇒ 合法的空列表、已支付载体形状不符 ⇒ `UnrecognizedRow`、不可读的时段条目 ⇒ 错误而非更短的列表、登录页/过期页 ⇒ `is_session_expired()`、被拒的场馆值**零请求**、502 ⇒ `HttpStatus`、越出映射的重定向 ⇒ `UnexpectedOrigin`、base URL 归一化（裸主机与映射根两种）、15 个诊断码两两不同、`Debug` 不出现 hash / 手机号 / `BOOK-1` / `PAY-1`。
+
+SDK `public_api` 增补 `compile_sports_api` 编译检查与两项活动断言（**18 项通过**）：无会话时 `resources` / `records` 都以 `Service::Sports` + `SessionRequired` 返回且账号仍是 `SignedOut`；空场馆号、非数字 item、`2026-02-30`、`2026-9-30` 四种参数都在**没有任何会话工作**的前提下以 `InvalidInput` 返回。桥接层另有 2 项定向测试：时段/记录/资源的 `Debug` 只保留 `has_res_hash` / `has_book_id` / `has_pay_id` / `phone_present` 与计数，被拒参数同样零请求且 `auth_status` 仍是 `SignedOut`。`cargo check --manifest-path rust/Cargo.toml --workspace --all-targets` 退出 0（FFI 侧唯一 warning 是 HEAD 就有的 `physical_exam` / `program` 未使用导入，与本轮无关，逐条核对未新增）；严格 `RUSTDOCFLAGS="-D warnings" cargo doc -p tsinghua_kit` 退出 0；`flutter analyze lib test` 无问题；`flutter test test/public_entrypoints_test.dart` 通过并覆盖 `SportsClient` / `SportsResource` / `SportsResources` / `SportsReservationRecord`（含 `List.unmodifiable` 与 `cost` 原样保留）。`docs/api-surface-baseline.json` 已刷新：模块列表 64 → 65（新增 `sports_read`）、引擎根 `pub use` 51 → 52、渲染项计数 `struct 301→312` / `enum 143→148` / `fn 50→55` / `constant 45→51`、`runtime.line_count` 27896 → 28148、`direct_state_field_count` 110 → 112、runtime DTO 68 → 74、runtime 公开方法 92 → 94、`scope` 追加本轮说明。
+
+**未验证**：体育场馆域的线上可用性**未验证**，需要另行真实只读验收；在此之前不得用 fixture 或空结果冒充线上证据。**未执行任何真实账号登录或场馆服务请求，也未发起下单、支付、退订或手机号更新**（这些在该模块里根本不存在）。宿舍卫生分的结论（§58）不变。

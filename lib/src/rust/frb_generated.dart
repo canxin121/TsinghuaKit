@@ -68,7 +68,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0';
 
   @override
-  int get rustContentHash => 413382344;
+  int get rustContentHash => 1369641020;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -385,6 +385,15 @@ abstract class RustLibApi extends BaseApi {
       {required ClientHandle that,
       required ServiceHallTaskViewDto view,
       required ServiceHallReadPolicyDto policy});
+
+  Future<SportsRecordsResultDto> crateSdkApiClientHandleSportsRecordsResult(
+      {required ClientHandle that});
+
+  Future<SportsResourcesResultDto> crateSdkApiClientHandleSportsResourcesResult(
+      {required ClientHandle that,
+      required String gymId,
+      required String itemId,
+      required String date});
 
   Future<SelfServiceCaptchaDto>
       crateSdkApiClientHandleStartSavedSelfServiceLogin(
@@ -2804,6 +2813,66 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  Future<SportsRecordsResultDto> crateSdkApiClientHandleSportsRecordsResult(
+      {required ClientHandle that}) {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
+            that, serializer);
+        pdeCallFfi(generalizedFrbRustBinding, serializer,
+            funcId: 79, port: port_);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_sports_records_result_dto,
+        decodeErrorData: sse_decode_sdk_error_dto,
+      ),
+      constMeta: kCrateSdkApiClientHandleSportsRecordsResultConstMeta,
+      argValues: [that],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateSdkApiClientHandleSportsRecordsResultConstMeta =>
+      const TaskConstMeta(
+        debugName: "ClientHandle_sports_records_result",
+        argNames: ["that"],
+      );
+
+  @override
+  Future<SportsResourcesResultDto> crateSdkApiClientHandleSportsResourcesResult(
+      {required ClientHandle that,
+      required String gymId,
+      required String itemId,
+      required String date}) {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
+            that, serializer);
+        sse_encode_String(gymId, serializer);
+        sse_encode_String(itemId, serializer);
+        sse_encode_String(date, serializer);
+        pdeCallFfi(generalizedFrbRustBinding, serializer,
+            funcId: 80, port: port_);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_sports_resources_result_dto,
+        decodeErrorData: sse_decode_sdk_error_dto,
+      ),
+      constMeta: kCrateSdkApiClientHandleSportsResourcesResultConstMeta,
+      argValues: [that, gymId, itemId, date],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateSdkApiClientHandleSportsResourcesResultConstMeta =>
+      const TaskConstMeta(
+        debugName: "ClientHandle_sports_resources_result",
+        argNames: ["that", "gymId", "itemId", "date"],
+      );
+
+  @override
   Future<SelfServiceCaptchaDto>
       crateSdkApiClientHandleStartSavedSelfServiceLogin(
           {required ClientHandle that, required String username}) {
@@ -2814,7 +2883,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             that, serializer);
         sse_encode_String(username, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 79, port: port_);
+            funcId: 81, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_self_service_captcha_dto,
@@ -2848,7 +2917,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_String(password, serializer);
         sse_encode_bool(rememberCredentials, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 80, port: port_);
+            funcId: 82, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_self_service_captcha_dto,
@@ -2879,7 +2948,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_second_factor_method_dto(method, serializer);
         sse_encode_String(code, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 81, port: port_);
+            funcId: 83, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_identity_login_result_dto,
@@ -2911,7 +2980,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_String(answer, serializer);
         sse_encode_opt_String(smsCode, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 82, port: port_);
+            funcId: 84, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_self_service_login_result_dto,
@@ -2948,7 +3017,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_network_access_method_dto(method, serializer);
         sse_encode_opt_String(password, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 83, port: port_);
+            funcId: 85, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_network_profile_dto,
@@ -2975,7 +3044,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
             that, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 84, port: port_);
+            funcId: 86, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_list_laundry_option_dto,
@@ -3003,7 +3072,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             that, serializer);
         sse_encode_String(deliveryId, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 85, port: port_);
+            funcId: 87, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_water_user_dto,
@@ -3030,7 +3099,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerNetworkProfilePasswordHandle(
             that, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 86, port: port_);
+            funcId: 88, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_String,
@@ -3058,7 +3127,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPreparedNetworkProfile(
             that, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 87, port: port_);
+            funcId: 89, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_network_profile_fill_dto,
@@ -3082,7 +3151,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       callFfi: (port_) {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 88, port: port_);
+            funcId: 90, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_list_laundry_option_dto,
@@ -3106,7 +3175,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       callFfi: (port_) {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 89, port: port_);
+            funcId: 91, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_list_laundry_option_dto,
@@ -3131,7 +3200,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         sse_encode_String(username, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 90, port: port_);
+            funcId: 92, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_opt_box_autoadd_login_stage_dto,
@@ -3155,7 +3224,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       callFfi: (port_) {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 91, port: port_);
+            funcId: 93, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_list_laundry_option_dto,
@@ -5256,6 +5325,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<SportsReservationRecordDto>
+      dco_decode_list_sports_reservation_record_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>)
+        .map(dco_decode_sports_reservation_record_dto)
+        .toList();
+  }
+
+  @protected
+  List<SportsResourceDto> dco_decode_list_sports_resource_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_sports_resource_dto).toList();
+  }
+
+  @protected
   LoginStageDto dco_decode_login_stage_dto(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return LoginStageDto.values[raw as int];
@@ -6221,6 +6305,95 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       applicationTime: dco_decode_String(arr[3]),
       progressPercent: dco_decode_opt_box_autoadd_u_32(arr[4]),
       phaseReferenceId: dco_decode_opt_String(arr[5]),
+    );
+  }
+
+  @protected
+  SportsRecordsDataDto dco_decode_sports_records_data_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 1)
+      throw Exception('unexpected arr length: expect 1 but see ${arr.length}');
+    return SportsRecordsDataDto(
+      records: dco_decode_list_sports_reservation_record_dto(arr[0]),
+    );
+  }
+
+  @protected
+  SportsRecordsResultDto dco_decode_sports_records_result_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return SportsRecordsResultDto(
+      data: dco_decode_sports_records_data_dto(arr[0]),
+      metadata: dco_decode_read_metadata_dto(arr[1]),
+    );
+  }
+
+  @protected
+  SportsReservationRecordDto dco_decode_sports_reservation_record_dto(
+      dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 8)
+      throw Exception('unexpected arr length: expect 8 but see ${arr.length}');
+    return SportsReservationRecordDto(
+      name: dco_decode_String(arr[0]),
+      field: dco_decode_String(arr[1]),
+      time: dco_decode_String(arr[2]),
+      price: dco_decode_String(arr[3]),
+      method: dco_decode_String(arr[4]),
+      bookTimestamp: dco_decode_opt_box_autoadd_i_64(arr[5]),
+      bookId: dco_decode_opt_String(arr[6]),
+      payId: dco_decode_opt_String(arr[7]),
+    );
+  }
+
+  @protected
+  SportsResourceDto dco_decode_sports_resource_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 11)
+      throw Exception('unexpected arr length: expect 11 but see ${arr.length}');
+    return SportsResourceDto(
+      resId: dco_decode_String(arr[0]),
+      resHash: dco_decode_String(arr[1]),
+      timeSession: dco_decode_String(arr[2]),
+      fieldName: dco_decode_String(arr[3]),
+      overlaySize: dco_decode_opt_box_autoadd_u_32(arr[4]),
+      canNetBook: dco_decode_bool(arr[5]),
+      cost: dco_decode_opt_String(arr[6]),
+      bookId: dco_decode_opt_String(arr[7]),
+      locked: dco_decode_opt_box_autoadd_bool(arr[8]),
+      userType: dco_decode_opt_String(arr[9]),
+      paymentStatus: dco_decode_opt_box_autoadd_bool(arr[10]),
+    );
+  }
+
+  @protected
+  SportsResourcesDto dco_decode_sports_resources_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    return SportsResourcesDto(
+      count: dco_decode_u_32(arr[0]),
+      init: dco_decode_u_32(arr[1]),
+      phone: dco_decode_opt_String(arr[2]),
+      data: dco_decode_list_sports_resource_dto(arr[3]),
+    );
+  }
+
+  @protected
+  SportsResourcesResultDto dco_decode_sports_resources_result_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return SportsResourcesResultDto(
+      data: dco_decode_sports_resources_dto(arr[0]),
+      metadata: dco_decode_read_metadata_dto(arr[1]),
     );
   }
 
@@ -8524,6 +8697,33 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<SportsReservationRecordDto>
+      sse_decode_list_sports_reservation_record_dto(
+          SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <SportsReservationRecordDto>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_sports_reservation_record_dto(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<SportsResourceDto> sse_decode_list_sports_resource_dto(
+      SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <SportsResourceDto>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_sports_resource_dto(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
   LoginStageDto sse_decode_login_stage_dto(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var inner = sse_decode_i_32(deserializer);
@@ -9528,6 +9728,97 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         applicationTime: var_applicationTime,
         progressPercent: var_progressPercent,
         phaseReferenceId: var_phaseReferenceId);
+  }
+
+  @protected
+  SportsRecordsDataDto sse_decode_sports_records_data_dto(
+      SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_records =
+        sse_decode_list_sports_reservation_record_dto(deserializer);
+    return SportsRecordsDataDto(records: var_records);
+  }
+
+  @protected
+  SportsRecordsResultDto sse_decode_sports_records_result_dto(
+      SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_data = sse_decode_sports_records_data_dto(deserializer);
+    var var_metadata = sse_decode_read_metadata_dto(deserializer);
+    return SportsRecordsResultDto(data: var_data, metadata: var_metadata);
+  }
+
+  @protected
+  SportsReservationRecordDto sse_decode_sports_reservation_record_dto(
+      SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_name = sse_decode_String(deserializer);
+    var var_field = sse_decode_String(deserializer);
+    var var_time = sse_decode_String(deserializer);
+    var var_price = sse_decode_String(deserializer);
+    var var_method = sse_decode_String(deserializer);
+    var var_bookTimestamp = sse_decode_opt_box_autoadd_i_64(deserializer);
+    var var_bookId = sse_decode_opt_String(deserializer);
+    var var_payId = sse_decode_opt_String(deserializer);
+    return SportsReservationRecordDto(
+        name: var_name,
+        field: var_field,
+        time: var_time,
+        price: var_price,
+        method: var_method,
+        bookTimestamp: var_bookTimestamp,
+        bookId: var_bookId,
+        payId: var_payId);
+  }
+
+  @protected
+  SportsResourceDto sse_decode_sports_resource_dto(
+      SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_resId = sse_decode_String(deserializer);
+    var var_resHash = sse_decode_String(deserializer);
+    var var_timeSession = sse_decode_String(deserializer);
+    var var_fieldName = sse_decode_String(deserializer);
+    var var_overlaySize = sse_decode_opt_box_autoadd_u_32(deserializer);
+    var var_canNetBook = sse_decode_bool(deserializer);
+    var var_cost = sse_decode_opt_String(deserializer);
+    var var_bookId = sse_decode_opt_String(deserializer);
+    var var_locked = sse_decode_opt_box_autoadd_bool(deserializer);
+    var var_userType = sse_decode_opt_String(deserializer);
+    var var_paymentStatus = sse_decode_opt_box_autoadd_bool(deserializer);
+    return SportsResourceDto(
+        resId: var_resId,
+        resHash: var_resHash,
+        timeSession: var_timeSession,
+        fieldName: var_fieldName,
+        overlaySize: var_overlaySize,
+        canNetBook: var_canNetBook,
+        cost: var_cost,
+        bookId: var_bookId,
+        locked: var_locked,
+        userType: var_userType,
+        paymentStatus: var_paymentStatus);
+  }
+
+  @protected
+  SportsResourcesDto sse_decode_sports_resources_dto(
+      SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_count = sse_decode_u_32(deserializer);
+    var var_init = sse_decode_u_32(deserializer);
+    var var_phone = sse_decode_opt_String(deserializer);
+    var var_data = sse_decode_list_sports_resource_dto(deserializer);
+    return SportsResourcesDto(
+        count: var_count, init: var_init, phone: var_phone, data: var_data);
+  }
+
+  @protected
+  SportsResourcesResultDto sse_decode_sports_resources_result_dto(
+      SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_data = sse_decode_sports_resources_dto(deserializer);
+    var var_metadata = sse_decode_read_metadata_dto(deserializer);
+    return SportsResourcesResultDto(data: var_data, metadata: var_metadata);
   }
 
   @protected
@@ -11366,6 +11657,26 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_list_sports_reservation_record_dto(
+      List<SportsReservationRecordDto> self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_sports_reservation_record_dto(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_sports_resource_dto(
+      List<SportsResourceDto> self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_sports_resource_dto(item, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_login_stage_dto(
       LoginStageDto self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
@@ -12144,6 +12455,70 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_sports_records_data_dto(
+      SportsRecordsDataDto self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_list_sports_reservation_record_dto(self.records, serializer);
+  }
+
+  @protected
+  void sse_encode_sports_records_result_dto(
+      SportsRecordsResultDto self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_sports_records_data_dto(self.data, serializer);
+    sse_encode_read_metadata_dto(self.metadata, serializer);
+  }
+
+  @protected
+  void sse_encode_sports_reservation_record_dto(
+      SportsReservationRecordDto self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.name, serializer);
+    sse_encode_String(self.field, serializer);
+    sse_encode_String(self.time, serializer);
+    sse_encode_String(self.price, serializer);
+    sse_encode_String(self.method, serializer);
+    sse_encode_opt_box_autoadd_i_64(self.bookTimestamp, serializer);
+    sse_encode_opt_String(self.bookId, serializer);
+    sse_encode_opt_String(self.payId, serializer);
+  }
+
+  @protected
+  void sse_encode_sports_resource_dto(
+      SportsResourceDto self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.resId, serializer);
+    sse_encode_String(self.resHash, serializer);
+    sse_encode_String(self.timeSession, serializer);
+    sse_encode_String(self.fieldName, serializer);
+    sse_encode_opt_box_autoadd_u_32(self.overlaySize, serializer);
+    sse_encode_bool(self.canNetBook, serializer);
+    sse_encode_opt_String(self.cost, serializer);
+    sse_encode_opt_String(self.bookId, serializer);
+    sse_encode_opt_box_autoadd_bool(self.locked, serializer);
+    sse_encode_opt_String(self.userType, serializer);
+    sse_encode_opt_box_autoadd_bool(self.paymentStatus, serializer);
+  }
+
+  @protected
+  void sse_encode_sports_resources_dto(
+      SportsResourcesDto self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_32(self.count, serializer);
+    sse_encode_u_32(self.init, serializer);
+    sse_encode_opt_String(self.phone, serializer);
+    sse_encode_list_sports_resource_dto(self.data, serializer);
+  }
+
+  @protected
+  void sse_encode_sports_resources_result_dto(
+      SportsResourcesResultDto self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_sports_resources_dto(self.data, serializer);
+    sse_encode_read_metadata_dto(self.metadata, serializer);
+  }
+
+  @protected
   void sse_encode_u_32(int self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     serializer.buffer.putUint32(self);
@@ -12796,6 +13171,24 @@ class ClientHandleImpl extends RustOpaque implements ClientHandle {
           required ServiceHallReadPolicyDto policy}) =>
       RustLib.instance.api.crateSdkApiClientHandleServiceHallTasks(
           that: this, view: view, policy: policy);
+
+  /// Reads the account's unpaid sports reservations followed by its paid
+  /// ones.  Nothing here orders, pays, or cancels.
+  Future<SportsRecordsResultDto> sportsRecordsResult() =>
+      RustLib.instance.api.crateSdkApiClientHandleSportsRecordsResult(
+        that: this,
+      );
+
+  /// Reads one sports venue's limits, configured phone number, and slot list
+  /// for one `YYYY-MM-DD` date.  `gym_id` and `item_id` must be digit strings
+  /// and `date` a real calendar day; anything else is refused in Rust before
+  /// any request.
+  Future<SportsResourcesResultDto> sportsResourcesResult(
+          {required String gymId,
+          required String itemId,
+          required String date}) =>
+      RustLib.instance.api.crateSdkApiClientHandleSportsResourcesResult(
+          that: this, gymId: gymId, itemId: itemId, date: date);
 
   /// Starts the SelfService captcha flow using an explicitly requested
   /// stored credential. Passwords remain inside Rust.
