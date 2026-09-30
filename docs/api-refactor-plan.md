@@ -1772,3 +1772,87 @@ SDK `public_api` 增补 `compile_sports_api` 编译检查与两项活动断言�
 `docs/api-surface-baseline.json` 已按本节源码与重新渲染的 Rustdoc 刷新到第十版：`source_revision` 前进到 `48c81ef`（`library_room` 那一次的提交 48c81ef 之后，本轮改动尚未提交）；`root_public_modules` 68 → **69**（新增 `campus_card_write`）；根 `pub use` 55 → **56**；`rendered_crate_root_item_counts` struct 349 → **352**、enum 165 → **171**、fn 64（不变）、constant 65 → **75**（十四个新公开项在 crate 根渲染出 3 struct / 6 enum / 10 constant），`trait` / `type` 不变；runtime `public_methods` 106 → **107**，`direct_state_field_count` 126（本轮之前的实测值即为 126，新增一个字段，因此该记录项在 `library_room` 那次已经计过；本版按当前源码**逐条重新锚定全部 107 条方法的行号**，因为 `apply_campus_card_write` 的插入使其后所有方法下移），`line_count` 29129 → **29183**；runtime `dto_structs` 84（本轮无新 DTO）。
 
 **未验证**：五条路由的线上可用性**未验证**，需要另行真实只读验收；本轮**未对任何真实账号发起任何请求**，也未挂失、解挂、改密、改限额或转账。按 §59 起的约定，这些写操作**一律不进入只读验收**，只在其结果上做"是否未确认"的判定。在此之前不得用 fixture 或空结果冒充线上证据。
+
+## 69. 2026-09-30 宿舍电费密码重置（一次性写：宿舍服务自身的口令替换）
+
+计划阶段 2 的宿舍密码条目。参考实现 `thu_reference/thu-info-app/packages/thu-info-lib/src/lib/dorm.ts` 里 `resetDormPassword` 是这样一个调用：
+
+```ts
+roamingWrapperWithMocks(helper, "id", "051bb58cba58a1c5f67857606497387f", async () => {
+    const $ = await uFetch(CHANGE_HOME_PASSWORD_URL).then(cheerio.load);
+    if ($("#ChangePasswordCtrl1_txtoldpassword").length === 0) throw new DormAuthError();
+    ...
+    form.__EVENTTARGET = "ChangePasswordCtrl1:btnOK";
+    form.ChangePasswordCtrl1$txtoldpassword = "";
+    form.ChangePasswordCtrl1$txtnewpassword = newPassword;
+    form.ChangePasswordCtrl1$txtnewpassword1 = newPassword;
+    await uFetch(CHANGE_HOME_PASSWORD_URL, form);
+});
+```
+
+也就是说它的**漫游策略是 `"id"`**，而不是电费读半用的那条策略。`"id"` 在本仓库里是一条已经带结论的边界：它是一次**校园身份登录**，会把账号口令 POST 到 `id.tsinghua.edu.cn`。§58 的研读间（`"cab"`）、§67 的馆藏教参（同样是 `"id"`）都因为同一条理由没有被实现成第二条登录。本轮沿用同一结论：**不实现第二条校园登录**。
+
+**为什么这条仍然能实现：映射根是同一个**
+
+参考库的 `CHANGE_HOME_PASSWORD_URL` 与电费剩余量 URL 在 `constants/strings.ts` 里只差最后一段路径，前缀是**同一个映射 token**：
+
+```
+https://webvpn.tsinghua.edu.cn/http/77726476706e69737468656265737421fdee49932a3526446d0187ab9040227bca90a6e14cc9/Netweb_List/ChangePassword.aspx
+```
+
+而引擎的 `ELECTRICITY_WEBVPN_BASE_URL`（`api/runtime.rs`）带的正是同一个 token `fdee49932a3526446d0187ab9040227bca90a6e14cc9`。因此 `configured_electricity_flow()` 已经解析出来的那个映射根，就是这张表单所在的映射根——宿舍电费页与宿舍改密页是**同一个遗留 ASP.NET 应用**的两个页面。于是本模块不新增 selector、不新增映射、不新增 `ServiceId`、不新增认证方式、不新建 Cookie jar：它复用**读半已经证明过的那一条电费会话**与同一个 `runtime.identity.transport()`。这一点在 `runtime_dorm_password_write.rs` 里是结构性的（适配器就是从 `configured_electricity_flow().mapped` 与 `runtime.identity.transport()` 构造的），不是注释承诺。
+
+`DORM_CHANGE_PASSWORD_WEBVPN_TARGET`（`051bb58cba58a1c5f67857606497387f`）作为**文档常量**保留：它记录的是"这个路由自己的客户端用哪条策略漫游"，而那条策略本仓库不实现。它与 §66 记录的 `"id"` 常量一样，**没有**出现在 `info_session.rs::map_additional_roaming` 的允许名单里，因此它不可能是任何一次请求的目的地。
+
+**线格式：三个钉死的观测值**
+
+| 事实 | 值 | 为什么必须写死 |
+| --- | --- | --- |
+| 就绪锚点 | `id="ChangePasswordCtrl1_txtoldpassword"` | 参考实现以它缺失判定 `DormAuthError`（即会话没了），本模块同样以 `FormMissing` 报告 |
+| 事件目标 | `__EVENTTARGET = "ChangePasswordCtrl1:btnOK"` | 分隔符是**冒号**；同页隐藏字段的 `name` 用的是 `$`（`ChangePasswordCtrl1$txtoldpassword`）。写成 `$` 会指向不存在的控件 |
+| 旧密码字段 | `ChangePasswordCtrl1$txtoldpassword = ""` | 服务自己的客户端**主动送空**，不是省略。本模块照作，并且因此**不接受**任何旧密码参数 |
+
+新口令与确认字段送同一个值（`$txtnewpassword` / `$txtnewpassword1`），与参考一致。
+
+**表单状态属于服务，不属于调用方**
+
+`parse_change_password_form` 只从这一会话真正取回的那张页面里收集 `<input type="hidden">` 的 name/value（跳过无 name 的、去重、有界：`MAX_FORM_FIELDS = 512` / `MAX_FORM_VALUE_BYTES = 256 KiB` / `MAX_FORM_RESPONSE_BYTES = 512 KiB`），产出 `DormPasswordFormState`。POST 体 = 这张页面的隐藏字段**原样回显** + 本模块设置的四个字段。计划（`DormPasswordWritePlan`）**不携带表单**，所以调用方无法替换请求体：`DormPasswordWritePlan::fields()` 是 `pub(crate)`，且把口令放在**派发时刻**才拼进去（`.form(&fields).build()` 之后立刻 `drop(fields)`）。
+
+**没有 `Refused`，这是刻意的**
+
+校园卡写（§68）有 `Refused`，因为参考实现观测到了服务自己的失败包。这条路由**没有任何响应被观测过**：参考实现 `await uFetch(...)` 后**丢弃返回值**，只有异常与成功两种外部表现。因此 `DormPasswordWriteOutcome` 只有 `Accepted` / `LoginRequired` / `Unrecognized` 三态，**没有** `Refused`。一个带显式失败标记的 JSON 信封也判为 `Unrecognized`（未确认），而不是"被拒绝"——凭空造一个拒绝态等于把"我不知道"说成"你没改成"。
+
+`classify_dorm_password_write` 的接受面因此收得很紧：**空体/纯空白**算接受（一次成功的 ASP.NET 回发常常什么都不返回）、字面 `OK` 算接受、JSON 对象里 `status`/`result`/`success` 为 `1`/`true`/`"success"` 且无失败标记算接受；**HTML 页面一律不算接受证据**（这里用的是严格版 `looks_like_html`，与表单解析器用的宽松版 `looks_like_html_body` 是两个函数——前者拒绝把"另一个页面"当成成功，后者只是允许 `<%@ Page %>` 开头的页面被解析）。其余全部 `Unrecognized`。
+
+**三层"恰好发一次"**
+
+1. **适配器**：`reset_password` 走 `transport.execute_once_exclusive(...)`——占满 gate、**不跟随重定向**。一次重定向就是一次"结果已不确定的写"的重放。
+2. **错误文本被丢弃**：`Err(_error) => Ok(Unrecognized)`。reqwest 的失败信息可能带上请求 URL，而这次请求的体里装着新口令，所以失败信息**不进日志、不进错误、不进 DTO**。
+3. **runtime 不重试、不自动重认证**：`LoginRequired` 只作废电费会话并记 `dorm_write_session_expired`；其余未确认记 `dorm_write_unconfirmed`。
+
+**未证明的会话绝不留写失败码**
+
+`apply_password_reset` 在**做任何事之前**检查 `electricity_service_is_proven()`，不成立时返回一句 `record_error("宿舍服务会话未建立，请先打开宿舍电费页面")`，不落业务失败码。因此一个**根本没发出去**的请求在 SDK/FFI 层看到的是 `session_required`，而**不是** `outcome_unconfirmed`。这是"未确认 = 可能已经改了"这一语义的结构性保证。
+
+**本地边界与它的来源**
+
+`MAX_DORM_PASSWORD_CHARS = 64` 是**本模块自己的**上界：服务端规则未被观测，它存在只是为了挡住手滑。除长度外，`DormPassword::new` 还拒绝空串、纯空白、任何控制字符，并**不做 trim**（trim 会把一个不同的口令悄悄变成一个正确的口令）。`DormPassword` 包着 `Zeroizing<String>`，`Debug` 只打印 `chars: N`，`Drop` 显式 `zeroize()`，`expose()` 是 `pub(crate)`。越界值在任何请求存在之前被拒（`dorm_write_request` ⇒ SDK `invalid_input`）。
+
+**SDK / FFI / Dart**
+
+- 引擎：新增 `dorm_password_write`（8 常量 / 6 struct / 7 enum / 2 fn，13 项模块单元测试）；`api/runtime_dorm_password_write.rs` 新增 `apply_password_reset` / `finish_dorm_password_reset`；runtime 新增 `apply_dorm_password_reset`、`last_dorm_password_failure_code` 字段与两个访问器；`client.rs` 新增 `ElectricityClient::reset_home_password` 与 `dorm_password_error_code` 映射（`dorm_write_unconfirmed` ⇒ `OutcomeUnconfirmed`、`dorm_write_session_expired` ⇒ `SessionExpired`、`dorm_write_request` ⇒ `InvalidInput`、`dorm_config` ⇒ `Unsupported`、`dorm_network` ⇒ `NetworkUnavailable`、表单/来源/路径/内容类型/HTTP ⇒ `InvalidResponse`）及其 1 项单元测试。
+- SDK：`ElectricityClient::reset_home_password(&mut self, new_password: &str)`（薄包装）；`electricity` 模块 re-export `DORM_CHANGE_PASSWORD_PATH` / `DORM_CHANGE_PASSWORD_ANCHOR` / `MAX_DORM_PASSWORD_CHARS`；`public_api.rs` 新增一条断言（`Service::Dorm` + 已登出时 `SessionRequired`，四种非法值 `InvalidInput`）。
+- FFI：`ClientHandle::electricity_reset_home_password(new_password: String)`；FRB 重新生成的生成物未手工编辑。
+- Dart：`lib/src/electricity.dart` 新增 `resetHomePassword` 与 `maxHomePasswordChars`；`lib/electricity.dart` 入口描述补充这一次性写与其 `OutcomeUnconfirmed` 语义；`test/public_entrypoints_test.dart` 覆盖 `maxHomePasswordChars == 64`。
+
+**验证**
+
+引擎定向：`cargo test -p tsinghua_kit_engine --lib dorm_password` **14 项通过 / 0 失败**（13 项 loopback/单元 + 1 项错误码映射），覆盖：口令值的拒绝与脱敏、计划 `Debug` 只印字段名与 `fields` 数量、旧口令字段送空而新口令重复两次、表单解析回显每个隐藏字段并容忍页面指令开头、非本表单的页面被拒、分类器只接受肯定证据、**恰好发一次**且 POST 体里带页面自己的 `__VIEWSTATE` 与冒号事件目标、不可读答复判为未确认、会话消失时不发请求、页面失去表单时不发请求、登录重定向判为会话失效、空表单被接受而失败状态判为未确认、越界 base URL 被拒。桥接层 `cargo test -p tsinghua_kit_ffi --lib` **55 项通过**（本轮新增 2 项：无会话时报 `session_required` 而非 `outcome_unconfirmed`；四种非法输入在任何会话工作之前判 `invalid_input`）。SDK `cargo test -p tsinghua_kit --test public_api` **23 项通过**。`cargo check --workspace --all-targets` 退出 0；`cargo fmt --all -- --check` 干净；`RUSTDOCFLAGS="-D warnings" cargo doc -p tsinghua_kit` 干净；`flutter analyze lib test` 无问题；`flutter test test/public_entrypoints_test.dart` 通过。
+
+**同过滤器下的既有失败**：`library` 过滤器仍为既有的 4 项失败，`tsinghua_kit_ffi` 的 `classroom_contract` 集成测试 3 项 `MissingDateHeaders` 失败，引擎 rustdoc `-D warnings` 仍有 4 条既有私有链接错误（`assessment_read`/`invoice_read`/`library_room_read`/`reserves_read`），整套 `--lib` 引擎运行仍会因既有栈溢出中断（`backend_repair_learn_fresh_announcement_cache_skips_live_handoff`）——均为 HEAD 既有、与本轮无关（见 §64/§67/§68 的归因），本轮**未修**。
+
+**baseline**
+
+`docs/api-surface-baseline.json` 已按本节源码与重新渲染的 Rustdoc 刷新到第十一版：`source_revision` 前进到 `2e3f62c`（§68 那一次提交；本轮改动尚未提交）；`root_public_modules` 69 → **70**（新增 `dorm_password_write`）；根 `pub use` 56 → **57**；`rendered_crate_root_item_counts` struct 352 → **358**、enum 171 → **178**、fn 64 → **66**、constant 75 → **83**（本模块 23 个公开项在 crate 根渲染为 6 struct / 7 enum / 8 constant / 2 fn），`trait` / `type` 不变；runtime `public_methods` 107 → **108**（新增 `apply_dorm_password_reset`，行号 8248；因该方法的插入，其后的方法行号统一下移 36 行，本版**逐条重新锚定全部 108 条**并同时修正了 `public_free_functions` 6 条的旧行号），`direct_state_field_count` 126 → **128**，`line_count` 29183 → **29232**；runtime `dto_structs` 84（本轮无新 DTO）。
+
+**未验证**：该路由的线上可用性**未验证**，需要另行真实只读验收；本轮**未对任何真实账号发起任何请求**，也**未修改任何账号的口令**。按 §59 起的约定，密码重置**一律不进入只读验收**，只在其结果上做"是否未确认"的判定。参考实现的 `"id"` 漫游策略（一次真正的校园身份登录，会把账号口令 POST 到 `id.tsinghua.edu.cn`）**已记录、未实现**。在此之前不得用 fixture 或空结果冒充线上证据。

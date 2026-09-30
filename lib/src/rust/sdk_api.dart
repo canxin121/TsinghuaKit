@@ -193,6 +193,21 @@ abstract class ClientHandle implements RustOpaqueInterface {
   /// Reads the current dorm-electricity remainder.
   Future<ElectricityRemainderResultDto> electricityRemainder();
 
+  /// Replaces the dormitory service account's own password.
+  ///
+  /// The dormitory application is reached through the same proven session as
+  /// the electricity reads, so this never establishes a second one.  Rust
+  /// validates and holds the value in a zeroizing wrapper, copies it into
+  /// exactly one request body, and logs it nowhere; it is not a DTO field.
+  ///
+  /// The reset is dispatched **exactly once** and is never retried.  When the
+  /// service's answer carries no affirmative acceptance — the ordinary outcome
+  /// for this route, because the service's own client discards the reply — this
+  /// returns `outcome_unconfirmed`.  That means the change may already be in
+  /// effect, so it must not be resolved by calling this again; signing in with
+  /// the new password is how a caller finds out what happened.
+  Future<void> electricityResetHomePassword({required String newPassword});
+
   /// Forgets one stored SelfService password without changing its session.
   Future<void> forgetSavedSelfServiceCredentials({required String username});
 

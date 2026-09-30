@@ -733,6 +733,41 @@ async fn electricity_reads_require_identity_and_return_service_scoped_errors() {
 }
 
 #[tokio::test]
+async fn dorm_password_reset_is_a_dorm_service_change_and_never_opens_a_session() {
+    let mut client = tsinghua_kit::Client::builder().build().unwrap();
+    // A reset on a signed-out account is refused as a session requirement.  It
+    // must not report `OutcomeUnconfirmed` — nothing was dispatched, so there is
+    // no unknown effect — and it must not try to establish the dorm session
+    // itself, which is what makes this a state change rather than a second
+    // authentication path.
+    let error = {
+        let mut electricity = client.electricity();
+        electricity
+            .reset_home_password("synthetic-new-password")
+            .await
+            .unwrap_err()
+    };
+    assert_eq!(error.service(), Service::Dorm);
+    assert_eq!(error.code(), ErrorCode::SessionRequired);
+    assert_eq!(
+        client.auth().status().identity().state(),
+        AccountAuthState::SignedOut
+    );
+
+    // An invalid value is the caller's input and is refused before the session
+    // requirement is consulted, so its code says so rather than blaming the
+    // session.
+    for invalid in ["", "   ", "abc\u{7}def", &"x".repeat(65)] {
+        let error = {
+            let mut electricity = client.electricity();
+            electricity.reset_home_password(invalid).await.unwrap_err()
+        };
+        assert_eq!(error.service(), Service::Dorm, "{invalid:?}");
+        assert_eq!(error.code(), ErrorCode::InvalidInput, "{invalid:?}");
+    }
+}
+
+#[tokio::test]
 async fn sports_reads_require_identity_and_return_service_scoped_errors() {
     let mut client = tsinghua_kit::Client::builder().build().unwrap();
     let (resources_error, records_error) = {

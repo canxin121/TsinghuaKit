@@ -82,9 +82,17 @@ pub mod error {
     pub use tsinghua_kit_engine::error::{Error, ErrorCode, Service};
 }
 
-/// Dorm-electricity remainder and payment-history reads.
+/// Dorm-electricity remainder and payment-history reads, plus the dormitory
+/// account's own password reset.
+///
+/// The reset is a state change: it is dispatched exactly once, is never retried,
+/// and reports [`error::ErrorCode::OutcomeUnconfirmed`] when the service's answer
+/// carries no affirmative acceptance — the ordinary outcome for this route.
 pub mod electricity {
     pub use crate::client::ElectricityClient;
+    pub use tsinghua_kit_engine::dorm_password_write::{
+        DORM_CHANGE_PASSWORD_ANCHOR, DORM_CHANGE_PASSWORD_PATH, MAX_DORM_PASSWORD_CHARS,
+    };
     pub use tsinghua_kit_engine::electricity_api::{
         ElectricityPaymentHistory, ElectricityPaymentRecord, ElectricityRemainder,
     };

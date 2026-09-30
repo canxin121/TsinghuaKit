@@ -55,6 +55,10 @@ use crate::{
         DormElectricityAdapter, ElectricityBusinessProof, ElectricityPaymentHistory,
         ElectricityRemainder,
     },
+    dorm_password_write::{
+        DormPassword, DormPasswordWriteAdapter, DormPasswordWriteAdapterError,
+        DormPasswordWriteOutcome,
+    },
     identity::{
         FormEncoding, IdentityLoginProfile, LoginFormFields, LoginFormProfile, SecondAuthAction,
         SecondAuthActions, SecondAuthMethod, SecondAuthProfile,
@@ -189,6 +193,9 @@ mod library_write_runtime;
 
 #[path = "runtime_campus_card_write.rs"]
 mod campus_card_write_runtime;
+
+#[path = "runtime_dorm_password_write.rs"]
+mod dorm_password_write_runtime;
 
 #[cfg(test)]
 #[path = "runtime_audit_tests.rs"]
@@ -3310,6 +3317,13 @@ pub struct CampusRuntime {
     /// not tell a refused write from a write whose effect is unknown, and the
     /// two must not share an error code.
     last_campus_card_failure_code: Option<&'static str>,
+    /// The dormitory password reset's own outcome code.
+    ///
+    /// The reset shares its mapped application with the electricity reads, but a
+    /// state change must not be reported as a read failure: without its own field
+    /// the SDK layer could not tell an unconfirmed password change from a failed
+    /// electricity read, and the two must not share an error code.
+    last_dorm_password_failure_code: Option<&'static str>,
     // One reservation read at a time is what makes a cancellation selector
     // meaningful, so the selectors, their account and their age are kept
     // together exactly as the INFO subscription rules are.
@@ -3999,6 +4013,7 @@ impl CampusRuntime {
             last_sports_failure_code: None,
             last_library_failure_code: None,
             last_campus_card_failure_code: None,
+            last_dorm_password_failure_code: None,
             library_reservation_selectors: HashMap::new(),
             library_reservation_owner: None,
             library_reservation_at: None,
@@ -8215,6 +8230,27 @@ impl CampusRuntime {
     ) -> Result<CampusRuntimeStatusDto, String> {
         crate::telemetry::observe("campus_card", "apply_campus_card_write", async {
             campus_card_write_runtime::apply_card_write(self, request).await
+        })
+        .await
+    }
+
+    /// Replaces the dormitory service account's own password.
+    ///
+    /// The route is the one the electricity reads already reach, so this uses the
+    /// proven electricity session rather than establishing a second one.  The new
+    /// password arrives as [`DormPassword`], is copied into exactly one body, and
+    /// is never an argument of a log line, a DTO field or a recorded failure code.
+    ///
+    /// The reset is dispatched once through the exclusive gate and is never
+    /// re-authenticated and re-sent: a password change whose answer was lost may
+    /// already be in effect, so the caller is told the outcome is unconfirmed
+    /// (`dorm_write_unconfirmed`) rather than having the change replayed.
+    pub async fn apply_dorm_password_reset(
+        &mut self,
+        password: DormPassword,
+    ) -> Result<CampusRuntimeStatusDto, String> {
+        crate::telemetry::observe("dorm_password", "apply_dorm_password_reset", async {
+            dorm_password_write_runtime::apply_password_reset(self, password).await
         })
         .await
     }
@@ -18678,6 +18714,9 @@ impl CampusRuntime {
         if service == "campus_card" {
             self.last_campus_card_failure_code = Some(reason);
         }
+        if service == "dorm_password" {
+            self.last_dorm_password_failure_code = Some(reason);
+        }
         tracing::warn!(target:"tsinghua_kit::api",event="business_read_failure",service,business_stage=stage,reason);
         let message = format!("服务读取未确认（{reason}），详情见脱敏日志");
         self.last_error = Some(message.clone());
@@ -18702,6 +18741,16 @@ impl CampusRuntime {
     #[cfg_attr(feature = "ffi-bridge", frb(ignore))]
     pub(crate) fn last_campus_card_failure_code(&self) -> Option<&'static str> {
         self.last_campus_card_failure_code
+    }
+
+    #[cfg_attr(feature = "ffi-bridge", frb(ignore))]
+    pub(crate) fn clear_dorm_password_failure_code(&mut self) {
+        self.last_dorm_password_failure_code = None;
+    }
+
+    #[cfg_attr(feature = "ffi-bridge", frb(ignore))]
+    pub(crate) fn last_dorm_password_failure_code(&self) -> Option<&'static str> {
+        self.last_dorm_password_failure_code
     }
 
     #[cfg_attr(feature = "ffi-bridge", frb(ignore))]

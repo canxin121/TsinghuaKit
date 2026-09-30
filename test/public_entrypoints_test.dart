@@ -148,6 +148,10 @@ void main() {
     expect(_publicType<self_service.SelfServiceClient>(), isNull);
     expect(_publicType<auth.SelfServiceAuthClient>(), isNull);
     expect(_publicType<electricity.ElectricityClient>(), isNull);
+    // The dormitory reset is a one-shot state change: its local bound is the
+    // only part of it a caller can hold, and the value it sends never becomes
+    // a DTO field.
+    expect(electricity.ElectricityClient.maxHomePasswordChars, 64);
     expect(_publicType<read.ReadResult<int>>(), isNull);
     expect(_publicType<overview.OverviewClient>(), isNull);
     expect(_publicType<overview.DailyOverview>(), isNull);

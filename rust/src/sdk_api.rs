@@ -6018,6 +6018,30 @@ impl ClientHandle {
         Ok(electricity_payment_history_result(result))
     }
 
+    /// Replaces the dormitory service account's own password.
+    ///
+    /// The dormitory application is reached through the same proven session as
+    /// the electricity reads, so this never establishes a second one.  Rust
+    /// validates and holds the value in a zeroizing wrapper, copies it into
+    /// exactly one request body, and logs it nowhere; it is not a DTO field.
+    ///
+    /// The reset is dispatched **exactly once** and is never retried.  When the
+    /// service's answer carries no affirmative acceptance — the ordinary outcome
+    /// for this route, because the service's own client discards the reply — this
+    /// returns `outcome_unconfirmed`.  That means the change may already be in
+    /// effect, so it must not be resolved by calling this again; signing in with
+    /// the new password is how a caller finds out what happened.
+    pub async fn electricity_reset_home_password(
+        &mut self,
+        new_password: String,
+    ) -> Result<(), SdkErrorDto> {
+        self.inner
+            .electricity()
+            .reset_home_password(&new_password)
+            .await?;
+        Ok(())
+    }
+
     /// Reads the validated physical-education test report.  The service's own
     /// "no result" answer is reported as `no_result`, not as an error.
     pub async fn physical_exam_result(&mut self) -> Result<PhysicalExamResultDto, SdkErrorDto> {
@@ -8471,6 +8495,37 @@ mod tests {
         let history = client.electricity_payment_history().await.unwrap_err();
         assert_eq!(history.service, "electricity");
         assert_eq!(history.code, "session_required");
+    }
+
+    #[tokio::test]
+    async fn dorm_password_reset_requires_the_dorm_session_and_never_fans_out() {
+        let mut client = client();
+        // A well-formed reset on an account with no dorm session is refused as a
+        // session requirement.  It must not answer `outcome_unconfirmed`: nothing
+        // was dispatched, so there is no unknown effect to report, and it must not
+        // try to establish the session itself.
+        let error = client
+            .electricity_reset_home_password("synthetic-new-password".to_owned())
+            .await
+            .unwrap_err();
+        assert_eq!(error.service, "dorm");
+        assert_eq!(error.code, "session_required");
+    }
+
+    #[tokio::test]
+    async fn dorm_password_reset_refuses_an_invalid_value_before_any_session_work() {
+        let mut client = client();
+        for invalid in ["", "   ", "abc\u{7}def", &"x".repeat(65)] {
+            let error = client
+                .electricity_reset_home_password(invalid.to_owned())
+                .await
+                .unwrap_err();
+            // An invalid value is the caller's input, so it is reported as such
+            // even on an account with no session at all: the value is refused
+            // before the session requirement is consulted.
+            assert_eq!(error.service, "dorm", "{invalid:?}");
+            assert_eq!(error.code, "invalid_input", "{invalid:?}");
+        }
     }
 
     #[test]

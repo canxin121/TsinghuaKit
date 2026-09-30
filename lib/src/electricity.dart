@@ -56,6 +56,30 @@ class ElectricityClient {
           await _handle.electricityPaymentHistory(),
         ),
       );
+
+  /// Replaces the dormitory service account's own password.
+  ///
+  /// The dormitory application is reached through the same proven session as
+  /// the electricity reads; Rust never establishes a second one, and the
+  /// password is copied into exactly one request body and zeroized after it.
+  ///
+  /// The reset is dispatched **exactly once** and is never retried.  When the
+  /// service's answer carries no affirmative acceptance — the ordinary outcome
+  /// for this route, because the service's own client discards the reply — the
+  /// call fails with a [TsinghuaKitException] whose `code` is
+  /// `outcome_unconfirmed`.  That means the change may already be in effect, so
+  /// it must not be resolved by calling this again; signing in with the new
+  /// password is how a caller finds out what happened.
+  Future<void> resetHomePassword(String newPassword) => _sdkCall(
+        () => _handle.electricityResetHomePassword(newPassword: newPassword),
+      );
+
+  /// The longest password Rust will put into the dormitory reset body.
+  ///
+  /// This is a local bound rather than an observed service rule: it exists so a
+  /// mistyped value is refused before a request is built. Rust refuses an empty,
+  /// whitespace-only, over-length or control-character value.
+  static const int maxHomePasswordChars = 64;
 }
 
 ReadResult<ElectricityRemainder> _electricityRemainderResult(

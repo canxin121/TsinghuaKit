@@ -38,7 +38,7 @@ use tsinghua_kit_engine::{
         ServiceHallClient as EngineServiceHallClient, SportsClient as EngineSportsClient,
     },
     electricity_api::{ElectricityPaymentHistory, ElectricityRemainder},
-    error::Error,
+    error::{Error, ErrorCode},
     invoice_read::{InvoiceDocument, InvoicePage, InvoiceRef},
     learn_api::{
         CourseAnnouncements, CourseCatalog, CourseDiscussions, CourseFileCategories, CourseFileRef,
@@ -749,6 +749,26 @@ impl ElectricityClient<'_> {
         &mut self,
     ) -> Result<ReadResult<ElectricityPaymentHistory>, Error> {
         self.inner.payment_history().await
+    }
+
+    /// Replaces the dormitory service account's own password.
+    ///
+    /// The dormitory application is the one the electricity reads already reach,
+    /// so this uses that proven session; a caller with no proven session is
+    /// refused rather than handed a second authentication path.
+    ///
+    /// The password is copied into exactly one request body, zeroized when that
+    /// body is dropped, and is never a result field, a log field or a recorded
+    /// failure code.
+    ///
+    /// The reset is dispatched **exactly once** and is never retried.  An answer
+    /// that does not carry affirmative acceptance — which is this route's ordinary
+    /// outcome, because the service's own client discards the reply — is reported
+    /// as [`ErrorCode::OutcomeUnconfirmed`] and must not be resolved by calling
+    /// this again: the change may already be in effect.  Sign in with the new
+    /// password to find out what happened.
+    pub async fn reset_home_password(&mut self, new_password: &str) -> Result<(), Error> {
+        self.inner.reset_home_password(new_password).await
     }
 }
 

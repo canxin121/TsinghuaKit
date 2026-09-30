@@ -2097,6 +2097,40 @@ impl ElectricityClient<'_> {
         })?;
         Ok(ReadResult::new(value, metadata))
     }
+
+    /// Replaces the dormitory service account's own password.
+    ///
+    /// The dormitory application is the one these electricity reads already
+    /// reach, so this uses that proven session rather than establishing a second
+    /// one; a caller with no proven session is refused instead of being handed
+    /// another authentication path.
+    ///
+    /// The password is validated here, then held in a value that zeroizes on drop
+    /// and is copied into exactly one request body.  It never becomes a result
+    /// field, a log field or a recorded failure code, and it is not kept after the
+    /// call.
+    ///
+    /// The reset is dispatched **exactly once**, and the two answers a caller can
+    /// act on are deliberately distinct:
+    ///
+    /// * the service's answer carried affirmative acceptance — the call succeeds;
+    /// * the answer could not be read, or the request left without one —
+    ///   [`ErrorCode::OutcomeUnconfirmed`].
+    ///
+    /// The second case is this route's ordinary outcome: the service's own client
+    /// discards the reply, so an unreadable answer is expected.  It is **never**
+    /// resolved by calling this again.  A caller in that position signs in with
+    /// the new password to learn whether the change took effect.
+    pub async fn reset_home_password(&mut self, new_password: &str) -> Result<(), Error> {
+        let password = crate::dorm_password_write::DormPassword::new(new_password)
+            .map_err(|_| Error::new(Service::Dorm, ErrorCode::InvalidInput))?;
+        self.runtime.clear_dorm_password_failure_code();
+        self.runtime
+            .apply_dorm_password_reset(password)
+            .await
+            .map_err(|_| dorm_password_failure(self.runtime))?;
+        Ok(())
+    }
 }
 
 fn campus_card_failure(runtime: &CampusRuntime) -> Error {
@@ -2134,6 +2168,50 @@ fn electricity_failure(runtime: &CampusRuntime) -> Error {
         AccountAuthState::Authenticated => ErrorCode::ServiceUnavailable,
     };
     Error::new(Service::Electricity, code)
+}
+
+/// Maps a dormitory password reset's own recorded failure code onto a public
+/// error code.
+///
+/// The distinction that matters is between a session that is gone — nothing was
+/// applied and the caller can sign in again — and an answer this Runtime could not
+/// read, which means the change may already be in effect.  Collapsing the two
+/// would tell a caller whose password is already changed to try again, which is
+/// exactly the replay this route must never get.
+fn dorm_password_error_code(diagnostic: &str) -> ErrorCode {
+    match diagnostic {
+        // Dispatched once with no readable answer: the change may already be in
+        // effect, so the outcome is unknown rather than failed.
+        "dorm_write_unconfirmed" => ErrorCode::OutcomeUnconfirmed,
+        "dorm_write_session_expired" => ErrorCode::SessionExpired,
+        "dorm_write_request" => ErrorCode::InvalidInput,
+        "dorm_config" => ErrorCode::Unsupported,
+        "dorm_network" => ErrorCode::NetworkUnavailable,
+        "dorm_write_form_missing"
+        | "dorm_write_template"
+        | "dorm_write_form_unreadable"
+        | "dorm_origin"
+        | "dorm_path"
+        | "dorm_content_type"
+        | "dorm_http" => ErrorCode::InvalidResponse,
+        _ => ErrorCode::ServiceUnavailable,
+    }
+}
+
+fn dorm_password_failure(runtime: &CampusRuntime) -> Error {
+    if let Some(code) = runtime.last_dorm_password_failure_code() {
+        return Error::new(Service::Dorm, dorm_password_error_code(code));
+    }
+    let code = match runtime.auth_status().identity().state() {
+        AccountAuthState::SignedOut | AccountAuthState::RestoredUnverified => {
+            ErrorCode::SessionRequired
+        }
+        AccountAuthState::Expired => ErrorCode::SessionExpired,
+        AccountAuthState::NeedsInteraction => ErrorCode::InteractionRequired,
+        AccountAuthState::Authenticating => ErrorCode::InteractionInProgress,
+        AccountAuthState::Authenticated => ErrorCode::ServiceUnavailable,
+    };
+    Error::new(Service::Dorm, code)
 }
 
 fn physical_exam_failure(runtime: &CampusRuntime) -> Error {
@@ -6976,5 +7054,57 @@ mod tests {
         assert!(debug.contains("remember_credentials: true"));
         assert!(!debug.contains("fixture-private-identity"));
         assert!(!debug.contains("synthetic-private-password"));
+    }
+}
+
+#[cfg(test)]
+mod dorm_password_error_code_tests {
+    use super::*;
+
+    /// A reset whose answer could not be read is unknown, not failed, and must
+    /// never be mapped onto a code a caller would resolve by retrying.
+    #[test]
+    fn unreadable_reset_is_unconfirmed_and_never_a_retryable_failure() {
+        assert_eq!(
+            dorm_password_error_code("dorm_write_unconfirmed"),
+            ErrorCode::OutcomeUnconfirmed
+        );
+        assert_eq!(
+            dorm_password_error_code("dorm_write_session_expired"),
+            ErrorCode::SessionExpired
+        );
+        assert_eq!(
+            dorm_password_error_code("dorm_write_request"),
+            ErrorCode::InvalidInput
+        );
+        assert_eq!(
+            dorm_password_error_code("dorm_config"),
+            ErrorCode::Unsupported
+        );
+        assert_eq!(
+            dorm_password_error_code("dorm_network"),
+            ErrorCode::NetworkUnavailable
+        );
+        // A page this module could not read is a deployment answer, not a
+        // transient outage: it must not invite a retry either.
+        for code in [
+            "dorm_write_form_missing",
+            "dorm_write_template",
+            "dorm_write_form_unreadable",
+            "dorm_origin",
+            "dorm_path",
+            "dorm_content_type",
+            "dorm_http",
+        ] {
+            assert_eq!(
+                dorm_password_error_code(code),
+                ErrorCode::InvalidResponse,
+                "{code}"
+            );
+        }
+        assert_eq!(
+            dorm_password_error_code("something_else"),
+            ErrorCode::ServiceUnavailable
+        );
     }
 }

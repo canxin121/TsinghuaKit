@@ -21,6 +21,7 @@ pub mod classrooms_api;
 pub mod client;
 pub mod domain;
 pub mod dorm_electricity_read;
+pub mod dorm_password_write;
 pub mod electricity_api;
 pub mod error;
 pub mod identity;
@@ -185,6 +186,16 @@ pub use dorm_electricity_read::{
     ELECTRICITY_PAYMENT_HISTORY_PATH, ELECTRICITY_REMAINDER_PATH, ELECTRICITY_WEBVPN_TARGET,
     ElectricityPaymentHistory, ElectricityPaymentRecord, ElectricityRemainder,
     parse_electricity_payment_history_html, parse_electricity_remainder_html,
+};
+pub use dorm_password_write::{
+    DORM_CHANGE_PASSWORD_ANCHOR, DORM_CHANGE_PASSWORD_CONFIRM_FIELD,
+    DORM_CHANGE_PASSWORD_EVENT_TARGET, DORM_CHANGE_PASSWORD_NEW_FIELD,
+    DORM_CHANGE_PASSWORD_OLD_FIELD, DORM_CHANGE_PASSWORD_PATH, DORM_CHANGE_PASSWORD_WEBVPN_TARGET,
+    DormPassword, DormPasswordFormState, DormPasswordParseError, DormPasswordRequestError,
+    DormPasswordWriteAdapter, DormPasswordWriteAdapterConfig, DormPasswordWriteAdapterError,
+    DormPasswordWriteMethod, DormPasswordWriteOperation, DormPasswordWriteOutcome,
+    DormPasswordWritePlan, DormPasswordWriteProfile, DormPasswordWriteSessionPrerequisite,
+    MAX_DORM_PASSWORD_CHARS, classify_dorm_password_write, parse_change_password_form,
 };
 pub use error::{DomainError, ServiceError};
 pub use identity::TrustedDeviceProfile;
@@ -406,6 +417,9 @@ mod library_room_tests;
 
 #[cfg(test)]
 mod bank_tests;
+
+#[cfg(test)]
+mod dorm_password_tests;
 
 #[cfg(test)]
 mod course_score_tests;
