@@ -81,6 +81,21 @@ impl LearnValidationEvidence {
             .filter_map(|course| course.course_id.clone())
             .collect()
     }
+
+    /// The course numbers of the captured courses, as a service that indexes
+    /// by course number needs them.
+    ///
+    /// A course row without a course number is not an error: the number is a
+    /// separate field the service may not have printed.  A value that is not
+    /// the shape a course-number lookup accepts is dropped rather than
+    /// forwarded, so no free text from a response can reach another request.
+    pub(super) fn validation_course_ids(&self) -> Vec<String> {
+        self.courses
+            .iter()
+            .filter_map(|course| course.course_code.clone())
+            .filter(|code| crate::course_score::course_id_for_request(code).is_ok())
+            .collect()
+    }
 }
 
 pub(super) fn require_live_validation_result(source: &str, status: &str) -> Result<(), String> {

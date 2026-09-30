@@ -309,6 +309,121 @@ pub const CHECKS: &[CheckSpec] = &[
         ["campus_card_session"]
     ),
     check!(
+        "program_completion",
+        "program",
+        "培养方案完成情况",
+        ["info_session"]
+    ),
+    check!(
+        "physical_exam_result",
+        "physical_exam",
+        "体测成绩报告",
+        ["info_session"]
+    ),
+    check!(
+        "assessment_list",
+        "assessment",
+        "教学评估问卷列表",
+        ["info_session"]
+    ),
+    check!(
+        "assessment_form",
+        "assessment",
+        "首份真实教学评估问卷字段形状",
+        ["assessment_list"]
+    ),
+    check!("invoice_list", "invoice", "电子发票列表", ["info_session"]),
+    check!(
+        "invoice_document",
+        "invoice",
+        "首张真实发票 PDF 字节（只读，不保存）",
+        ["invoice_list"]
+    ),
+    check!(
+        "bank_payment_ledger",
+        "bank",
+        "银行代发到款台账",
+        ["info_session"]
+    ),
+    check!(
+        "bank_foundation_ledger",
+        "bank",
+        "银行代发到款台账（基金会）",
+        ["info_session"]
+    ),
+    check!(
+        "graduate_income",
+        "graduate_income",
+        "研究生收入最近一年对账单",
+        ["info_session"]
+    ),
+    check!(
+        "course_score",
+        "course_score",
+        "首门真实课程的课程成绩（学号由 Rust 内部派生）",
+        ["info_session", "learn_courses"]
+    ),
+    check!(
+        "sports_resources",
+        "sports",
+        "首个有真实响应的场地资源表",
+        ["info_session"]
+    ),
+    check!(
+        "sports_records",
+        "sports",
+        "本人体育场馆预约记录",
+        ["info_session"]
+    ),
+    check!(
+        "reserves_search",
+        "reserves",
+        "图书馆教参馆藏检索（固定关键词）",
+        ["info_session"]
+    ),
+    check!(
+        "reserves_detail",
+        "reserves",
+        "首条真实馆藏书目详情",
+        ["reserves_search"]
+    ),
+    check!(
+        "library_room_catalog",
+        "library_room",
+        "研读间房间目录",
+        ["info_session"]
+    ),
+    check!(
+        "library_room_records",
+        "library_room",
+        "本人研读间预约记录（有界窗口）",
+        ["info_session"]
+    ),
+    check!(
+        "library_reservations",
+        "library",
+        "本人图书馆座位预约记录",
+        ["library_session"]
+    ),
+    check!(
+        "laundry_buildings",
+        "laundry",
+        "洗衣楼栋目录（三方只读）",
+        []
+    ),
+    check!(
+        "laundry_rooms",
+        "laundry",
+        "首个真实楼栋的洗衣机房间（三方只读）",
+        ["laundry_buildings"]
+    ),
+    check!(
+        "water_user",
+        "water",
+        "订水账户查询（三方只读，需真实送水号）",
+        []
+    ),
+    check!(
         "usereg_session",
         "usereg",
         "网络自助账号、图片验证码与登录证明",
@@ -964,8 +1079,40 @@ struct Evidence {
     area: Option<u64>,
     segment: Option<crate::library_read::LibraryDaySegmentDto>,
     building: Option<(u32, u32)>,
+    /// The first questionnaire this run read, reused by the form case so the
+    /// form is never addressed by a handle the caller invented.
+    assessment: Option<crate::assessment_read::AssessmentRef>,
+    invoice: Option<crate::invoice_read::InvoiceRef>,
+    reserves: Option<crate::reserves_read::ReservesRef>,
+    /// The venue the resource case actually read, kept for the message a
+    /// later failure prints.  It is an identifier the service prints on its
+    /// own booking page, not an account value.
+    sports_venue: Option<(&'static str, &'static str)>,
 }
 const MAX_HOMEWORK_COURSE_SAMPLES: usize = 12;
+
+/// The venues one resource sample walks, in the order they are tried.
+///
+/// These are the venue identifiers the deployment's own booking page carries.
+/// They are a fixed table rather than something discovered from a response:
+/// the sports service has no read that lists venues, so the only honest source
+/// is the same published constant the reference client uses.  A venue that
+/// answers with a failure moves the sample to the next one; a venue that
+/// answers with an empty slot table is itself a valid result.
+const SPORTS_VENUE_SAMPLES: &[(&str, &str)] = &[
+    ("3998000", "4045681"),
+    ("4797914", "4797898"),
+    ("4836273", "4836196"),
+    ("5843934", "5845263"),
+];
+
+/// A fixed reserve-book keyword.
+///
+/// The catalogue takes a caller's book name, so the read-only sample has to
+/// name one.  It is a plain ASCII term rather than a real title: a sample must
+/// not carry a specific person's reading list, and an empty match is a valid
+/// answer the service itself gives.
+const RESERVES_SEARCH_KEYWORD: &str = "physics";
 
 enum Outcome {
     Passed(Option<usize>),
@@ -1427,6 +1574,282 @@ async fn execute_case(
                 )
                 .await
                 .map(|r| Outcome::Passed(Some(r.len())));
+        }
+        "program_completion" => {
+            let result = runtime.load_program_completion_result().await?;
+            validation_scope::require_live_validation_result(&result.source, &result.status)?;
+            if result.error.is_some() {
+                return Err("validation_live_result_required".into());
+            }
+            return Ok(Outcome::Passed(Some(result.report.course_sets.len())));
+        }
+        "physical_exam_result" => {
+            let result = runtime.load_physical_exam_result().await?;
+            validation_scope::require_live_validation_result(&result.source, &result.status)?;
+            if result.error.is_some() {
+                return Err("validation_live_result_required".into());
+            }
+            // The service's own no-result answer is a validated empty state,
+            // not a read this case can count.  Any other report must carry at
+            // least one item the account actually has a record for.
+            let reported = result.report.items.reported().len();
+            if !result.report.no_result && reported == 0 {
+                return Err("validation_live_result_required".into());
+            }
+            return Ok(Outcome::Passed(Some(reported)));
+        }
+        "assessment_list" => {
+            let result = runtime.load_assessment_list_result().await?;
+            validation_scope::require_live_validation_result(&result.source, &result.status)?;
+            if result.error.is_some() {
+                return Err("validation_live_result_required".into());
+            }
+            // Keep the first questionnaire the service reports as still
+            // outstanding.  A list whose every row is already evaluated has no
+            // form this run may open, and the reference opens an unfilled one.
+            evidence.assessment = result
+                .items
+                .iter()
+                .find(|item| !item.evaluated)
+                .map(|item| item.reference.clone());
+            return Ok(Outcome::Passed(Some(result.items.len())));
+        }
+        "assessment_form" => {
+            let Some(reference) = evidence.assessment.clone() else {
+                return Ok(Outcome::Skipped("no_assessment_selector"));
+            };
+            let form = runtime.load_assessment_form_result(&reference).await?;
+            if form.reference != reference || form.field_count == 0 {
+                return Err("validation_live_result_required".into());
+            }
+            return Ok(Outcome::Passed(Some(form.field_count)));
+        }
+        "invoice_list" => {
+            let result = runtime.load_invoice_list_result(1).await?;
+            validation_scope::require_live_validation_result(&result.source, &result.status)?;
+            if result.error.is_some() || result.page != 1 {
+                return Err("validation_live_result_required".into());
+            }
+            evidence.invoice = result.records.first().map(|row| row.reference.clone());
+            return Ok(Outcome::Passed(Some(result.records.len())));
+        }
+        "invoice_document" => {
+            let Some(reference) = evidence.invoice.clone() else {
+                return Ok(Outcome::Skipped("no_invoice_selector"));
+            };
+            let document = runtime.load_invoice_document_result(&reference).await?;
+            validation_scope::require_live_validation_result(&document.source, &document.status)?;
+            if document.error.is_some() || document.bytes.is_empty() {
+                return Err("validation_live_result_required".into());
+            }
+            return Ok(Outcome::Passed(Some(document.bytes.len())));
+        }
+        "bank_payment_ledger" => {
+            let result = runtime
+                .load_bank_payment_ledger_result(crate::bank_read::BankLedger::Main)
+                .await?;
+            validation_scope::require_live_validation_result(&result.source, &result.status)?;
+            if result.error.is_some() {
+                return Err("validation_live_result_required".into());
+            }
+            // A month section may legitimately hold nothing; the receipt rows
+            // the service reported are what this read proved.
+            return Ok(Outcome::Passed(Some(result.receipt_count as usize)));
+        }
+        "bank_foundation_ledger" => {
+            let result = runtime
+                .load_bank_payment_ledger_result(crate::bank_read::BankLedger::Foundation)
+                .await?;
+            validation_scope::require_live_validation_result(&result.source, &result.status)?;
+            if result.error.is_some() {
+                return Err("validation_live_result_required".into());
+            }
+            return Ok(Outcome::Passed(Some(result.receipt_count as usize)));
+        }
+        "graduate_income" => {
+            // The service takes a `YYYYMMDD` range, so the sample is the last
+            // full year of campus days rather than a caller-supplied window.
+            let end = today;
+            let begin = end - chrono::Duration::days(364);
+            let result = runtime
+                .load_graduate_income_result(
+                    &begin.format("%Y%m%d").to_string(),
+                    &end.format("%Y%m%d").to_string(),
+                )
+                .await?;
+            validation_scope::require_live_validation_result(&result.source, &result.status)?;
+            if result.error.is_some() {
+                return Err("validation_live_result_required".into());
+            }
+            return Ok(Outcome::Passed(Some(result.records.len())));
+        }
+        "course_score" => {
+            // The course number comes from the Learn list this run already read
+            // through its own evidence check.  The student id is derived inside
+            // Rust and is not a value this case supplies.
+            let selection = evidence
+                .course_selection
+                .as_ref()
+                .ok_or("course_evidence_unavailable")?;
+            selection.require_current(runtime)?;
+            let Some(course_number) = selection.validation_course_ids().into_iter().next() else {
+                return Ok(Outcome::Skipped("no_course_number_selector"));
+            };
+            let result = runtime.load_course_score_result(&course_number).await?;
+            validation_scope::require_live_validation_result(&result.source, &result.status)?;
+            return Ok(Outcome::Passed(Some(1)));
+        }
+        "sports_resources" => {
+            // There is no read that lists venues, so the sample walks the
+            // published table.  A venue whose three reads fail is not evidence
+            // about the service; the next one is tried instead, and only after
+            // every one failed does this case report the last failure.
+            let date = today.to_string();
+            let mut last_error = None;
+            for (gym_id, item_id) in SPORTS_VENUE_SAMPLES {
+                match runtime
+                    .load_sports_resources_result(gym_id, item_id, &date)
+                    .await
+                {
+                    Ok(result) => {
+                        evidence.sports_venue = Some((gym_id, item_id));
+                        return Ok(Outcome::Passed(Some(result.resources.data.len())));
+                    }
+                    Err(error) => last_error = Some(error),
+                }
+            }
+            return Err(last_error.unwrap_or_else(|| "no_sports_venue_selector".into()));
+        }
+        "sports_records" => {
+            let result = runtime.load_sports_records_result().await?;
+            validation_scope::require_live_validation_result(&result.source, &result.status)?;
+            if result.error.is_some() {
+                return Err("validation_live_result_required".into());
+            }
+            return Ok(Outcome::Passed(Some(result.records.len())));
+        }
+        "reserves_search" => {
+            let result = runtime
+                .load_reserves_search_result(RESERVES_SEARCH_KEYWORD, 1)
+                .await?;
+            validation_scope::require_live_validation_result(&result.source, &result.status)?;
+            if result.error.is_some() || result.page != 1 {
+                return Err("validation_live_result_required".into());
+            }
+            evidence.reserves = result.books.first().map(|book| book.reference.clone());
+            return Ok(Outcome::Passed(Some(result.books.len())));
+        }
+        "reserves_detail" => {
+            let Some(reference) = evidence.reserves.clone() else {
+                return Ok(Outcome::Skipped("no_reserves_selector"));
+            };
+            let result = runtime.load_reserves_detail_result(&reference).await?;
+            validation_scope::require_live_validation_result(&result.source, &result.status)?;
+            if result.error.is_some() {
+                return Err("validation_live_result_required".into());
+            }
+            return Ok(Outcome::Passed(Some(result.book.chapters.len())));
+        }
+        "library_room_catalog" => {
+            let result = runtime.load_library_room_catalog_result().await?;
+            validation_scope::require_live_validation_result(&result.source, &result.status)?;
+            if result.error.is_some() {
+                return Err("validation_live_result_required".into());
+            }
+            return Ok(Outcome::Passed(Some(result.room_count as usize)));
+        }
+        "library_room_records" => {
+            // The window is the caller's, so it is bounded here the same way
+            // the adapter bounds it: a month-wide campus window, never wider.
+            let begin = (today - chrono::Duration::days(29)).to_string();
+            let result = runtime
+                .load_library_room_records_result(&begin, &today.to_string())
+                .await?;
+            validation_scope::require_live_validation_result(&result.source, &result.status)?;
+            if result.error.is_some() {
+                return Err("validation_live_result_required".into());
+            }
+            return Ok(Outcome::Passed(Some(result.records.len())));
+        }
+        "library_reservations" => {
+            let result = runtime.load_library_reservations().await?;
+            validation_scope::require_live_validation_result(&result.source, &result.status)?;
+            return Ok(Outcome::Passed(Some(result.reservations.len())));
+        }
+        "laundry_buildings" => {
+            // The three vendors are separate third-party services with no
+            // campus account, so each is read on its own.  One vendor failing
+            // does not make the others unreadable, but a run in which every
+            // vendor failed has proved nothing and must not report an empty
+            // catalogue as success.
+            let mut total = 0;
+            let mut failures = Vec::new();
+            for (provider, _) in crate::laundry_api::LAUNDRY_PROVIDERS {
+                match crate::laundry_api::read_laundry_buildings(provider).await {
+                    Ok(groups) => {
+                        total += groups
+                            .iter()
+                            .map(|group| group.buildings.len())
+                            .sum::<usize>();
+                    }
+                    Err(error) => failures.push(error.diagnostic_code()),
+                }
+            }
+            if total == 0 {
+                return Err(failures
+                    .first()
+                    .copied()
+                    .unwrap_or("validation_live_result_required")
+                    .to_owned());
+            }
+            return Ok(Outcome::Passed(Some(total)));
+        }
+        "laundry_rooms" => {
+            // Read the first vendor that answers, then its first building: the
+            // vendor's own order is what a person sees, and one building is a
+            // bounded sample rather than a walk of every deployment.
+            let mut answered = false;
+            let mut last_error = None;
+            for (provider, _) in crate::laundry_api::LAUNDRY_PROVIDERS {
+                let groups = match crate::laundry_api::read_laundry_buildings(provider).await {
+                    Ok(groups) => groups,
+                    Err(error) => {
+                        last_error = Some(error.diagnostic_code());
+                        continue;
+                    }
+                };
+                answered = true;
+                let Some(building) = groups
+                    .iter()
+                    .flat_map(|group| group.buildings.iter())
+                    .next()
+                else {
+                    continue;
+                };
+                let report = crate::laundry_api::read_laundry_rooms(provider, &building.id)
+                    .await
+                    .map_err(|error| error.diagnostic_code().to_owned())?;
+                if !report.failed_categories.is_empty() {
+                    // The vendor answered for some categories only.  Whatever
+                    // it did answer is real, but the run must not present a
+                    // partial read as a whole one.
+                    return Err("laundry_rooms_incomplete".into());
+                }
+                return Ok(Outcome::Passed(Some(report.rooms.len())));
+            }
+            // A vendor that answered but listed nothing is a sample gap; every
+            // vendor failing is the service's own reported failure.
+            if answered {
+                return Ok(Outcome::Skipped("no_laundry_building_selector"));
+            }
+            return Err(last_error.unwrap_or("laundry_read_failed").to_owned());
+        }
+        "water_user" => {
+            // The lookup addresses one delivery number, which is a value only
+            // the account holder has.  The terminal has no prompt that may
+            // carry it (the accepted prompt labels are a closed set), so this
+            // read stays explicitly unverified instead of guessing a number.
+            return Ok(Outcome::Skipped("water_delivery_number_unavailable"));
         }
         "usereg_session" => {
             if !include_usereg {

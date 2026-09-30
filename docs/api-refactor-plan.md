@@ -1978,3 +1978,98 @@ if (response.includes("找回密码")) { throw new LibError(); }
 `docs/api-surface-baseline.json` 已按本节源码与重新渲染的 Rustdoc 刷新到第十二版：`source_revision` 前进到 `af1e96e`（§69 那一次提交；本轮改动尚未提交）；`root_public_modules` 70 → **71**（新增 `sports_write`）；根 `pub use` 57 → **58**；`rendered_crate_root_item_counts` struct 358 → **364**、enum 178 → **184**、fn 66 → **69**、constant 83 → **100**（本模块 26 个公开项在 crate 根渲染为 6 struct / 6 enum / 17 constant / 3 fn；另有 §61 已计过的只读半不变），`trait` / `type` 不变；runtime `public_methods` 108 → **111**（新增 `load_sports_captcha` / `book_sports_slot` / `cancel_sports_reservation`，行号 8379 / 8403 / 8421，插在 `apply_campus_card_write` 与 `cancel_library_booking` 之间——**不是**列表末尾，§69 那一次把它记在末尾是错的；本版按当前源码**逐条重新锚定全部 111 条**并同时修正了 `public_free_functions` 6 条的行号：`impl` 之前的插入使前 52 条方法（含被错排在末尾的 `apply_dorm_password_reset`）下移 77 行，三个新方法之后的 51 条再下移 59 行，`load_sports_records_result` 再下移 7 行、其后的 4 条 `reserves` / `library_room` 方法再下移 7 行），`direct_state_field_count` 128 → **135**（新增七个），`line_count` 29232 → **29464**（与 `git diff --numstat` 的 `245 13` 一致：净 +232）；runtime `dto_structs` 84（本轮无新 runtime DTO，`SportsCaptchaDto` 定义在 FFI crate）。
 
 **未验证**：三条写路由与验证码读的线上可用性**未验证**，需要另行真实只读验收。本轮**未对任何真实账号发起任何请求**，**未发起下单、退订、支付或手机号更新**，也**未请求过任何真实验证码图片**。按 §59 起的约定，下单与退订**一律不进入只读验收**：它们的"结果是否未确认"只能作为判定语义来验，不能作为线上证据。在此之前不得用 fixture 或空结果冒充线上证据。宿舍卫生分的结论（§58）不变。
+
+## 71. 2026-09-30 只读验收脚本补齐全部可读域
+
+§53–§70 把十几个只读域逐一实现进引擎、SDK、桥接与 Dart，但终端只读验收脚本 `api::runtime::cli_validation::CHECKS` 只覆盖到 §52 那一批：54 项、12 个服务。也就是说，**新域在代码里能读，在验收脚本里却选不到**——`--case` 会以 `unknown_case_selection` 拒绝，`--plan` 根本不会列出它们。本节把这件事补齐：凡是"只有读、没有写"的能力，脚本里都必须有一个可选中、可判定、可留痕的用例。
+
+**新增 20 项（54 → 74 项，12 → 24 个服务键）**
+
+| 用例 | 服务键 | 依赖 | 判定 |
+| --- | --- | --- | --- |
+| `program_completion` | `program` | `info_session` | `report.course_sets.len()` |
+| `physical_exam_result` | `physical_exam` | `info_session` | 有记录的项目数（`items.reported().len()`） |
+| `assessment_list` | `assessment` | `info_session` | `items.len()` |
+| `assessment_form` | `assessment` | `assessment_list` | `field_count` |
+| `invoice_list` | `invoice` | `info_session` | `records.len()` |
+| `invoice_document` | `invoice` | `invoice_list` | `bytes.len()` |
+| `bank_payment_ledger` | `bank` | `info_session` | `receipt_count` |
+| `bank_foundation_ledger` | `bank` | `info_session` | `receipt_count` |
+| `graduate_income` | `graduate_income` | `info_session` | `records.len()` |
+| `course_score` | `course_score` | `info_session` + `learn_courses` | 固定 1（一次查询一个课程号） |
+| `sports_resources` | `sports` | `info_session` | `resources.data.len()` |
+| `sports_records` | `sports` | `info_session` | `records.len()` |
+| `reserves_search` | `reserves` | `info_session` | `books.len()` |
+| `reserves_detail` | `reserves` | `reserves_search` | `book.chapters.len()` |
+| `library_room_catalog` | `library_room` | `info_session` | `room_count` |
+| `library_room_records` | `library_room` | `info_session` | `records.len()` |
+| `library_reservations` | `library` | `library_session` | `reservations.len()` |
+| `laundry_buildings` | `laundry` | 无 | 三家厂商的楼栋数之和 |
+| `laundry_rooms` | `laundry` | `laundry_buildings` | `rooms.len()` |
+| `water_user` | `water` | 无 | 不读，见下 |
+
+`ServiceId` 一个都没加（仍然是 7 个变体），`service_catalog` 一条都没动：服务键只用于调度优先级、`_session` 启发式与 tracing span。`library_reservations` 不是新域，而是一条**既有却从未被验收的读**（§64 的座位预约记录），本轮一并补上。
+
+**判定口径：空结果不等于通过**
+
+新用例统一沿用既有形状：先调用运行时读、再 `validation_scope::require_live_validation_result(&result.source, &result.status)?`。除此之外每条还加了自己的形状检查，因为"服务给了空列表"和"读根本没成立"必须在报告里是两件事：
+
+- `physical_exam_result` 用**有记录的项目数**而不是全零项目数：`no_result` 为假而一个项目都没有，说明解析或字段名对不上，报错而不是报 0。
+- `assessment_form` 用 `field_count` 并要求引用往返相等；列表里**没有一条未评价的问卷**时跳过，而不是打开一份已经填过的表（参考实现的入口也是未填写的问卷）。
+- `invoice_document` / `reserves_detail` 都要求字节或章节非空——文档读回来是空的就是失败。
+- `bank_*_ledger` 用 `receipt_count` 而不是 `months.len()`：月份可以是空段。
+- `sports_records` / `library_room_records` / `library_room_catalog` / `graduate_income` / `program_completion` 都要求 `error.is_none()`。
+- `laundry_buildings` 要求**至少一家厂商**回答了：三家全挂时把第一家的诊断码作为失败抛出，不允许把"什么都没读到"当成空目录。
+- `laundry_rooms` 在厂商自己的 `failed_categories` 非空时判失败（`laundry_rooms_incomplete`），因为那是厂商明说"这一半没读全"。
+
+**样本从哪来**
+
+- 课程成绩：课程号取自本轮 `learn_courses` 已经读到的**课程号字段**（`LearnValidationEvidence::validation_course_ids()`，逐条先用 `course_score::course_id_for_request` 过滤形状），学号仍由 Rust 从已绑定账号内部派生。两者都不是调用方输入，脚本也没有任何新交互提示。
+- 日期窗口：研究生收入用 `today - 364 天` 到 `today`（`%Y%m%d`）；研读间记录用 `today - 29 天` 到 `today`（`%Y-%m-%d`，落在模块自己的 31 天上界内）；体育场馆用今天。
+- 体育场馆的场地号：`SPORTS_VENUE_SAMPLES` 是一张**固定表**，与参考客户端自己的 `sportsIdInfoList` 同源。服务没有任何"列出场馆"的读，所以唯一的诚实来源就是这个公开常量；因此这里不假装它是服务发现的。写法是**逐个试**：某个场地三次读失败就换下一个，只有全都失败才报最后一个失败，而"场地存在但没有可约时段"本身算通过。
+- 馆藏检索关键词：固定 ASCII 词 `physics`，而不是某个人的书名。空匹配是服务自己给出的答案。
+- 订水 `water_user`：查询要一个**送水编号**，那是只有本人知道的调用方输入。终端可接受的提示标签是**封闭集合**（`env_auth.rs` 只认三个标签），新增提示会破坏 `--credentials-env` 路径，所以这一项**不读**，显式记为 `water_delivery_number_unavailable`（未验证），而不是猜一个编号或拿空结果冒充。
+
+**跳过原因也进白名单**
+
+验收脚本里**每一个** `Outcome::Skipped` 的原因码现在都在 `telemetry_labels::REASONS` 里：本轮新域的 `no_assessment_selector` / `no_invoice_selector` / `no_reserves_selector` / `no_sports_venue_selector` / `no_course_number_selector` / `no_laundry_building_selector` / `water_delivery_number_unavailable`，以及既有遗漏的 `no_subscription_selector` / `no_phase_selector` / `no_file_selector` / `no_homework_selector` / `homework_sample_limit`。不登记也不会失败——`labels::allowed` 只是审计日志把该字段抹掉、`--status` 印出空原因——但登记之后原因码本身留在日志里，不必回头猜。
+
+新增测试 `backend_repair_read_only_acceptance_skip_reasons_survive_the_audit_log` 直接扫 `cli_validation.rs` 源码里所有 `Outcome::Skipped(...)` 的字符串字面量，逐个要求 `telemetry::diagnostic_reason(code) == code`。也就是说以后再加跳过分支而忘了登记，测试会**立刻**失败，而不是等到某次线上验收发现原因栏是空的。这条断言只在既有白名单之外**新增**条目，不改任何既有映射。
+
+仍然未登记的是各域自己的**失败**诊断码（`program_*`、`sports_*`、`assessment_*`、`bank_*`、`invoice_*`、`reserves_*`、`library_room_*`、`physical_exam_*`、`water_*` 等，全仓库 381 个，其中 `info_*` 50 个、`learn_*` 46 个也是既有缺口）。它们让失败在报告里落成 `response_unconfirmed` / `network` 这类粗粒度值。这是一整批语义映射工作（每个码都要确认它想表达什么），本轮**未改**，留待专门一轮；本轮只保证"跳过原因"这一侧的日志可读性。
+
+**App 侧台账同步**
+
+`live_validation.rs::select_cases` 自己的 `KNOWN`（App 的 `backend-live-results.json` 台账选择器，与 CLI 的选择器是两份）同步加入这 20 个 id，否则 App 侧 `backend-live-validation` 模式下这些项既选不了也记不了。
+
+**验证**
+
+引擎定向：`cargo test -p tsinghua_kit_engine --lib read_only_acceptance` **8 项通过**（新文件 `api/cli_read_only_acceptance_tests.rs`，挂在 `cli_validation_tests` 下以复用 fixture）：
+
+- 20 个 id 都在 `CHECKS` 里可选中，且 `CHECKS` 无重复 id；
+- 验收脚本能报出的**每一个跳过原因**都是固定原因码（`diagnostic_reason` 原样回读），加新分支不登记会当场失败；
+- 依赖闭合只拉需要的会话：`assessment_form` 只要 info 链、`invoice_document`/`reserves_detail` 走各自的列表依赖、`course_score` 同时要 learn 链与 info、`library_reservations` 要 library 链、`laundry_rooms`/`water_user` **不**拉任何校园会话（两家第三方读本来就不需要账号）；
+- 12 个受校园会话管辖的域在**没有会话**时全部报错，且 fixture 上**零请求**；
+- `course_score` 没有课程证据时报 `course_evidence_unavailable`，零请求（不会凭空造一个课程号）；
+- 四个"句柄缺失"用例各自以正确的原因退成 `Unverified`，零请求；
+- `laundry_rooms` 的断言对**可达与不可达两种结果都成立**（厂商是公网服务，测试机可能真的连得上）：通过必须至少一间房，跳过只能是 `no_laundry_building_selector`，失败必须带厂商自己的原因码；
+- `usereg_session` 未选择时是 `optional_login_not_selected`，选择了但没有登录页时是失败而不是空账户。
+
+`cargo check --workspace --all-targets` 退出 0；`cargo fmt --all -- --check` 干净；严格 `RUSTDOCFLAGS="-D warnings" cargo doc -p tsinghua_kit` 干净。**没有真实账号请求**：本轮全部判定都来自 fixture，任何一项的真实可用性仍为未验证。
+
+**同过滤器下的既有失败**：`--lib cli_` 过滤器下 **93 通过 / 6 失败**，`git stash push -u` 对照 HEAD 为 **85 通过 / 6 失败**——失败集合逐条相同，8 项新增通过，本轮没有引入新的失败：
+
+- `network_scope_tests::backend_repair_off_campus_is_explicit_and_never_exempts_webvpn_services`
+- `coverage_tests::backend_repair_coverage_scheduler_preserves_environment_and_login_gaps`
+- `tests::backend_repair_terminal_interrupted_case_keeps_actual_dispatched_request_count`
+- `timing_tests::backend_repair_perf_actual_scheduler_admits_multiple_ready_cases_without_fake_http_parallelism`
+- `timing_tests::backend_repair_perf_scheduler_propagates_failed_dependencies_and_separates_user_time`
+- `tests::backend_repair_graduate_exams_cli_checks_live_results_instead_of_skipping`
+
+它们需要真实 loopback HTTP（sandbox 内被拦）或更强的隔离；本轮**未修**，归因由 stash 对照给出而不是推断。仓库自带的 `python3 tools/backend_regression.py` 才是这些项的既定运行入口。
+
+**baseline**
+
+本轮**不移动** `docs/api-surface-baseline.json` 的任何计数：改动只在 `cli_validation.rs`（验收脚本用例表、`Evidence` 四个字段、两张模块常量表）、`runtime_validation_scope.rs` 的一个 `pub(super)` 访问器、`live_validation.rs` 的选择器白名单、`telemetry_labels.rs` 的 `REASONS` 新增条目与新增测试文件里，`runtime.rs` 一行未动（`git diff HEAD -- .../runtime.rs` 为空），模块列表、根 `pub use` 计数、渲染根项计数、runtime 方法与字段计数、`line_count` 全部不变。按 baseline 自己的方法论（"只统计公开模块/方法/DTO 声明与渲染根项"），验收脚本的私有用例表与 `REASONS` 的固定词表都不在其统计口径内；本版只把 `source_revision` 前进到 `d8db976`（本节改动尚未提交）。
+
+**未验证**：本节新增的 20 项线上可用性**全部未验证**，需要另行真实只读验收。本轮**未对任何真实账号发起任何请求**，也**未发起任何写操作**。按 §59 起的约定，写操作（体育场馆下单与退订、校园卡挂失/解挂/改密/改限额/圈存、宿舍口令替换、图书馆预约与取消、评估提交、新闻订阅与收藏）**一律不进入只读验收**，因此本节只补读半。宿舍卫生分的结论（§58）不变：它不进入脚本，因为该 selector 的第二跳返回的是图片。

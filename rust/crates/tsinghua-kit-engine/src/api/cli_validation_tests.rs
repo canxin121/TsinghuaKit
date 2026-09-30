@@ -14,6 +14,8 @@ mod learn_discussions_tests;
 mod learn_files_tests;
 #[path = "cli_learn_homework_tests.rs"]
 mod learn_homework_tests;
+#[path = "cli_read_only_acceptance_tests.rs"]
+mod read_only_acceptance_tests;
 
 #[test]
 fn backend_repair_followup_retry_excludes_newly_passed_classroom_and_network() {
