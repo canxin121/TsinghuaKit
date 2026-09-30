@@ -449,9 +449,22 @@ fn status(root: &Path) -> Result<(), String> {
 
 fn main() -> ExitCode {
     // Panic payloads from dependencies may contain request data; do not print
-    // arguments, response bodies or a raw panic to a terminal/report.
-    std::panic::set_hook(Box::new(|_| {
-        eprintln!("[ERROR][validation] verifier_panicked; no automatic retry")
+    // arguments, response bodies or a raw panic.  The panic's own call site is
+    // source-owned, so it is printed: without it a real verifier failure is
+    // undebuggable, and it carries no response or credential.
+    std::panic::set_hook(Box::new(|info| {
+        let at = info
+            .location()
+            .map(|location| {
+                format!(
+                    "{}/{}:{}",
+                    location.file(),
+                    location.line(),
+                    location.column()
+                )
+            })
+            .unwrap_or_else(|| "unknown".to_owned());
+        eprintln!("[ERROR][validation] verifier_panicked at {at}; no automatic retry");
     }));
     match entry() {
         Ok(code) => ExitCode::from(code),

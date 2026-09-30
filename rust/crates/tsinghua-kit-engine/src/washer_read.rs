@@ -42,6 +42,11 @@
 //!   part of this module: that endpoint lives on the App-specific
 //!   `app.cs.tsinghua.edu.cn` backend, which is outside this boundary.
 //!
+//! Device and building names are ordered by [`compare_names`], which has to be
+//! a **total order**: the standard library panics the whole process when a
+//! comparator is not one, so a vendor name the comparator mishandles would
+//! abort a read instead of reporting it.
+//!
 //! This module reimplements the contract from public reference behavior.  It
 //! does not copy source, fixtures, or assets.
 
@@ -1071,17 +1076,67 @@ fn remaining_minutes(value: &Value) -> Option<u32> {
     (remaining > 0).then(|| u32::try_from(remaining.div_euclid(60)).unwrap_or(u32::MAX))
 }
 
-/// Compares two device or building names, ordering a leading number
-/// numerically so `10号楼` follows `2号楼` rather than preceding it.
+/// Compares two device or building names.
+///
+/// The order is the one a person reads: text before a digit, and a run of
+/// digits by its value, so `2号楼` precedes `10号楼` and `A2` precedes `A10`.
+/// Everything else — including the tail after the numeric parts — falls back to
+/// the byte order, which guarantees that two different names never compare
+/// equal.
+///
+/// The comparator must remain a total order.  An earlier version compared two
+/// leading-digit counts whenever both names carried one anywhere, which made
+/// `"1" < "A" < "A0"` while `"A0" < "1"`: the standard library detects exactly
+/// that cycle and aborts the process, so a vendor list containing such a name
+/// killed the whole acceptance run instead of returning a result.
 fn compare_names(left: &str, right: &str) -> std::cmp::Ordering {
-    use std::cmp::Ordering;
-    match (first_number(left), first_number(right)) {
-        (Some(left_number), Some(right_number)) => match left_number.cmp(&right_number) {
-            Ordering::Equal => left.cmp(right),
-            other => other,
-        },
-        _ => left.cmp(right),
+    let mut left = left;
+    let mut right = right;
+    while !left.is_empty() && !right.is_empty() {
+        let (left_run, left_rest) = split_run(left);
+        let (right_run, right_rest) = split_run(right);
+        let order = match (
+            left_run.starts_with(|character: char| character.is_ascii_digit()),
+            right_run.starts_with(|character: char| character.is_ascii_digit()),
+        ) {
+            (true, true) => compare_digit_runs(left_run, right_run),
+            (true, false) => std::cmp::Ordering::Less,
+            (false, true) => std::cmp::Ordering::Greater,
+            (false, false) => left_run.cmp(right_run),
+        };
+        if order != std::cmp::Ordering::Equal {
+            return order;
+        }
+        left = left_rest;
+        right = right_rest;
     }
+    // One name is a prefix of the other, or both are exhausted.
+    left.cmp(right)
+}
+
+/// Splits `text` into its leading run of digits or non-digits and the rest.
+fn split_run(text: &str) -> (&str, &str) {
+    let digits = text.starts_with(|character: char| character.is_ascii_digit());
+    let end = text
+        .char_indices()
+        .find(|(_, character)| character.is_ascii_digit() != digits)
+        .map(|(index, _)| index)
+        .unwrap_or(text.len());
+    text.split_at(end)
+}
+
+/// Compares two all-digit runs by value, falling back to the byte order for
+/// runs too long to fit an integer.
+fn compare_digit_runs(left: &str, right: &str) -> std::cmp::Ordering {
+    let left_digits = left.trim_start_matches('0');
+    let right_digits = right.trim_start_matches('0');
+    left_digits
+        .len()
+        .cmp(&right_digits.len())
+        .then_with(|| left_digits.cmp(right_digits))
+        // Leading zeros do not change the value, so `007` and `7` are ordered
+        // by the digit count rather than left tied.
+        .then_with(|| left.len().cmp(&right.len()))
 }
 
 fn is_json_content_type(content_type: Option<&str>) -> bool {
@@ -1460,6 +1515,145 @@ mod tests {
         assert!(remaining_minutes(&Value::String("2000-01-01T00:00:00+08:00".into())).is_none());
         assert!(remaining_minutes(&Value::Null).is_none());
         assert!(remaining_minutes(&Value::String("not a time".into())).is_none());
+    }
+
+    /// Every name pair the ordering rules can meet, small enough to compare
+    /// exhaustively.
+    fn name_corpus() -> Vec<String> {
+        let alphabet = ['0', '1', '9', 'A', 'B', '紫', '楼'];
+        let mut corpus = std::collections::BTreeSet::new();
+        for first in alphabet {
+            corpus.insert(first.to_string());
+            for second in alphabet {
+                corpus.insert(format!("{first}{second}"));
+                for third in alphabet {
+                    corpus.insert(format!("{first}{second}{third}"));
+                }
+            }
+        }
+        for name in [
+            "紫荆2号楼",
+            "紫荆10号楼",
+            "南区29号楼",
+            "双清公寓",
+            "家属区",
+            "3层",
+            "洗衣机 03-1",
+            "03-1",
+            "W-01",
+            "A1",
+            "A10",
+            "007",
+            "7",
+            "12B",
+            "B12",
+            "",
+        ] {
+            corpus.insert(name.to_owned());
+        }
+        corpus.into_iter().collect()
+    }
+
+    fn assert_total_order(compare: impl Fn(&str, &str) -> std::cmp::Ordering) {
+        use std::cmp::Ordering;
+        let corpus = name_corpus();
+        let order: Vec<Vec<Ordering>> = corpus
+            .iter()
+            .map(|left| corpus.iter().map(|right| compare(left, right)).collect())
+            .collect();
+        for (left, row) in corpus.iter().zip(&order) {
+            for (right, verdict) in corpus.iter().zip(row) {
+                assert_eq!(
+                    *verdict,
+                    compare(right, left).reverse(),
+                    "{left:?} and {right:?} must be ordered consistently"
+                );
+                if left != right {
+                    assert_ne!(
+                        *verdict,
+                        Ordering::Equal,
+                        "distinct names {left:?} and {right:?} must not tie"
+                    );
+                }
+            }
+        }
+        for (index, left) in corpus.iter().enumerate() {
+            for (middle_index, middle) in corpus.iter().enumerate() {
+                if order[index][middle_index] == Ordering::Greater {
+                    continue;
+                }
+                for (right_index, right) in corpus.iter().enumerate() {
+                    assert!(
+                        order[middle_index][right_index] == Ordering::Greater
+                            || order[index][right_index] != Ordering::Greater,
+                        "{left:?} <= {middle:?} <= {right:?} must imply {left:?} <= {right:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_name_order_is_a_total_order() {
+        // The standard library aborts the process when a comparator is not a
+        // total order, so this property is a correctness requirement and not
+        // only a tidiness one.
+        assert_total_order(compare_names);
+    }
+
+    #[test]
+    fn a_name_order_that_breaks_the_total_order_is_rejected_by_this_test() {
+        // Guards the test above: an earlier comparator compared the leading
+        // numbers whenever both names had one anywhere, which ordered
+        // "1" < "A" < "A0" < "1".  Such a cycle must fail the property, so the
+        // guard cannot silently pass a comparator that reproduces the abort.
+        let cycle = |left: &str, right: &str| -> std::cmp::Ordering {
+            use std::cmp::Ordering;
+            match (first_number(left), first_number(right)) {
+                (Some(left_number), Some(right_number)) => match left_number.cmp(&right_number) {
+                    Ordering::Equal => left.cmp(right),
+                    other => other,
+                },
+                _ => left.cmp(right),
+            }
+        };
+        assert_eq!(cycle("1", "A"), std::cmp::Ordering::Less);
+        assert_eq!(cycle("A", "A0"), std::cmp::Ordering::Less);
+        assert_eq!(cycle("A0", "1"), std::cmp::Ordering::Less);
+        let caught = std::panic::catch_unwind(|| assert_total_order(cycle));
+        assert!(caught.is_err(), "the property must reject a cycling order");
+    }
+
+    #[test]
+    fn names_read_in_the_order_a_person_expects() {
+        let mut names = vec![
+            "紫荆10号楼",
+            "紫荆2号楼",
+            "A10",
+            "A1",
+            "W-02",
+            "W-01",
+            "4层",
+            "3层",
+            "B12",
+            "12B",
+        ];
+        names.sort_by(|left, right| compare_names(left, right));
+        assert_eq!(
+            names,
+            vec![
+                "3层",
+                "4层",
+                "12B",
+                "A1",
+                "A10",
+                "B12",
+                "W-01",
+                "W-02",
+                "紫荆2号楼",
+                "紫荆10号楼",
+            ]
+        );
     }
 
     #[test]

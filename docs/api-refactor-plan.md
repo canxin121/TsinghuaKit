@@ -2073,3 +2073,69 @@ if (response.includes("找回密码")) { throw new LibError(); }
 本轮**不移动** `docs/api-surface-baseline.json` 的任何计数：改动只在 `cli_validation.rs`（验收脚本用例表、`Evidence` 四个字段、两张模块常量表）、`runtime_validation_scope.rs` 的一个 `pub(super)` 访问器、`live_validation.rs` 的选择器白名单、`telemetry_labels.rs` 的 `REASONS` 新增条目与新增测试文件里，`runtime.rs` 一行未动（`git diff HEAD -- .../runtime.rs` 为空），模块列表、根 `pub use` 计数、渲染根项计数、runtime 方法与字段计数、`line_count` 全部不变。按 baseline 自己的方法论（"只统计公开模块/方法/DTO 声明与渲染根项"），验收脚本的私有用例表与 `REASONS` 的固定词表都不在其统计口径内；本版只把 `source_revision` 前进到 `d8db976`（本节改动尚未提交）。
 
 **未验证**：本节新增的 20 项线上可用性**全部未验证**，需要另行真实只读验收。本轮**未对任何真实账号发起任何请求**，也**未发起任何写操作**。按 §59 起的约定，写操作（体育场馆下单与退订、校园卡挂失/解挂/改密/改限额/圈存、宿舍口令替换、图书馆预约与取消、评估提交、新闻订阅与收藏）**一律不进入只读验收**，因此本节只补读半。宿舍卫生分的结论（§58）不变：它不进入脚本，因为该 selector 的第二跳返回的是图片。
+
+## 72. 2026-09-30 洗衣楼栋排序中止了整个验收进程
+
+用户在交互终端跑 §71 的脚本，得到的是：`identity` 失败（`other`，3 次 HTTP）→ 其余各项 `dependency_not_passed` → `[进行中][laundry] 洗衣楼栋目录（三方只读） — in_progress` → `[ERROR][validation] verifier_panicked; no automatic retry`，进程退出码 101。
+
+**现场**
+
+- `report.json` 里 74 项只有 `identity_session` 有终态（failed / `other` / 3 次 HTTP），`laundry_buildings` 落在 `interrupted` / `user_or_process_stopped` / 3 次 HTTP，其余全部 `interrupted` / 0 次。也就是说进程在洗衣用例执行到一半时整体消失了，报告写者只在 `Drop` 里把未完成行标成 interrupted。
+- 脱敏日志 `logs/session-*/events.000001.jsonl` 每次都停在同一个形状：`case_queued` → `operation_started operation_id=6` → 三组 `request_queued/dispatched/timing`（全部 `endpoint: external`，POST 200）→ 没有 `case_finished`，只有 `operation_finished … outcome=cancelled`。三次 HTTP 正好对应三家厂商各一次楼栋读（§53 的 `LAUNDRY_PROVIDERS`），所以中止点在**读完厂商响应的排序阶段**，而不是在某次请求上。
+- 复现：`{ sleep 1; printf 'y\n'; sleep 60; } | script -q /dev/null <binary> --case laundry_buildings`（二进制拒绝管道输入，必须给 pty），稳定复现同一条 panic 行。
+
+**定位**
+
+`tsinghua_kit_check.rs` 的 panic hook 原本只印 `verifier_panicked; no automatic retry`，为了不把响应体或参数打进终端。但这把**自身的**调用点也一起吞掉了，于是真实失败无法定位、只能猜。本轮把 hook 改成打印 `info.location()`（源码路径、行、列）：panic 位置由本仓库源码拥有，不是响应数据，不含任何账号值；同时把注释改成说明"payload 不打印、位置打印"的理由。
+
+改回默认 hook 重跑一次，拿到 `thread 'main' panicked at .../core/src/slice/sort/shared/smallsort.rs:854`，帧 17 是 `bidirectional_merge::<WasherBuilding, <[WasherBuilding]>::sort_by<…read_haile_buildings::{closure#0}::{closure#1}…>>`——即 `read_haile_buildings` 末尾那次 `buildings.sort_by(|left, right| compare_names(&left.name, &right.name))`。该 panic 是标准库在**比较函数不是全序**时主动中止进程（同一函数 `panic_on_ord_violation` 的文本就是"user-provided comparison function does not correctly implement a total order"），并且是 `panic!` 而非 `abort`，所以它逃出 `cli_schedule::execute` 的 `drive(...)`、再逃出 `run_with_options`，最终以 101 结束。
+
+**根因**
+
+原 `compare_names` 的意图是"把数字按数值比大小"，实现却是"只要两边**任何位置**都出现数字就拿各自的第一个数字比"：
+
+```rust
+match (first_number(left), first_number(right)) {
+    (Some(left_number), Some(right_number)) => match left_number.cmp(&right_number) {
+        Ordering::Equal => left.cmp(right),
+        other => other,
+    },
+    _ => left.cmp(right),   // 只要有一边没有数字，就整串按字节比
+}
+```
+
+`first_number` 自己还在文档里写明"第一段**连续的** ASCII 数字"，但 `.skip_while(!is_ascii_digit).take_while(is_ascii_digit)` 实际是"从开头跳过非数字、然后取一段数字"，即"第一个数字段"而非"首段数字"。两者在名字以数字开头时一致，在名字数字出现在中途时不一致——分歧就是环：
+
+- `"1"` vs `"A"`：一边没有数字 ⇒ 字节序 ⇒ `"1" < "A"`；
+- `"A"` vs `"A0"`：都没有首数字，但都有数字(`0`) ⇒ 比 `0` vs `0` 相等 ⇒ 字节序 ⇒ `"A" < "A0"`；
+- `"A0"` vs `"1"`：两边都有数字 ⇒ `0 < 1` ⇒ `"A0" < "1"`。
+
+于是 `"1" < "A" < "A0" < "1"`。已用尽举验证：字母表 `{0,1,9,A,B,紫,楼}` 上长度 1–3 的全 819 个名字里，违反三段的元组存在（例如 `("1","A","A0")`）。Haier 的楼栋名来自它的站点搜索（名字须含"清华"且不含"中学"），刚好就含这种"数字在中途"的名字，于是排序在 6–8 个元素的 `sort_by` 里被检出并中止。
+
+**修复**
+
+把 `compare_names` 改成真正的自然序：逐段切分（`split_run`）成"数字段 / 非数字段"交替，数字段按数值比（`compare_digit_runs`：去前导零后先比长度再比字典序，全部相等时再用原始长度区分 `007` 与 `7`，因此长度无上界、不会溢出也不会并列），非数字段按字节比，**数字段一律排在任何非数字段之前**；任一段分出胜负即返回；所有共同段都相等时按剩余串的字节序收尾（任一串为另一串前缀的情形也在这一支）。关键点是"数字与非数字的比较**只由所在段决定**"，不再由"整串里是否存在数字"决定，环因此消失。
+
+已用尽举验证新实现：字母表同上、外加 `"紫荆2号楼"/"紫荆10号楼"/"洗衣机 03-1"/"03-1"/"W-01"/"A1"/"A10"/"007"/"7"/"12B"/"B12"/"3层"/"" ` 等真实形状共 603 个名字，反对称性、不同名不并列、传递性三段全部为 0 违反。排序效果保持原意：`3层, 4层, 7, 007, 12B, A1, A10, B12, W-01, W-02, 紫荆2号楼, 紫荆10号楼`（`紫荆2号楼` 仍排在 `紫荆10号楼` 前，`A1` 仍排在 `A10` 前，既有测试 `jieli_buildings_group_and_sort_numerically` 未改且通过）。
+
+**为什么这不是"放宽"**
+
+修的是 Rust 内部的排序函数，既不吞错也不改错误提示：厂商响应仍然照原样解析、缺字段仍然报 `UnexpectedDeployment`、业务失败仍然报 `BusinessFailure`。改的是一个**会在真实厂商名字上让进程消失**的缺陷——进程消失意味着 74 项验收里后面每一行都变成 `interrupted`，用户拿不到任何结论。这正属于"业务逻辑属于 Rust 后端、不得用前端或宽松结果掩盖失败"的范围。
+
+**回归测试（`washer_read.rs`，新增 3 项，共 22 项）**
+
+- `the_name_order_is_a_total_order`：对 `name_corpus()`（`{0,1,9,A,B,紫,楼}` 长 1–3 的全部组合，加 16 个真实形状）逐对断言反对称与"不同名不并列"，再三重循环断言传递性。这条性质**必须**有：标准库违反即中止进程，所以它是正确性要求而不只是整洁要求。
+- `a_name_order_that_breaks_the_total_order_is_rejected_by_this_test`：把旧实现照抄成一个局部闭包，先断言它确实构成环（`"1" < "A" < "A0" < "1"`），再断言上面的性质在它身上会失败。没有这条，性质测试有可能永远通过（例如比较函数被写成恒定相等）。
+- `names_read_in_the_order_a_person_expects`：把"给人看的顺序"钉成断言，防止以后为了追求全序而把数值语义丢掉。
+
+**线上验证**
+
+同一天在 Flutter 已登录的同一台机器上、用 `--case` 定向跑（不导入 App 会话、不重登、单进程、共享一个 runtime）：
+
+- `--case laundry_buildings`：**通过**（`verified`，4 次 HTTP，2.1s），三家厂商都读到了楼栋；
+- `--case laundry_rooms`：**通过**（`verified`，前两项依赖自动拉入——`laundry_buildings` 4 次 HTTP、`laundry_rooms` 2 次 HTTP），首个楼栋的房间读到了机器。
+
+这两项的真实可用性自此**已验证**；同一天其余域仍是未验证。
+
+**同过滤器下的既有失败**：`--lib washer_read` **22 通过 / 0 失败**（新增 3 项）。`cargo fmt --manifest-path rust/Cargo.toml --all -- --check` 干净；`cargo check --workspace --all-targets` 退出 0。`docs/api-surface-baseline.json` 计数不变（改的是私有函数与测试）。`runtime.rs` 一行未动。
+
