@@ -20,6 +20,7 @@ use crate::campus_card_read::{
     CampusCardTransactionQuery, CampusCardTransactionReport, looks_like_html_response,
     looks_like_login_html_response, parse_card_account_response, parse_card_transactions_response,
 };
+use crate::campus_card_write::{CampusCardWriteOutcome, CampusCardWritePlan};
 use crate::transport::CampusHttpTransport;
 
 /// The identity policy and target used by the current public card client.
@@ -162,6 +163,17 @@ pub enum CampusCardAdapterError {
 
     #[error("campus card session account does not match the authenticated account")]
     AccountMismatch,
+
+    /// The card service answered a state change with its own encrypted refusal.
+    ///
+    /// The service's failure branch is encrypted and its plaintext is kept
+    /// nowhere, so this variant carries no message and no payload.  It exists to
+    /// say "the service declined" as opposed to "the answer could not be read",
+    /// which is the difference between a write that did not happen and a write
+    /// whose effect is unknown.  The reason is deliberately not a field: the
+    /// refusal text is the service's own and would otherwise travel into a log.
+    #[error("campus card service refused the state change")]
+    Refused,
 }
 
 impl CampusCardAdapterError {
@@ -179,6 +191,11 @@ impl CampusCardAdapterError {
             Self::UnexpectedRedirect => "card_read_redirect",
             Self::InvalidEncryptedPayload => "card_read_encrypted_format",
             Self::EncryptedServiceFailure => "card_read_encrypted_rejection",
+            // The write half reports the same service refusal under a name that
+            // says a state change was declined rather than a read rejected, so
+            // the runtime's card failure code and the caller's error code can
+            // tell the two apart without sharing a code.
+            Self::Refused => "card_write_refused",
             Self::AccountMismatch | Self::Parse(Parse::AccountMismatch) => {
                 "card_read_account_mismatch"
             }
@@ -440,6 +457,46 @@ impl CampusCardClient {
         Ok(report)
     }
 
+    /// Returns the card id of the account's first card.
+    ///
+    /// The identifier is read from a fresh account response and returned only to
+    /// this crate, so the spending-limit write can be built without the value ever
+    /// entering a plan, a DTO or a log.  The card id is a card identifier rather
+    /// than a credential, but it is still never cached: a re-issued card must not
+    /// let a write address the old one.
+    pub(crate) async fn read_card_id(
+        &self,
+        session: &CampusCardSession,
+    ) -> Result<String, CampusCardAdapterError> {
+        self.ensure_session_owner(session)?;
+        let session_account = session.account_binding()?;
+        let result = self
+            .post_json(ACCOUNT_PATH, json!({"idserial": session.account_serial}))
+            .await?;
+        let result_data = decode_result_data(&result.body)?;
+        // Validate the same way the account read does — the response must be a
+        // full account record bound to the proven session account — before the
+        // card id is taken out of it. A response for another account must not be
+        // able to supply the card id of a write.
+        let envelope = json!({
+            "success": true,
+            "resultData": result_data,
+            "data": null,
+            "operation": CampusCardReadOperation::ReadAccount,
+        })
+        .to_string();
+        parse_card_account_response(&envelope, Some(&session_account)).map_err(
+            |error| match error {
+                CampusCardParseError::AccountMismatch => CampusCardAdapterError::AccountMismatch,
+                other => CampusCardAdapterError::Parse(other),
+            },
+        )?;
+        let account = result_data
+            .as_object()
+            .ok_or(CampusCardAdapterError::UnexpectedResponse)?;
+        crate::campus_card_read::first_card_id(account).map_err(CampusCardAdapterError::Parse)
+    }
+
     fn ensure_session_owner(
         &self,
         session: &CampusCardSession,
@@ -539,6 +596,138 @@ impl CampusCardClient {
             });
         }
         Ok(CardHttpResponse { body })
+    }
+
+    /// Dispatches one card state change exactly once and reports what the
+    /// service said about it.
+    ///
+    /// Everything about this method serves one rule: the request leaves once.  It
+    /// is built with the session-bound `idserial` (and, for the limit route, the
+    /// card id read from a fresh account response), handed to
+    /// `CampusHttpTransport::execute_once_exclusive`, which takes the whole
+    /// request gate and returns the first response without following a redirect,
+    /// and then judged.  A dispatch error, a redirect, a status this service does
+    /// not use for success, a route that is not the one that was asked for, or a
+    /// body this module cannot read all leave the effect unknown, and an unknown
+    /// effect is never re-sent: a second send of a request whose effect is unknown
+    /// is a replay of it.
+    ///
+    /// The one exception is the service's own refusal, which is a definite answer
+    /// that nothing was applied and is reported as such rather than as unknown.
+    pub(crate) async fn execute_write(
+        &self,
+        session: &CampusCardSession,
+        plan: &CampusCardWritePlan,
+    ) -> Result<CampusCardWriteOutcome, CampusCardAdapterError> {
+        self.ensure_session_owner(session)?;
+        // Keep the binding check at the business boundary even though the serial
+        // is private: an impossible or corrupt session must become expiry rather
+        // than an account-less state change.
+        session.account_binding()?;
+        let card_id = if plan.needs_card_id() {
+            Some(self.read_card_id(session).await?)
+        } else {
+            None
+        };
+        let body = plan.body_json(session.account_serial.as_str(), card_id.as_deref());
+        let endpoint = self.endpoint(plan.path())?;
+        let expected_path = endpoint.path().to_owned();
+        let request = self
+            .transport
+            .client()
+            .post(endpoint)
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .header(reqwest::header::ACCEPT, "application/json")
+            .json(&body)
+            .build()
+            .map_err(|_| CampusCardAdapterError::InvalidConfig)?;
+        drop(body);
+        let response = match self
+            .transport
+            .execute_once_exclusive(self.transport.client(), request)
+            .await
+        {
+            Ok(response) => response,
+            Err(_error) => {
+                // The request was built and handed to the transport, so a failure
+                // here cannot be told apart from a dispatch whose answer was lost.
+                // Nothing is sent again. The transport error is deliberately
+                // dropped: it may name the request URL, and this body carried a
+                // password.
+                return Ok(CampusCardWriteOutcome::Unrecognized);
+            }
+        };
+        let status = response.status();
+        let final_url = response.url().clone();
+        let redirect_location = response
+            .headers()
+            .get(reqwest::header::LOCATION)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_owned);
+        let body =
+            match crate::telemetry::timing::read_bounded_bytes(response, MAX_WRITE_RESPONSE_BYTES)
+                .await
+            {
+                Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+                Err(_error) => {
+                    // The request has already left, so an oversized or truncated
+                    // answer leaves the outcome unknown rather than failed.
+                    return Ok(CampusCardWriteOutcome::Unrecognized);
+                }
+            };
+        let cross_origin = !same_origin(&self.config.base_url, &final_url)
+            || redirect_location.as_deref().is_some_and(|location| {
+                redirect_leaves_origin(&self.config.base_url, &final_url, location)
+            });
+        if cross_origin {
+            // This is the one answer that is neither a refusal nor an unknown
+            // effect: the response came from somewhere this deployment does not
+            // own, so it is not evidence about the card at all.
+            return Err(CampusCardAdapterError::UnexpectedOrigin);
+        }
+        let location_target = redirect_location
+            .as_deref()
+            .and_then(|location| resolve_location(&final_url, location).ok());
+        let login_redirect = redirect_location.is_some()
+            && (is_explicit_session_redirect(&self.config.base_url, &final_url)
+                || location_target.as_ref().is_some_and(|target| {
+                    same_origin(&self.config.base_url, target)
+                        && is_explicit_session_redirect(&self.config.base_url, target)
+                })
+                || location_target
+                    .as_ref()
+                    .is_some_and(|target| !same_origin(&self.config.base_url, target)));
+        if status == StatusCode::UNAUTHORIZED
+            || status == StatusCode::FORBIDDEN
+            || login_redirect
+            || matches!(
+                crate::campus_html::classify_page(&body),
+                crate::campus_html::PageClass::Login | crate::campus_html::PageClass::Expired
+            )
+            || (redirect_location.is_none() && contains_session_marker(&body))
+        {
+            // A card-portal handoff, a WebVPN login page and an HTTP-200
+            // session-expiry page are all the deployment saying the session is
+            // gone. None of them is dispatch evidence, so nothing was applied.
+            return Ok(CampusCardWriteOutcome::LoginRequired);
+        }
+        if status.is_redirection()
+            || !status.is_success()
+            || final_url.path() != expected_path
+            || location_target.as_ref().is_some_and(|target| {
+                same_origin(&self.config.base_url, target)
+                    && !path_within_base(&self.config.base_url, target)
+            })
+            || !path_within_base(&self.config.base_url, &final_url)
+        {
+            // A status this service does not use for success (including the 201
+            // the read half accepts: a state change that answers 201 has not told
+            // this module whether it was applied), a redirect this module did not
+            // follow, or a page for another route. The effect is unknown, and it
+            // is never re-sent.
+            return Ok(CampusCardWriteOutcome::Unrecognized);
+        }
+        Ok(classify_card_write(&body, plan))
     }
 
     fn endpoint(&self, path: &str) -> Result<Url, CampusCardAdapterError> {
@@ -652,6 +841,14 @@ struct CardHttpResponse {
     body: String,
 }
 
+/// The largest card write answer this module will read.
+///
+/// A card state change answers with a short JSON envelope. A deployment that
+/// answers with something else — a document, a portal page, or an unbounded
+/// stream — has not confirmed anything, and reading it without a bound would let
+/// one refused write decide how much memory the process spends.
+const MAX_WRITE_RESPONSE_BYTES: usize = 64 * 1024;
+
 impl CampusCardSession {
     fn account_binding(&self) -> Result<CampusCardAccountBinding, CampusCardAdapterError> {
         CampusCardAccountBinding::new(&self.account_serial)
@@ -747,6 +944,120 @@ fn decode_result_data(body: &str) -> Result<Value, CampusCardAdapterError> {
         .ok_or(CampusCardAdapterError::Parse(
             CampusCardParseError::MissingResultData,
         ))
+}
+
+/// Reads a card state change's answer.
+///
+/// The service answers on the read half's own envelope, so this decodes it the
+/// same way `decode_result_data` does and then maps the outcome instead of an
+/// error: the service's own refusal is a definite answer, while everything else
+/// this function cannot read is an unknown effect.  The `plan` is used only for
+/// the diagnostic below, which names the operation and never the body.
+fn classify_card_write(body: &str, plan: &CampusCardWritePlan) -> CampusCardWriteOutcome {
+    let outcome = read_card_write_outcome(body);
+    if matches!(
+        outcome,
+        CampusCardWriteOutcome::Unrecognized | CampusCardWriteOutcome::LoginRequired
+    ) {
+        tracing::warn!(
+            target: "tsinghua_kit::api",
+            event = "card_write_unconfirmed",
+            service = "campus_card",
+            operation = plan.operation().as_str(),
+            reason = match outcome {
+                CampusCardWriteOutcome::LoginRequired => "card_write_session_expired",
+                _ => "card_write_unreadable",
+            }
+        );
+    }
+    outcome
+}
+
+fn read_card_write_outcome(body: &str) -> CampusCardWriteOutcome {
+    let body = body.strip_prefix('\u{feff}').unwrap_or(body).trim();
+    if body.is_empty() || looks_like_html_response(body) {
+        return CampusCardWriteOutcome::Unrecognized;
+    }
+    let Ok(root) = crate::campus_card_read::parse_card_json(body) else {
+        return CampusCardWriteOutcome::Unrecognized;
+    };
+    let Some(object) = root.as_object() else {
+        return CampusCardWriteOutcome::Unrecognized;
+    };
+    let success = match object.get("success") {
+        Some(Value::Bool(true)) => true,
+        None | Some(Value::Null) | Some(Value::Bool(false)) => false,
+        Some(Value::Number(number)) if number.as_i64() == Some(0) => false,
+        _ => return CampusCardWriteOutcome::Unrecognized,
+    };
+    if success {
+        return match object.get("resultData") {
+            // The read half treats a missing `resultData` as a protocol failure;
+            // a state change has strictly less evidence than a read, so a missing
+            // payload is an unknown effect and never an acceptance.
+            None | Some(Value::Null) => CampusCardWriteOutcome::Unrecognized,
+            Some(result_data) => judge_card_write_payload(result_data, object),
+        };
+    }
+    if object_has_session_failure_marker(object) {
+        return CampusCardWriteOutcome::LoginRequired;
+    }
+    let Some(data) = object.get("data").and_then(Value::as_str) else {
+        // A plain failure envelope with no session marker and no payload: the
+        // service declined, and its reason is not readable without the key the
+        // runtime does not hold for this envelope shape.
+        return CampusCardWriteOutcome::Refused;
+    };
+    if contains_session_marker(data) {
+        return CampusCardWriteOutcome::LoginRequired;
+    }
+    match decrypt_card_failure(data) {
+        Ok(decrypted) => match crate::campus_card_read::parse_card_json(&decrypted) {
+            Ok(nested) => match nested.as_object() {
+                Some(nested) if nested.get("success").and_then(Value::as_bool) == Some(true) => {
+                    match nested.get("resultData") {
+                        Some(result_data) if !result_data.is_null() => {
+                            judge_card_write_payload(result_data, nested)
+                        }
+                        _ => CampusCardWriteOutcome::Unrecognized,
+                    }
+                }
+                Some(nested) => {
+                    if object_has_session_failure_marker(nested) {
+                        CampusCardWriteOutcome::LoginRequired
+                    } else {
+                        // The service's encrypted refusal.  It is the definite
+                        // "this did not happen" answer, and its plaintext — which
+                        // is the service's own wording — is dropped here rather
+                        // than carried into an error, a log or a DTO.
+                        CampusCardWriteOutcome::Refused
+                    }
+                }
+                None => CampusCardWriteOutcome::Unrecognized,
+            },
+            Err(_) => CampusCardWriteOutcome::Unrecognized,
+        },
+        Err(_) => CampusCardWriteOutcome::Unrecognized,
+    }
+}
+
+fn judge_card_write_payload(
+    result_data: &Value,
+    envelope: &serde_json::Map<String, Value>,
+) -> CampusCardWriteOutcome {
+    if crate::campus_card_write::result_data_reports_refusal(result_data)
+        || crate::campus_card_write::result_data_has_failure_marker(result_data)
+        || object_has_session_failure_marker(envelope)
+    {
+        return CampusCardWriteOutcome::Refused;
+    }
+    if crate::campus_card_write::result_data_is_readable(result_data) {
+        CampusCardWriteOutcome::Accepted
+    } else {
+        // A successful envelope whose payload is a scalar has not described a
+        // state change, so it is not accepted.
+        CampusCardWriteOutcome::Unrecognized
+    }
 }
 
 fn decode_success_envelope(
@@ -2064,5 +2375,283 @@ mod tests {
             bytes.extend_from_slice(&chunk[..count]);
         }
         String::from_utf8_lossy(&bytes[..header_end + content_length]).into_owned()
+    }
+
+    // ---------------------------------------------------------------------
+    // Card state changes.
+    //
+    // Every test below drives the adapter against a loopback fixture and
+    // asserts two things at once: what the change was reported as, and how many
+    // requests left.  The second assertion is the point — a card write is
+    // dispatched once, and a test that only checked the outcome would not
+    // notice a replay.
+    // ---------------------------------------------------------------------
+
+    /// Proves the fixture session and then runs one card write against a
+    /// sequence of scripted replies.
+    ///
+    /// The fixture answers the session probe first, then each reply in order.
+    /// A reply with no `Set-Cookie` still exercises the cookie path, because
+    /// every later request must carry the cookie the probe established.
+    async fn run_card_write(
+        plan: crate::campus_card_write::CampusCardWritePlan,
+        needs_card_id: bool,
+        replies: Vec<String>,
+    ) -> (
+        Result<CampusCardWriteOutcome, CampusCardAdapterError>,
+        Vec<String>,
+    ) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind fixture server");
+        let address = listener.local_addr().expect("fixture address");
+        let (requests_tx, requests_rx) = mpsc::channel();
+        let expected = replies.len() + usize::from(needs_card_id) + 1;
+        let server = thread::spawn(move || {
+            for step in 0..expected {
+                let (mut stream, _) = listener.accept().expect("accept fixture request");
+                let request = read_http_request(&mut stream);
+                requests_tx.send(request).expect("send fixture request");
+                let body = if step == 0 {
+                    r#"{"success":true,"data":null,"resultData":{"loginuser":"student-001"}}"#
+                        .to_owned()
+                } else if needs_card_id && step == 1 {
+                    ACCOUNT.to_owned()
+                } else {
+                    let offset = step - 1 - usize::from(needs_card_id);
+                    replies.get(offset).cloned().unwrap_or_else(|| {
+                        r#"{"success":true,"data":null,"resultData":{}}"#.to_owned()
+                    })
+                };
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                )
+                .expect("write fixture response");
+            }
+        });
+
+        let config =
+            CampusCardAdapterConfig::new(&format!("http://{address}/")).expect("fixture config");
+        let transport = CampusHttpTransport::with_timeout(
+            "THYou/campus-card-write-test",
+            std::time::Duration::from_secs(5),
+        )
+        .expect("transport");
+        let client = CampusCardClient::new(config, transport).expect("client");
+        let binding = CampusCardAccountBinding::new("student-001").expect("binding");
+        let session = client
+            .probe_session_for(&binding)
+            .await
+            .expect("fixture session probe");
+        let outcome = client.execute_write(&session, &plan).await;
+        server.join().expect("fixture server");
+        let requests = requests_rx.try_iter().collect::<Vec<_>>();
+        (outcome, requests)
+    }
+
+    fn loss_plan() -> crate::campus_card_write::CampusCardWritePlan {
+        crate::campus_card_write::CampusCardWriteProfile::new()
+            .report_loss_request(crate::campus_card_write::CampusCardSecret::new("135790").unwrap())
+    }
+
+    #[tokio::test]
+    async fn card_write_is_dispatched_exactly_once_and_only_the_one_route() {
+        let (outcome, requests) = run_card_write(
+            loss_plan(),
+            false,
+            vec![r#"{"success":true,"data":null,"resultData":{}}"#.to_owned()],
+        )
+        .await;
+        assert_eq!(outcome.unwrap(), CampusCardWriteOutcome::Accepted);
+        // Exactly two requests: the probe, then the one state change.
+        assert_eq!(requests.len(), 2);
+        assert!(requests[0].starts_with("POST /login/getUserInfoFromToken HTTP/1.1"));
+        assert!(requests[1].starts_with("POST /business/cardReportLoss HTTP/1.1"));
+        // The body carries the session's own account serial and the caller's
+        // password, and nothing else.
+        let body = requests[1].split("\r\n\r\n").nth(1).unwrap_or_default();
+        assert_eq!(body, r#"{"idserial":"student-001","txpasswd":"135790"}"#);
+    }
+
+    #[tokio::test]
+    async fn card_write_refusal_is_definite_and_a_transport_failure_is_not() {
+        // A plain failure envelope is the service declining: nothing was applied.
+        let (refused, _) = run_card_write(
+            loss_plan(),
+            false,
+            vec![r#"{"success":false,"message":"密码错误","data":null}"#.to_owned()],
+        )
+        .await;
+        assert_eq!(refused.unwrap(), CampusCardWriteOutcome::Refused);
+
+        // An encrypted refusal is the same answer in the service's other
+        // envelope shape.
+        let (encrypted_refusal, _) = run_card_write(
+            loss_plan(),
+            false,
+            vec![encrypted_nested_failure(
+                json!({"success": false, "message": "拒绝"}),
+            )],
+        )
+        .await;
+        assert_eq!(encrypted_refusal.unwrap(), CampusCardWriteOutcome::Refused);
+
+        // The service's own `returncode` inside a successful payload is also a
+        // refusal, not an acceptance.
+        let (returncode_refusal, _) = run_card_write(
+            loss_plan(),
+            false,
+            vec![r#"{"success":true,"data":null,"resultData":{"returncode":"ERROR"}}"#.to_owned()],
+        )
+        .await;
+        assert_eq!(returncode_refusal.unwrap(), CampusCardWriteOutcome::Refused);
+
+        // A payload that carries a failure marker of its own is refused too.
+        let (marker_refusal, _) = run_card_write(
+            loss_plan(),
+            false,
+            vec![r#"{"success":true,"data":null,"resultData":{"success":false}}"#.to_owned()],
+        )
+        .await;
+        assert_eq!(marker_refusal.unwrap(), CampusCardWriteOutcome::Refused);
+    }
+
+    #[tokio::test]
+    async fn card_write_with_an_unreadable_answer_is_unconfirmed_and_not_resent() {
+        // A successful envelope with no payload has not described a state
+        // change.  The request left, so the effect is unknown.
+        for reply in [
+            r#"{"success":true,"data":null}"#,
+            r#"{"success":true,"data":null,"resultData":null}"#,
+            r#"{"success":true,"data":null,"resultData":7}"#,
+            "<html><body>maintenance</body></html>",
+            "",
+        ] {
+            let (outcome, requests) =
+                run_card_write(loss_plan(), false, vec![reply.to_owned()]).await;
+            assert_eq!(
+                outcome.unwrap(),
+                CampusCardWriteOutcome::Unrecognized,
+                "reply {reply:?} must not be read as an acceptance"
+            );
+            // Even an unreadable answer was read from one dispatch, never two.
+            assert_eq!(requests.len(), 2, "reply {reply:?} was dispatched once");
+        }
+    }
+
+    #[tokio::test]
+    async fn card_write_reports_a_gone_session_instead_of_retrying_it() {
+        // A WebVPN portal page and an explicit card handoff both mean the
+        // session is gone.  The write is not re-sent after a re-login, so the
+        // reported outcome is the login requirement.
+        let (outcome, requests) = run_card_write(
+            loss_plan(),
+            false,
+            vec![r#"{"success":false,"message":"未登录","data":null}"#.to_owned()],
+        )
+        .await;
+        assert_eq!(outcome.unwrap(), CampusCardWriteOutcome::LoginRequired);
+        assert_eq!(requests.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn card_limit_write_reads_the_card_id_freshly_and_sends_it_once() {
+        let plan = crate::campus_card_write::CampusCardWriteProfile::new()
+            .modify_limit_request(
+                crate::campus_card_write::CampusCardSecret::new("246810").unwrap(),
+                20_000,
+                5_000,
+            )
+            .unwrap();
+        let (outcome, requests) = run_card_write(
+            plan,
+            true,
+            vec![r#"{"success":true,"data":null,"resultData":{}}"#.to_owned()],
+        )
+        .await;
+        assert_eq!(outcome.unwrap(), CampusCardWriteOutcome::Accepted);
+        // probe, fresh account read for the card id, then the one limit change.
+        assert_eq!(requests.len(), 3);
+        assert!(requests[1].starts_with("POST /business/getCardUserinfo HTTP/1.1"));
+        assert!(requests[2].starts_with("POST /business/modifyCardMaxConsamt HTTP/1.1"));
+        let body = requests[2].split("\r\n\r\n").nth(1).unwrap_or_default();
+        assert_eq!(
+            body,
+            r#"{"cardid":"card-001","maxconsamt":20000,"maxconstolamt":5000,"txpassword":"246810"}"#
+        );
+    }
+
+    #[tokio::test]
+    async fn card_write_refuses_a_response_for_another_account() {
+        // The account read that supplies the card id must be the proven
+        // account's own; a response for someone else cannot supply it.
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind fixture server");
+        let address = listener.local_addr().expect("fixture address");
+        let server = thread::spawn(move || {
+            for step in 0..2 {
+                let (mut stream, _) = listener.accept().expect("accept fixture request");
+                let _request = read_http_request(&mut stream);
+                let body = if step == 0 {
+                    r#"{"success":true,"data":null,"resultData":{"loginuser":"student-001"}}"#
+                } else {
+                    r#"{"success":true,"data":null,"resultData":{"idserial":"student-999","username":"x","engname":"x","departname":"d","engdepartname":"d","departid":1,"sex":"1","identifyeffectdate":"2024-09-01","validatevalue":"2028-09-01","baseAccount":{"balance":"1"},"cardInfos":[{"cardid":"other-card","accstatus":"0","lasttxdate":"","maxconstolamt":1,"maxconsamt":1}]}}"#
+                };
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                )
+                .expect("write fixture response");
+            }
+        });
+        let config =
+            CampusCardAdapterConfig::new(&format!("http://{address}/")).expect("fixture config");
+        let transport = CampusHttpTransport::with_timeout(
+            "THYou/campus-card-write-test",
+            std::time::Duration::from_secs(5),
+        )
+        .expect("transport");
+        let client = CampusCardClient::new(config, transport).expect("client");
+        let binding = CampusCardAccountBinding::new("student-001").expect("binding");
+        let session = client
+            .probe_session_for(&binding)
+            .await
+            .expect("fixture session probe");
+        let plan = crate::campus_card_write::CampusCardWriteProfile::new()
+            .modify_limit_request(
+                crate::campus_card_write::CampusCardSecret::new("246810").unwrap(),
+                20_000,
+                5_000,
+            )
+            .unwrap();
+        let outcome = client.execute_write(&session, &plan).await;
+        server.join().expect("fixture server");
+        assert_eq!(
+            outcome.unwrap_err(),
+            CampusCardAdapterError::AccountMismatch
+        );
+    }
+
+    #[tokio::test]
+    async fn card_write_debug_never_prints_a_password_or_the_route_body() {
+        let plan = loss_plan();
+        let debug = format!("{plan:?}");
+        assert!(!debug.contains("135790"));
+        assert!(debug.contains("card_report_loss"));
+        let (outcome, requests) = run_card_write(
+            plan,
+            false,
+            vec![r#"{"success":false,"message":"密码错误","data":null}"#.to_owned()],
+        )
+        .await;
+        let debug = format!("{outcome:?}");
+        assert_eq!(outcome.unwrap(), CampusCardWriteOutcome::Refused);
+        // The refusal is the service's own wording, and it stays out of the
+        // process: no log line this test can see carries it, and the requests
+        // show the request body only where the fixture read it.
+        assert!(!debug.contains("密码错误"));
+        assert!(requests.len() == 2);
     }
 }

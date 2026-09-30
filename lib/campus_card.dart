@@ -1,4 +1,5 @@
-/// Read-only campus-card account and bounded transaction access.
+/// Campus-card account and transaction access, plus the card's own state
+/// changes.
 library;
 
 export 'tsinghua_kit.dart'

@@ -16,6 +16,7 @@ use tsinghua_kit::{
     campus_card::{
         CampusCardAccount, CampusCardInteraction, CampusCardPasswordRequest, CampusCardTransaction,
         CampusCardTransactionRange, CampusCardTransactionType, CampusCardTransactions,
+        CampusCardWriteRequest,
     },
     classrooms::{
         ClassroomAvailability, ClassroomBuildings, ClassroomSlotStatus, ClassroomWeek,
@@ -465,6 +466,38 @@ async fn compile_campus_card_api(client: &mut tsinghua_kit::Client) -> Result<()
     Ok(())
 }
 
+/// The card's own state changes are on the same curated client as its reads,
+/// because they need the same proven card session.  Each is a one-shot
+/// dispatch: an unconfirmed outcome is never re-sent, and a refusal is the
+/// service's own answer rather than a transport failure.
+#[allow(dead_code)]
+async fn compile_campus_card_write_api(client: &mut tsinghua_kit::Client) -> Result<()> {
+    let mut card = client.campus_card();
+    let _bounds: (i64, i64, i64) = (
+        tsinghua_kit::campus_card::MIN_CARD_TOPUP_CENTS,
+        tsinghua_kit::campus_card::MAX_CARD_TOPUP_CENTS,
+        tsinghua_kit::campus_card::MAX_CARD_LIMIT_CENTS,
+    );
+    card.apply_write(CampusCardWriteRequest::report_loss("135790")?)
+        .await?;
+    card.apply_write(CampusCardWriteRequest::cancel_loss("135790")?)
+        .await?;
+    card.apply_write(CampusCardWriteRequest::change_transaction_password(
+        "135790", "246810",
+    )?)
+    .await?;
+    card.apply_write(CampusCardWriteRequest::modify_spending_limit(
+        "135790", 20_000, 5_000,
+    )?)
+    .await?;
+    card.apply_write(CampusCardWriteRequest::top_up_from_bank(10_000)?)
+        .await?;
+    // The recurring top-up route answers with a payment link and is not an
+    // operation at all, so no request can produce a pay code through here.
+    assert!(!tsinghua_kit::campus_card::CARD_QR_TOPUP_PATH.is_empty());
+    Ok(())
+}
+
 #[test]
 fn rust_consumers_can_import_curated_domain_modules_without_ffi() {
     let profile_id = NetworkProfileId::new();
@@ -582,6 +615,7 @@ fn rust_consumers_can_import_curated_domain_modules_without_ffi() {
     let _ = compile_library_api;
     let _ = compile_classrooms_api;
     let _ = compile_campus_card_api;
+    let _ = compile_campus_card_write_api;
     let _ = compile_electricity_api;
     let _ = compile_network_profiles_api;
     let _ = compile_portal_api;

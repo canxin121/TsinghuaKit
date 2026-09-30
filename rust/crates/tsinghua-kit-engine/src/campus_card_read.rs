@@ -1043,6 +1043,21 @@ pub(crate) fn looks_like_login_html_response(body: &str) -> bool {
     has_form_or_input || title_mentions_login || lower.contains("webvpn")
 }
 
+/// Reads the card id of an account response's first card.
+///
+/// This is the one card field the read half deliberately drops, and it is
+/// reachable only from inside the crate: the spending-limit write needs it to
+/// address the card being changed, while the cleaned [`CampusCardAccount`] must
+/// keep omitting it.  The value is never cached by the caller — a re-issued card
+/// must not let a write address the old one.
+pub(crate) fn first_card_id(account: &Map<String, Value>) -> Result<String, CampusCardParseError> {
+    let cards = required_array(account, "cardInfos", CampusCardField::CardInfos)?;
+    let Some(card) = cards.first().and_then(Value::as_object) else {
+        return Err(CampusCardParseError::EmptyCardInfos);
+    };
+    required_identifier(card, "cardid", CampusCardField::CardId)
+}
+
 fn parse_account_result(
     result_data: &Value,
     expected_account: Option<&CampusCardAccountBinding>,

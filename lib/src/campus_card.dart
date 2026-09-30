@@ -123,6 +123,103 @@ class CampusCardClient {
   /// Cancels the current password prompt without making a request.
   Future<bool> cancelPasswordChallenge() =>
       _sdkCall(() => _handle.campusCardCancelPasswordChallenge());
+
+  /// The smallest bank top-up the service's own input rule accepts, in fen.
+  static final BigInt minTopUpCents = BigInt.from(1000);
+
+  /// The largest bank top-up that rule accepts, in fen.
+  static final BigInt maxTopUpCents = BigInt.from(20000);
+
+  /// The largest spending limit this SDK will send, in fen.
+  ///
+  /// No service-side bound is observed, so this is this SDK's own limit: it
+  /// exists so a mistyped amount is refused here instead of sent as a limit
+  /// nobody could mean.
+  static final BigInt maxLimitCents = BigInt.from(100000000);
+
+  /// Reports the card lost, so the card service blocks it.
+  ///
+  /// [transactionPassword] is the card's own service password (six digits),
+  /// not the account password and not the card-SSO password
+  /// [submitPassword] carries. It is validated, sent once and dropped by Rust;
+  /// it is never stored, logged or written into any result.
+  ///
+  /// The change leaves **exactly once**. If this future completes without
+  /// throwing, the service accepted it. `outcome_unconfirmed` (see the
+  /// [SdkError] code) means the request was sent and its effect is unknown: it
+  /// is not sent again, not by this call and not by any retry, so read
+  /// [account] to learn the card's state instead of retrying.
+  /// `authentication_rejected` is the service's own refusal — nothing was
+  /// applied and the password was wrong.
+  Future<void> reportLoss(String transactionPassword) => _sdkCall(
+        () => _handle.campusCardReportLoss(
+          transactionPassword: transactionPassword,
+        ),
+      );
+
+  /// Reverses a loss report, making the card spendable again.
+  ///
+  /// The one card change whose success makes a blocked card usable again; it
+  /// obeys the same single-dispatch rule as [reportLoss].
+  Future<void> cancelLoss(String transactionPassword) => _sdkCall(
+        () => _handle.campusCardCancelLoss(
+          transactionPassword: transactionPassword,
+        ),
+      );
+
+  /// Replaces the card's transaction password.
+  ///
+  /// Both secrets are zeroized after the one request. A password that may
+  /// already be in effect is not the old one, so this must not be retried with
+  /// the old value after an `outcome_unconfirmed`.
+  Future<void> changeTransactionPassword({
+    required String oldPassword,
+    required String newPassword,
+  }) =>
+      _sdkCall(
+        () => _handle.campusCardChangeTransactionPassword(
+          oldPassword: oldPassword,
+          newPassword: newPassword,
+        ),
+      );
+
+  /// Changes the card's two spending limits, in fen.
+  ///
+  /// The two parameters are named after the wire fields they fill, not after a
+  /// meaning. The card service's own client pairs `maxconsamt` and
+  /// `maxconstolamt` the opposite way round in its read and write halves, and
+  /// there is no evidence available here that says which pairing was
+  /// transposed, so this surface refuses to guess: a caller sets the two
+  /// fields deliberately. Both are bounded by [maxLimitCents] before any
+  /// request exists.
+  ///
+  /// The physical card identifier the route also needs is read by Rust from a
+  /// fresh account read bound to the proven session; it is not a parameter and
+  /// never crosses this boundary.
+  Future<void> modifySpendingLimit({
+    required String transactionPassword,
+    required BigInt maxconsamtCents,
+    required BigInt maxconstolamtCents,
+  }) =>
+      _sdkCall(
+        () => _handle.campusCardModifySpendingLimit(
+          transactionPassword: transactionPassword,
+          maxconsamtCents: platformInt64FromBigInt(maxconsamtCents),
+          maxconstolamtCents: platformInt64FromBigInt(maxconstolamtCents),
+        ),
+      );
+
+  /// Transfers money from the bound bank account onto the card (圈存).
+  ///
+  /// [amountCents] must be between [minTopUpCents] and [maxTopUpCents]; the
+  /// amount is the only input, because the observed route sends no password at
+  /// all. A bank transfer that has already left is not undone by retrying, so
+  /// an `outcome_unconfirmed` must be resolved by reading [account].
+  Future<void> topUpFromBank(BigInt amountCents) => _sdkCall(
+        () => _handle.campusCardTopUpFromBank(
+          amountCents: platformInt64FromBigInt(amountCents),
+        ),
+      );
 }
 
 ReadResult<CampusCardAccount> _campusCardAccountResult(

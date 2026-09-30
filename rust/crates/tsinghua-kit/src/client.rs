@@ -14,7 +14,7 @@ use tsinghua_kit_engine::{
     calendar_api::{LearnTermCalendar, SchoolCalendarImage, SchoolCalendarQuery},
     campus_card_api::{
         CampusCardAccount, CampusCardInteraction, CampusCardPasswordRequest,
-        CampusCardTransactionRange, CampusCardTransactions,
+        CampusCardTransactionRange, CampusCardTransactions, CampusCardWriteRequest,
     },
     classrooms_api::{
         BuildingRef, ClassroomAvailability, ClassroomBuildings, ClassroomWeekSelection,
@@ -708,6 +708,28 @@ impl CampusCardClient<'_> {
     /// Cancels the pending prompt without sending a request.
     pub fn cancel_password_challenge(&mut self) -> bool {
         self.inner.cancel_password_challenge()
+    }
+
+    /// Applies one card state change: reporting the card lost, reversing that,
+    /// changing the transaction password, changing the spending limits, or
+    /// topping the card up from its own bound bank account.
+    ///
+    /// The request is validated and consumed before dispatch, and the change is
+    /// sent **exactly once**.  A result reported as `outcome_unconfirmed` was
+    /// dispatched but its effect is unknown; it is not sent a second time, and
+    /// this call does not re-authenticate and retry either.  The caller learns
+    /// what happened by reading [`Self::account`] — the card's own state —
+    /// rather than by calling this again.
+    ///
+    /// An `authentication_rejected` answer is the service's own refusal, so
+    /// nothing was applied and the caller may correct its input.
+    ///
+    /// The transaction password is the card's own service secret.  It is neither
+    /// the account password nor the card-service SSO password
+    /// [`Self::submit_password`] carries; it is not stored, not logged, and is
+    /// zeroized when the request is dropped.
+    pub async fn apply_write(&mut self, request: CampusCardWriteRequest) -> Result<(), Error> {
+        self.inner.apply_write(request).await
     }
 }
 

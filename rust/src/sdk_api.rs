@@ -25,6 +25,7 @@ use tsinghua_kit_sdk::{
     campus_card::{
         CampusCardAccount, CampusCardInteraction, CampusCardPasswordRequest,
         CampusCardTransactionRange, CampusCardTransactionType, CampusCardTransactions,
+        CampusCardWriteRequest,
     },
     classrooms::{
         BuildingRef, ClassroomAvailability, ClassroomBuildings, ClassroomSlotStatus, ClassroomWeek,
@@ -5889,6 +5890,118 @@ impl ClientHandle {
         self.inner.campus_card().cancel_password_challenge()
     }
 
+    /// Reports the card lost, so the card service blocks it.
+    ///
+    /// The card's own transaction password is required by the service for this.
+    /// It is the card service's secret, not the account password and not the
+    /// card-SSO password [`Self::campus_card_submit_password`] carries; Rust
+    /// keeps it in a zeroizing wrapper, logs it nowhere, and drops it after the
+    /// one request it belongs to.
+    ///
+    /// The change is dispatched **exactly once**, on this Client's existing
+    /// card session.  An answer reported as `outcome_unconfirmed` was sent but
+    /// its effect is unknown: it is **not** sent again by this call or by any
+    /// retry, and this call does not re-authenticate and resend.  Read
+    /// [`Self::campus_card_account`] to learn the card's state instead.
+    /// `authentication_rejected` is the service's own refusal, so nothing was
+    /// applied and the input was wrong.
+    pub async fn campus_card_report_loss(
+        &mut self,
+        transaction_password: String,
+    ) -> Result<(), SdkErrorDto> {
+        self.inner
+            .campus_card()
+            .apply_write(CampusCardWriteRequest::report_loss(transaction_password)?)
+            .await?;
+        Ok(())
+    }
+
+    /// Reverses a loss report, making the card spendable again.
+    ///
+    /// This is the one card change whose success makes a blocked card usable
+    /// again, so it is built from nothing but the caller's own transaction
+    /// password: there is no cached "this card is blocked" state a caller could
+    /// rely on.  It obeys the same single-dispatch rule as
+    /// [`Self::campus_card_report_loss`].
+    pub async fn campus_card_cancel_loss(
+        &mut self,
+        transaction_password: String,
+    ) -> Result<(), SdkErrorDto> {
+        self.inner
+            .campus_card()
+            .apply_write(CampusCardWriteRequest::cancel_loss(transaction_password)?)
+            .await?;
+        Ok(())
+    }
+
+    /// Replaces the card's transaction password.
+    ///
+    /// Both secrets are zeroized after the one request; neither is stored or
+    /// logged.  The same single-dispatch rule applies: an unconfirmed outcome is
+    /// never re-sent, and a new password that may already be in effect is not
+    /// the old one, so a caller must not retry this with the old value.
+    pub async fn campus_card_change_transaction_password(
+        &mut self,
+        old_password: String,
+        new_password: String,
+    ) -> Result<(), SdkErrorDto> {
+        self.inner
+            .campus_card()
+            .apply_write(CampusCardWriteRequest::change_transaction_password(
+                old_password,
+                new_password,
+            )?)
+            .await?;
+        Ok(())
+    }
+
+    /// Changes the card's two spending limits, in fen.
+    ///
+    /// The two parameters are named after the wire fields they fill, not after a
+    /// meaning.  The card service's own client pairs `maxconsamt` and
+    /// `maxconstolamt` the opposite way round in its read and write halves and
+    /// there is no evidence available here that says which pairing was
+    /// transposed, so this surface refuses to guess: a caller sets the two
+    /// fields deliberately.  Both are bounded before any request exists.
+    pub async fn campus_card_modify_spending_limit(
+        &mut self,
+        transaction_password: String,
+        maxconsamt_cents: i64,
+        maxconstolamt_cents: i64,
+    ) -> Result<(), SdkErrorDto> {
+        self.inner
+            .campus_card()
+            .apply_write(CampusCardWriteRequest::modify_spending_limit(
+                transaction_password,
+                maxconsamt_cents,
+                maxconstolamt_cents,
+            )?)
+            .await?;
+        Ok(())
+    }
+
+    /// Moves money from the card's own bound bank account onto the card, in fen.
+    ///
+    /// This is the one top-up form the card service carries out itself: it needs
+    /// no payment link and no pay code, so nothing it returns is a payment
+    /// credential.  The card's other top-up entry answers with a payment URL and
+    /// is not implemented at all at any layer, so there is no call here that
+    /// could produce a pay code.
+    ///
+    /// The amount is bounded before any request exists.  The same
+    /// single-dispatch rule applies: a transfer reported as unconfirmed is never
+    /// sent again, because a second send may move the money twice.
+    pub async fn campus_card_top_up_from_bank(
+        &mut self,
+        amount_cents: i64,
+    ) -> Result<(), SdkErrorDto> {
+        self.inner
+            .campus_card()
+            .apply_write(CampusCardWriteRequest::top_up_from_bank(amount_cents)?)
+            .await?;
+        Ok(())
+    }
+
     /// Reads the current dorm-electricity remainder.
     pub async fn electricity_remainder(
         &mut self,
@@ -8257,6 +8370,67 @@ mod tests {
             suggest_identity_login_stage("not-a-student-id".to_owned()),
             None
         );
+    }
+
+    #[tokio::test]
+    async fn campus_card_writes_reject_invalid_input_before_any_session_exists() {
+        let mut client = client();
+        // Every one of these is refused by the request constructor, so a wrong
+        // amount, a wrong limit or a missing password never reaches a session
+        // lookup — let alone a dispatch.
+        for code in [
+            client
+                .campus_card_report_loss(String::new())
+                .await
+                .unwrap_err()
+                .code,
+            client
+                .campus_card_cancel_loss("   ".to_owned())
+                .await
+                .unwrap_err()
+                .code,
+            client
+                .campus_card_change_transaction_password("111111".to_owned(), "x".repeat(65))
+                .await
+                .unwrap_err()
+                .code,
+            client
+                .campus_card_modify_spending_limit("111111".to_owned(), -1, 1_000)
+                .await
+                .unwrap_err()
+                .code,
+            client
+                .campus_card_modify_spending_limit("111111".to_owned(), 1_000, 100_000_001)
+                .await
+                .unwrap_err()
+                .code,
+            client
+                .campus_card_top_up_from_bank(999)
+                .await
+                .unwrap_err()
+                .code,
+            client
+                .campus_card_top_up_from_bank(20_001)
+                .await
+                .unwrap_err()
+                .code,
+        ] {
+            assert_eq!(code, "invalid_input");
+        }
+    }
+
+    #[tokio::test]
+    async fn campus_card_writes_require_the_card_session_rather_than_opening_one() {
+        let mut client = client();
+        // A well-formed change on an account with no card session is refused as
+        // a session requirement.  It must not answer `outcome_unconfirmed`: the
+        // request never left, so there is nothing unknown about the card.
+        let error = client
+            .campus_card_top_up_from_bank(12_000)
+            .await
+            .unwrap_err();
+        assert_eq!(error.service, "campus_card");
+        assert_eq!(error.code, "session_required");
     }
 
     #[tokio::test]

@@ -37,7 +37,7 @@ use crate::{
     calendar_api::{AcademicTerm, LearnTermCalendar, SchoolCalendarImage, SchoolCalendarQuery},
     campus_card_api::{
         CampusCardAccount, CampusCardInteraction, CampusCardPasswordRequest,
-        CampusCardTransactionRange, CampusCardTransactions,
+        CampusCardTransactionRange, CampusCardTransactions, CampusCardWriteRequest,
     },
     classrooms_api::{
         BuildingRef, ClassroomAvailability, ClassroomBuilding, ClassroomBuildings,
@@ -2003,6 +2003,44 @@ impl CampusCardClient<'_> {
         self.runtime.cancel_campus_card_password_challenge();
         true
     }
+
+    /// Applies one card state change: reporting the card lost, reversing that,
+    /// changing the transaction password, changing the spending limits, or
+    /// topping the card up from its own bound bank account.
+    ///
+    /// The request is validated before anything else, and the request value is
+    /// consumed by this call: a caller cannot keep a copy and ask for the same
+    /// change twice from one value.  The change is then dispatched **exactly
+    /// once** through the shared transport's exclusive gate, which returns the
+    /// first response without following a redirect.
+    ///
+    /// The three possible answers are deliberately distinct:
+    ///
+    /// * the service confirmed the change — the call succeeds;
+    /// * the service declined it — [`ErrorCode::AuthenticationRejected`], and
+    ///   nothing was applied;
+    /// * the answer could not be read, or the request left without one —
+    ///   [`ErrorCode::OutcomeUnconfirmed`].
+    ///
+    /// An unconfirmed outcome is **never** resolved by sending the request again,
+    /// and this call does not re-authenticate and retry either, because a state
+    /// change that may already have been applied must not be replayed.  A caller
+    /// in that position reads the account, the transactions or the card's status
+    /// to learn what happened — through [`Self::account`], not by calling this
+    /// again.
+    ///
+    /// The transaction password is the card's own service secret. It is not the
+    /// account password and not the card-service SSO password
+    /// [`Self::submit_password`] carries; this call never stores it, never logs
+    /// it, and drops it zeroized.
+    pub async fn apply_write(&mut self, request: CampusCardWriteRequest) -> Result<(), Error> {
+        self.runtime.clear_campus_card_failure_code();
+        self.runtime
+            .apply_campus_card_write(request)
+            .await
+            .map_err(|_| campus_card_failure(self.runtime))?;
+        Ok(())
+    }
 }
 
 /// Read-only dorm-electricity queries with account-bound cache provenance.
@@ -2062,6 +2100,11 @@ impl ElectricityClient<'_> {
 }
 
 fn campus_card_failure(runtime: &CampusRuntime) -> Error {
+    // A recorded card failure code is this Runtime's own statement about what
+    // went wrong, and it is the only place a write's outcome is decided.
+    if let Some(code) = runtime.last_campus_card_failure_code() {
+        return Error::new(Service::CampusCard, campus_card_error_code(code));
+    }
     let code = if runtime.has_campus_card_password_challenge()
         || runtime.has_campus_card_second_factor_challenge()
     {
@@ -2920,6 +2963,42 @@ fn library_error_code(diagnostic: &str) -> ErrorCode {
 
 fn invalid_library_response() -> Error {
     Error::new(Service::Library, ErrorCode::InvalidResponse)
+}
+
+/// Maps a card write's own recorded failure code onto a public error code.
+///
+/// The distinction that matters here is between the service's definite refusal
+/// and an answer this Runtime could not read.  A refusal means nothing was
+/// applied, so the caller may correct its input and decide what to do; an
+/// unreadable answer means the card's state is unknown, so the caller must look
+/// at the card rather than retry.  Collapsing the two would tell a caller whose
+/// password was wrong to go and check their balance, and would tell a caller
+/// whose change may have gone through to simply try again.
+fn campus_card_error_code(diagnostic: &str) -> ErrorCode {
+    match diagnostic {
+        // Dispatched once, no service answer this Runtime could read: unknown,
+        // not failed, and never re-sent.
+        "card_write_unconfirmed" => ErrorCode::OutcomeUnconfirmed,
+        // The service answered and declined.  Its wording is deliberately absent
+        // from the runtime's own code; what reaches a caller is this category.
+        "card_write_refused" => ErrorCode::AuthenticationRejected,
+        "card_write_session_expired" => ErrorCode::SessionExpired,
+        "card_write_account_mismatch" => ErrorCode::ContextMismatch,
+        "card_write_request" => ErrorCode::InvalidInput,
+        // The card service has its own version gate for the payment links this
+        // module does not implement; a caller that reached one has asked for
+        // something this deployment does not offer.
+        "card_write_not_allowed" => ErrorCode::NotAvailable,
+        "card_read_transport" => ErrorCode::NetworkUnavailable,
+        "card_read_http" | "card_read_probe_http" => ErrorCode::ServiceUnavailable,
+        "card_read_session_expired" | "card_read_cookie_rejected" => ErrorCode::SessionExpired,
+        "card_read_account_mismatch" => ErrorCode::ContextMismatch,
+        "card_read_config" => ErrorCode::Internal,
+        value if value.starts_with("card_read_") || value.starts_with("card_write_") => {
+            ErrorCode::InvalidResponse
+        }
+        _ => ErrorCode::ServiceUnavailable,
+    }
 }
 
 fn cached_read_metadata(

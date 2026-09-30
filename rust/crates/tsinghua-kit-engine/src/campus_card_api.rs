@@ -6,6 +6,7 @@
 
 use std::fmt;
 
+use crate::campus_card_write::CampusCardSecret;
 use crate::error::{Error, ErrorCode, Service};
 
 /// A fixed campus-card ledger filter. It cannot select an account or a
@@ -445,6 +446,185 @@ impl Drop for CampusCardPasswordRequest {
         use zeroize::Zeroize;
         self.password.zeroize();
     }
+}
+
+/// The card state change a caller is asking for, validated.
+///
+/// Every variant is built from caller input that has already been checked, and
+/// none of them holds a value that outlives the one request it belongs to: the
+/// passwords live in [`crate::campus_card_write::CampusCardSecret`], which is
+/// zeroized on drop, and the amounts are plain fen integers.
+///
+/// The type is deliberately **not** `Debug` beyond the redacting implementation
+/// below and not `Clone`: a request that has been handed to a Client is spent,
+/// and a second copy would be exactly the kind of replay this surface exists to
+/// prevent.
+pub enum CampusCardWriteRequest {
+    ReportLoss {
+        transaction_password: CampusCardSecret,
+    },
+    CancelLoss {
+        transaction_password: CampusCardSecret,
+    },
+    ChangeTransactionPassword {
+        old_password: CampusCardSecret,
+        new_password: CampusCardSecret,
+    },
+    ModifySpendingLimit {
+        transaction_password: CampusCardSecret,
+        maxconsamt_cents: i64,
+        maxconstolamt_cents: i64,
+    },
+    TopUpFromBank {
+        amount_cents: i64,
+    },
+}
+
+impl CampusCardWriteRequest {
+    /// Validates a loss report.
+    pub fn report_loss(transaction_password: impl Into<String>) -> Result<Self, Error> {
+        Ok(Self::ReportLoss {
+            transaction_password: card_secret(transaction_password.into())?,
+        })
+    }
+
+    /// Validates the reversal of a loss report.
+    pub fn cancel_loss(transaction_password: impl Into<String>) -> Result<Self, Error> {
+        Ok(Self::CancelLoss {
+            transaction_password: card_secret(transaction_password.into())?,
+        })
+    }
+
+    /// Validates a transaction-password change.
+    pub fn change_transaction_password(
+        old_password: impl Into<String>,
+        new_password: impl Into<String>,
+    ) -> Result<Self, Error> {
+        Ok(Self::ChangeTransactionPassword {
+            old_password: card_secret(old_password.into())?,
+            new_password: card_secret(new_password.into())?,
+        })
+    }
+
+    /// Validates a spending-limit change.
+    ///
+    /// The two amounts are named after the wire fields they fill rather than
+    /// after a meaning, because the observed client's read and write halves pair
+    /// `maxconsamt` and `maxconstolamt` the opposite way round and there is no
+    /// evidence here that says which pairing is the transposed one. See
+    /// [`crate::campus_card_write::CampusCardWriteProfile::modify_limit_request`].
+    pub fn modify_spending_limit(
+        transaction_password: impl Into<String>,
+        maxconsamt_cents: i64,
+        maxconstolamt_cents: i64,
+    ) -> Result<Self, Error> {
+        let transaction_password = card_secret(transaction_password.into())?;
+        for amount in [maxconsamt_cents, maxconstolamt_cents] {
+            if !(0..=crate::campus_card_write::MAX_CARD_LIMIT_CENTS).contains(&amount) {
+                return Err(Error::new(Service::CampusCard, ErrorCode::InvalidInput));
+            }
+        }
+        Ok(Self::ModifySpendingLimit {
+            transaction_password,
+            maxconsamt_cents,
+            maxconstolamt_cents,
+        })
+    }
+
+    /// Validates a top-up from the account's own bound bank account.
+    ///
+    /// This is the one top-up form the card service carries out itself: it needs
+    /// no payment link, so nothing this module produces is a payment credential.
+    /// The card's other top-up entry answers with a payment URL and is not
+    /// implemented at all — see
+    /// [`crate::campus_card_write::CARD_QR_TOPUP_PATH`].
+    pub fn top_up_from_bank(amount_cents: i64) -> Result<Self, Error> {
+        if !(crate::campus_card_write::MIN_CARD_TOPUP_CENTS
+            ..=crate::campus_card_write::MAX_CARD_TOPUP_CENTS)
+            .contains(&amount_cents)
+        {
+            return Err(Error::new(Service::CampusCard, ErrorCode::InvalidInput));
+        }
+        Ok(Self::TopUpFromBank { amount_cents })
+    }
+
+    pub(crate) fn operation(&self) -> crate::campus_card_write::CampusCardWriteOperation {
+        use crate::campus_card_write::CampusCardWriteOperation as Operation;
+        match self {
+            Self::ReportLoss { .. } => Operation::ReportLoss,
+            Self::CancelLoss { .. } => Operation::CancelLoss,
+            Self::ChangeTransactionPassword { .. } => Operation::ChangeTransactionPassword,
+            Self::ModifySpendingLimit { .. } => Operation::ModifySpendingLimit,
+            Self::TopUpFromBank { .. } => Operation::TopUpFromBank,
+        }
+    }
+
+    /// Builds the plan for this request, consuming the request's secrets.
+    ///
+    /// The request is taken by value: a caller cannot keep a copy and ask for the
+    /// same change twice from one value.
+    pub(crate) fn into_plan(
+        self,
+    ) -> Result<
+        crate::campus_card_write::CampusCardWritePlan,
+        crate::campus_card_write::CampusCardWriteRequestError,
+    > {
+        use crate::campus_card_write::CampusCardWriteProfile;
+        let profile = CampusCardWriteProfile::new();
+        match self {
+            Self::ReportLoss {
+                transaction_password,
+            } => Ok(profile.report_loss_request(transaction_password)),
+            Self::CancelLoss {
+                transaction_password,
+            } => Ok(profile.cancel_loss_request(transaction_password)),
+            Self::ChangeTransactionPassword {
+                old_password,
+                new_password,
+            } => Ok(profile.change_password_request(old_password, new_password)),
+            Self::ModifySpendingLimit {
+                transaction_password,
+                maxconsamt_cents,
+                maxconstolamt_cents,
+            } => profile.modify_limit_request(
+                transaction_password,
+                maxconsamt_cents,
+                maxconstolamt_cents,
+            ),
+            Self::TopUpFromBank { amount_cents } => profile.bank_topup_request(amount_cents),
+        }
+    }
+}
+
+impl fmt::Debug for CampusCardWriteRequest {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Print the request shape, never a secret and never an account value.
+        match self {
+            Self::ReportLoss { .. } => formatter.write_str("CampusCardWriteRequest::ReportLoss"),
+            Self::CancelLoss { .. } => formatter.write_str("CampusCardWriteRequest::CancelLoss"),
+            Self::ChangeTransactionPassword { .. } => {
+                formatter.write_str("CampusCardWriteRequest::ChangeTransactionPassword")
+            }
+            Self::ModifySpendingLimit {
+                maxconsamt_cents,
+                maxconstolamt_cents,
+                ..
+            } => formatter
+                .debug_struct("CampusCardWriteRequest::ModifySpendingLimit")
+                .field("maxconsamt_cents", maxconsamt_cents)
+                .field("maxconstolamt_cents", maxconstolamt_cents)
+                .finish(),
+            Self::TopUpFromBank { amount_cents } => formatter
+                .debug_struct("CampusCardWriteRequest::TopUpFromBank")
+                .field("amount_cents", amount_cents)
+                .finish(),
+        }
+    }
+}
+
+fn card_secret(value: String) -> Result<CampusCardSecret, Error> {
+    CampusCardSecret::new(value)
+        .map_err(|_| Error::new(Service::CampusCard, ErrorCode::InvalidInput))
 }
 
 fn safe_optional_text(value: Option<&str>) -> bool {

@@ -42,6 +42,7 @@ use crate::{
     campus_card_adapter::{
         CAMPUS_CARD_SSO_TARGET, CampusCardAdapterConfig, CampusCardClient, CampusCardSession,
     },
+    campus_card_api::CampusCardWriteRequest,
     campus_card_read::{
         CampusCardAccountBinding, CampusCardTransactionQuery, CampusCardTransactionType,
     },
@@ -185,6 +186,9 @@ mod news_write_runtime;
 
 #[path = "runtime_library_write.rs"]
 mod library_write_runtime;
+
+#[path = "runtime_campus_card_write.rs"]
+mod campus_card_write_runtime;
 
 #[cfg(test)]
 #[path = "runtime_audit_tests.rs"]
@@ -835,6 +839,11 @@ fn card_probe_reason(error: &crate::campus_card_adapter::CampusCardAdapterError)
         Error::InvalidSessionResponse => "campus_card_probe_account_missing",
         Error::InvalidEncryptedPayload => "campus_card_encrypted_payload_format",
         Error::EncryptedServiceFailure => "campus_card_service_rejected",
+        // A write refusal can only reach this probe mapper if a probe was ever
+        // dispatched as a write, which it is not; it is mapped rather than
+        // folded into the catch-all so a future probe path cannot silently
+        // report a rejected state change as a malformed response.
+        Error::Refused => "campus_card_service_rejected",
         Error::UnexpectedOrigin | Error::UnexpectedPath | Error::UnexpectedRedirect => {
             "campus_card_probe_route"
         }
@@ -3294,6 +3303,13 @@ pub struct CampusRuntime {
     // account-bound boundary: a refused dispatch is unconfirmed rather than
     // failed, and a caller must be able to tell that from a read failure.
     last_library_failure_code: Option<&'static str>,
+    /// The card write half's outcome code.
+    ///
+    /// `record_business_failure` only names an info and a library code, so a
+    /// card state change needs its own field: without it the SDK layer could
+    /// not tell a refused write from a write whose effect is unknown, and the
+    /// two must not share an error code.
+    last_campus_card_failure_code: Option<&'static str>,
     // One reservation read at a time is what makes a cancellation selector
     // meaningful, so the selectors, their account and their age are kept
     // together exactly as the INFO subscription rules are.
@@ -3982,6 +3998,7 @@ impl CampusRuntime {
             last_course_score_failure_code: None,
             last_sports_failure_code: None,
             last_library_failure_code: None,
+            last_campus_card_failure_code: None,
             library_reservation_selectors: HashMap::new(),
             library_reservation_owner: None,
             library_reservation_at: None,
@@ -8174,6 +8191,30 @@ impl CampusRuntime {
     ) -> Result<CampusRuntimeStatusDto, String> {
         crate::telemetry::observe("library", "book_library_seat", async {
             library_write_runtime::book_seat(self, section_id, segment_id, seat_id).await
+        })
+        .await
+    }
+
+    /// Applies one campus-card state change.
+    ///
+    /// The request has already been validated by its constructor.  The change is
+    /// dispatched exactly once through the shared transport's exclusive gate,
+    /// which returns the first response without following a redirect: a card
+    /// mutation that may already have been applied is never sent twice.  A
+    /// session error is **not** followed by an automatic re-authentication and a
+    /// second send, for the same reason.
+    ///
+    /// The outcomes are reported distinctly through this Runtime's own recorded
+    /// failure codes — confirmed (the code is cleared), declined
+    /// (`card_write_refused`), unreadable (`card_write_unconfirmed`) and session
+    /// gone (`card_write_session_expired`) — so the SDK layer can map a refusal
+    /// and an unknown effect onto different public error codes.
+    pub async fn apply_campus_card_write(
+        &mut self,
+        request: CampusCardWriteRequest,
+    ) -> Result<CampusRuntimeStatusDto, String> {
+        crate::telemetry::observe("campus_card", "apply_campus_card_write", async {
+            campus_card_write_runtime::apply_card_write(self, request).await
         })
         .await
     }
@@ -18634,6 +18675,9 @@ impl CampusRuntime {
         if service == "library" {
             self.last_library_failure_code = Some(reason);
         }
+        if service == "campus_card" {
+            self.last_campus_card_failure_code = Some(reason);
+        }
         tracing::warn!(target:"tsinghua_kit::api",event="business_read_failure",service,business_stage=stage,reason);
         let message = format!("服务读取未确认（{reason}），详情见脱敏日志");
         self.last_error = Some(message.clone());
@@ -18648,6 +18692,16 @@ impl CampusRuntime {
     #[cfg_attr(feature = "ffi-bridge", frb(ignore))]
     pub(crate) fn last_info_failure_code(&self) -> Option<&'static str> {
         self.last_info_failure_code
+    }
+
+    #[cfg_attr(feature = "ffi-bridge", frb(ignore))]
+    pub(crate) fn clear_campus_card_failure_code(&mut self) {
+        self.last_campus_card_failure_code = None;
+    }
+
+    #[cfg_attr(feature = "ffi-bridge", frb(ignore))]
+    pub(crate) fn last_campus_card_failure_code(&self) -> Option<&'static str> {
+        self.last_campus_card_failure_code
     }
 
     #[cfg_attr(feature = "ffi-bridge", frb(ignore))]

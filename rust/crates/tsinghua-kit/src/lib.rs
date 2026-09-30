@@ -52,12 +52,19 @@ pub mod calendar {
     };
 }
 
-/// Read-only campus-card account and transaction access.
+/// Campus-card account and transaction access, plus the card's own state
+/// changes.
 pub mod campus_card {
     pub use crate::client::CampusCardClient;
     pub use tsinghua_kit_engine::campus_card_api::{
         CampusCardAccount, CampusCardInteraction, CampusCardPasswordRequest, CampusCardTransaction,
         CampusCardTransactionRange, CampusCardTransactionType, CampusCardTransactions,
+        CampusCardWriteRequest,
+    };
+    pub use tsinghua_kit_engine::campus_card_write::{
+        CARD_BANK_TOPUP_PATH, CARD_CANCEL_LOSS_PATH, CARD_CHANGE_PASSWORD_PATH,
+        CARD_MODIFY_LIMIT_PATH, CARD_QR_TOPUP_PATH, CARD_REPORT_LOSS_PATH, MAX_CARD_LIMIT_CENTS,
+        MAX_CARD_TOPUP_CENTS, MIN_CARD_TOPUP_CENTS,
     };
 }
 

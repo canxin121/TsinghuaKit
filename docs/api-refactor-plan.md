@@ -1268,7 +1268,7 @@ test/public_entrypoints_test.dart | 1 +
 
 **边界**
 
-本轮**未执行任何真实账号登录或学校服务请求**；本域线上可用性仍未验证，课程预设查询的真实响应形状（字段名与是否分页）只有参考实现作为证据。三个映射与主机名沿用既有 thos 域，未新增任何 selector。资金、支付、退订、挂失类动作不在本节范围内。
+本轮**未执行任何真实账号登录或学校服务请求**；本域线上可用性仍未验证，课程预设查询的真实响应形状（字段名与是否分页）只有参考实现作为证据。三个映射与主机名沿用既有 thos 域，未新增任何 selector。资金、支付、退订、挂失类动作不在**本节的只读**范围内：它们在本计划的写操作小节（§59、§63、§64、§65、§68）里单独立项，且不进入只读验收。
 
 ## 58. 2026-09-29 宿舍卫生分（卫生成绩）的封闭结论
 
@@ -1709,3 +1709,66 @@ SDK `public_api` 增补 `compile_sports_api` 编译检查与两项活动断言�
 `docs/api-surface-baseline.json` 已按本节源码与重新渲染的 Rustdoc 刷新到第九版：`source_revision` 前进到 `a51bca4`；`root_public_modules` 67 → **68**（新增 `library_room_read`）；根 `pub use` 54 → **55**；`rendered_crate_root_item_counts` struct 337 → **349**、enum 160 → **165**、fn 62 → **64**、constant 60 → **65**（`trait` / `type` 不变），与本模块 12/5/2/5 个公开项一一对应；runtime `dto_structs` 78 → **84**、`public_methods` 104 → **106**、`direct_state_field_count` 123 → **126**（新增 `library_room_adapter` / `library_room_proof` / `last_library_room_failure_code`）、`line_count` 28740 → **29129**（与 `git diff --numstat` 的 `389 0` 一致）。方法行号按源码重新锚定：本轮在 runtime 里新增的整段使既有 104 条公开方法、6 个公开自由函数与全部 DTO 声明一起下移 **133 行**（不是逐段偏移），两个新方法插在 `load_reserves_detail_result` 之后。
 
 **未验证**：本域的线上可用性**未验证**，需要另行真实只读验收——本轮**未对任何真实账号发起任何请求**，也未尝试预约、取消或联系方式修改（这些路由在本模块里**根本不存在**）。在此之前不得用 fixture 或空结果冒充线上证据。
+
+## 68. 2026-09-30 校园卡自身的状态变更（一次性写：挂失/解挂、交易密码、限额、圈存）
+
+计划阶段 2 的校园卡条目。五条路由全部落在既有的 `card.tsinghua.edu.cn` 上，全部 `POST` + `Content-Type: application/json`，**没有任何 CSRF 字段**（服务只认会话 Cookie）。它们与既有的只读半（账户 / 流水）共用同一个 `CampusCardClient` 和同一份 card SSO 会话，因此**未新增 selector、未新增映射、未新增 `ServiceId`、未新增认证方式**：`Service::CampusCard` 早已存在，本轮只是第一次用到它的写半。
+
+**路由与线格式（全部来自参考实现的观测值）**
+
+| 操作 | 路由 | 体字段 |
+| --- | --- | --- |
+| 挂失 | `POST /business/cardReportLoss` | `idserial`, `txpasswd` |
+| 解挂 | `POST /business/solutionHang` | `idserial`, `txpasswd` |
+| 交易密码修改 | `POST /business/modifyPwdByPhoneVerify` | `idserial`, `oldpassword`, `txpassword`, `authOldPwd: true` |
+| 限额修改 | `POST /business/modifyCardMaxConsamt` | `maxconsamt`, `maxconstolamt`, `txpassword`, `cardid` |
+| 圈存充值 | `POST /business/moblieRecharge` | `idserial`, `txamt`（分） |
+
+注意三条与直觉相反、因此必须在代码里写死的观测结果：`txpasswd` 的拼写就是 `txpasswd`（不是 `txpassword`）；交易密码修改的路由名里带 `PhoneVerify`，但**参考实现一个验证码都没发**（`authOldPwd: true` 表示用旧密码自证）；圈存的观测实现接受一个 `transactionPassword` 参数，但**它从不进入请求体**——这是个死参数，本模块因此也只有一个入参。
+
+**两个限额字段保留线名，不猜含义**
+
+参考实现的读半与写半对 `maxconsamt` / `maxconstolamt` 的配对是**相反的**：参考写半把参数的"日限额"填进 `maxconsamt`、"单次限额"填进 `maxconstolamt`，而引擎自己的读解析器（`campus_card_read.rs`）把 `maxconstolamt` 读作日限额、`maxconsamt` 读作单次限额。两半不可能同时对，且没有第三份证据能判定谁被转置了。因此本模块的 API **直接以线字段命名参数**（`maxconsamt_cents` / `maxconstolamt_cents`），在文档里写明两半分歧，并**拒绝**给它们安上"日"/"单次"的含义。测试 `the_limit_plan_sends_the_wire_fields_in_the_observed_pairing` 把这一对钉死。
+
+**支付码那一条：记录为常量，但不成为操作**
+
+校园卡**没有**"支付码"字段。参考实现的另一个充值入口 `POST /wx/rechard/qrcode` 返回 `bizContent.webUrl`，是一个一次性支付链接；而它还被一个**版本探针**挡在前面（`app.cs.tsinghua.edu.cn/api/CardIVersion`，版本 ≤ 2 才走），那个后端属于 App 专属域，本仓库刻意不实现。于是 `CARD_QR_TOPUP_PATH` 只作为**文档常量**保留，**没有任何操作**的 `path()` 能等于它，测试 `the_qr_topup_route_is_recorded_but_is_not_an_operation` 断言这一点。这也是"本层不存在任何能产出支付码的调用"的结构性保证，而不是一句注释。
+
+**密码不出模块**
+
+`CampusCardSecret` 包着 `Zeroizing<String>`：构造时拒绝空/纯空白/超长（> `MAX_CARD_SECRET_CHARS = 64`）/含控制字符，**不做 trim**（trim 会把一个不同的密码悄悄变成一个正确的密码）；`Debug` 只打印 `chars: N`；`Drop` 显式 `zeroize()`；`expose()` 是 `pub(crate)`。限额计划里的 `Debug` 只打印线字段名与 `has_relative_path`。因此密码既不可能出现在日志里，也不可能出现在 DTO、错误或 FFI 边界上。
+
+**"恰好发一次" 的三层落点**
+
+1. **适配器层**：`execute_write` 经 `transport.execute_once_exclusive(...)` **显式取整个 gate、不跟随重定向**——一次重定向就是一次"结果已不确定的写"的重放。传输失败被归类为 `Unrecognized`，**错误文本被丢弃**（reqwest 的失败信息可能带上请求 URL，而这次请求的体里装着密码）。
+2. **分类层**：`Accepted` 是唯一成功；`Refused`（服务自己的失败包，包括 AES 加密的失败回退）是**确定的拒绝**，映射到 SDK 的 `AuthenticationRejected`（"什么都没变，输入不对"），与 `OutcomeUnconfirmed`（"已经发出去了，效果未知，去看卡的状态"）是**不同的码**，调用方不需要读任何文案就能区分。`LoginRequired`（401/403、登录重定向、`classify_page` 认出的登录/超时页、体里的会话标记）作废 card 会话并记 `card_write_session_expired`。其余（重定向状态、非 2xx、路径不符、越界重定向、空体、超限、非 JSON）一律 `Unrecognized`。
+3. **绝不自动重认证后重发**：这是校园卡写与图书馆座位预约**读**的刻意差别。一次已经发出的状态变更，其回答丢失后再发一次就是重放；本模块因此在这个分支上**只报错不重试**。
+
+**卡号由 Rust 自己读，绝不是参数**
+
+限额路由还需要 `cardid`。它不是任何一层的参数：`read_card_id` 用已证明的 card 会话重读一次账户，并且**用 `parse_card_account_response(..., Some(&session_account))` 把整份账户响应按会话账号重新验一遍**，只有账号一致才取第一张卡的 `cardid`。测试 `card_write_refuses_a_response_for_another_account` 断言返回 `AccountMismatch` 且**一个写请求都没发**。
+
+**本地边界与它们的来源**
+
+- `MIN_CARD_TOPUP_CENTS = 1_000` / `MAX_CARD_TOPUP_CENTS = 20_000`：来自参考实现自己的输入校验（金额至多两位小数、10..200 元），是按调用方的规则而不是服务端规则，本模块照样执行，免得一次转账发出没人会发的金额。
+- `MAX_CARD_LIMIT_CENTS = 100_000_000`：**本模块自己的**上界。服务端上界没有观测到（读半只报当前限额，不给范围），存在只是为了挡住手滑。
+- 三者都在**任何请求存在之前**生效（`InvalidAmount` ⇒ SDK `invalid_input`），因此被拒的参数不花掉任何一次 dispatch。
+
+**SDK / FFI / Dart**
+
+- 引擎：新增 `campus_card_write`（10 常量 / 1 struct / 6 enum / 1 fn，11 项单元测试）；`campus_card_read` 新增 `first_card_id`；`campus_card_adapter` 新增 `Refused` 变体、`read_card_id`、`execute_write`、`classify_card_write` 与 6 项 loopback 测试；`api/runtime_campus_card_write.rs` 新增 `ensure_campus_card_write_session`（证明 Identity + CampusCard 两门服务证明、registry 用户相等、且卡的 cookie jar 与身份 transport **是同一个 Arc**）/ `finish_card_write` / `apply_card_write`；runtime 新增 `apply_campus_card_write`、`last_campus_card_failure_code` 字段与两个访问器。
+- SDK：`CampusCardClient::apply_write(&CampusCardWriteRequest)`，`campus_card` 模块 re-export `CampusCardWriteRequest` 与六个路径/边界常量；`public_api.rs` 新增 `compile_campus_card_write_api` 编译检查。
+- FFI：`ClientHandle` 新增 `campus_card_report_loss` / `campus_card_cancel_loss` / `campus_card_change_transaction_password` / `campus_card_modify_spending_limit` / `campus_card_top_up_from_bank`；FRB 2.13.0 重新生成，生成物未手工编辑。
+- Dart：`lib/src/campus_card.dart` 新增五个方法与 `minTopUpCents` / `maxTopUpCents` / `maxLimitCents`；新增 `lib/src/int64.dart` 提供 `platformInt64FromBigInt`（桥接的 `i64` 在 native 上是 `int`、在 web 上是 `BigInt`，这个转换对超出 64 位的值**抛错而不是截断**）；`lib/campus_card.dart` 入口描述从"只读"改为"账户与流水访问，外加卡自身的状态变更"。
+
+**验证**
+
+引擎定向（loopback fixture，无任何真实账号 / Cookie / 卡号）：`cargo test -p tsinghua_kit_engine --lib campus_card` **61 项通过 / 0 失败**，其中本轮新增 17 项（11 项模块单元测试 + 6 项 loopback）：密码类值的拒绝与脱敏、计划 `Debug` 只印线名与 `has_relative_path`、五条路由都不带查询、QR 路由永不成为操作、限额字段的线配对、挂失/解挂用 `txpasswd` 而改密用 `authOldPwd`、圈存体不带密码、越界金额在计划之前被拒、只有服务自己的错误令牌算拒绝、显式失败标记可识别；loopback 侧覆盖"恰好发一次且只发那一条路由"、"拒绝是确定的而传输失败不是"、"不可读答复判为未确认且不重发"、"会话消失时报告而不是重试"、"另一个账号的响应被拒且零写请求"（内联形状的 `Debug` 里没有密码、也没有服务文案）。桥接层 `cargo test -p tsinghua_kit_ffi --lib` **53 项通过**，本轮新增 2 项（7 种非法输入在**任何会话存在之前**被判 `invalid_input`；一个形状合法的圈存在**没有会话**时报 `session_required` 而不是 `outcome_unconfirmed`）。SDK `cargo test -p tsinghua_kit`（含 `public_api` 22 项、`client_api` 12 项）全部通过。`cargo check --workspace --all-targets` 退出 0；`cargo fmt --all -- --check` 干净；`git diff --check` 干净；`flutter analyze lib test` 无问题；`flutter test test/public_entrypoints_test.dart` 通过并覆盖 `CampusCardClient` / 三个本地常量 / 空的卡号引用语义。
+
+**同过滤器下的既有失败**：`library` 过滤器仍为既有的 4 项失败，`tsinghua_kit_ffi` 的 `classroom_contract` 集成测试 3 项 `MissingDateHeaders` 失败，均为 HEAD 既有、与本轮无关（见 §64 与 §67 的归因），本轮**未修**。整套 `--lib` 引擎运行仍会因既有的栈溢出中断（`backend_repair_learn_fresh_announcement_cache_skips_live_handoff`），因此判据是**定向**测试。
+
+**baseline**
+
+`docs/api-surface-baseline.json` 已按本节源码与重新渲染的 Rustdoc 刷新到第十版：`source_revision` 前进到 `48c81ef`（`library_room` 那一次的提交 48c81ef 之后，本轮改动尚未提交）；`root_public_modules` 68 → **69**（新增 `campus_card_write`）；根 `pub use` 55 → **56**；`rendered_crate_root_item_counts` struct 349 → **352**、enum 165 → **171**、fn 64（不变）、constant 65 → **75**（十四个新公开项在 crate 根渲染出 3 struct / 6 enum / 10 constant），`trait` / `type` 不变；runtime `public_methods` 106 → **107**，`direct_state_field_count` 126（本轮之前的实测值即为 126，新增一个字段，因此该记录项在 `library_room` 那次已经计过；本版按当前源码**逐条重新锚定全部 107 条方法的行号**，因为 `apply_campus_card_write` 的插入使其后所有方法下移），`line_count` 29129 → **29183**；runtime `dto_structs` 84（本轮无新 DTO）。
+
+**未验证**：五条路由的线上可用性**未验证**，需要另行真实只读验收；本轮**未对任何真实账号发起任何请求**，也未挂失、解挂、改密、改限额或转账。按 §59 起的约定，这些写操作**一律不进入只读验收**，只在其结果上做"是否未确认"的判定。在此之前不得用 fixture 或空结果冒充线上证据。

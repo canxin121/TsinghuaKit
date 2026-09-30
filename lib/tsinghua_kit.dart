@@ -14,6 +14,7 @@ import 'src/second_factor_method.dart'
         secondFactorMethodFromServer,
         secondFactorMethodToBridge;
 import 'src/rust/sdk_api.dart' as native;
+import 'src/int64.dart' show platformInt64FromBigInt;
 
 export 'src/second_factor_method.dart' show SecondFactorMethod;
 part 'src/read.dart';

@@ -127,6 +127,24 @@ void main() {
     );
     expect(classrooms.ClassroomSlotStatus.unknown.name, 'unknown');
     expect(campus_card.CampusCardTransactionType.any.name, 'any');
+    expect(_publicType<campus_card.CampusCardClient>(), isNull);
+    expect(_publicType<campus_card.CampusCardAccount>(), isNull);
+    expect(_publicType<campus_card.CampusCardTransaction>(), isNull);
+    expect(_publicType<campus_card.CampusCardTransactions>(), isNull);
+    expect(
+      campus_card.CampusCardInteraction.passwordRequired.name,
+      'passwordRequired',
+    );
+    // The card's own state changes are on the same curated client as its reads,
+    // and their local bounds are the service's observed input rule, not a
+    // guessed service limit: a top-up outside 10..200 yuan is refused before a
+    // request exists.
+    expect(campus_card.CampusCardClient.minTopUpCents, BigInt.from(1000));
+    expect(campus_card.CampusCardClient.maxTopUpCents, BigInt.from(20000));
+    expect(
+      campus_card.CampusCardClient.maxLimitCents,
+      BigInt.from(100000000),
+    );
     expect(_publicType<self_service.SelfServiceClient>(), isNull);
     expect(_publicType<auth.SelfServiceAuthClient>(), isNull);
     expect(_publicType<electricity.ElectricityClient>(), isNull);

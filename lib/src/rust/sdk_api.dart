@@ -87,15 +87,76 @@ abstract class ClientHandle implements RustOpaqueInterface {
   /// Reads the current campus-card account through the shared Runtime.
   Future<CampusCardAccountResultDto> campusCardAccount();
 
+  /// Reverses a loss report, making the card spendable again.
+  ///
+  /// This is the one card change whose success makes a blocked card usable
+  /// again, so it is built from nothing but the caller's own transaction
+  /// password: there is no cached "this card is blocked" state a caller could
+  /// rely on.  It obeys the same single-dispatch rule as
+  /// [`Self::campus_card_report_loss`].
+  Future<void> campusCardCancelLoss({required String transactionPassword});
+
   /// Cancels the pending card password prompt without sending a request.
   Future<bool> campusCardCancelPasswordChallenge();
+
+  /// Replaces the card's transaction password.
+  ///
+  /// Both secrets are zeroized after the one request; neither is stored or
+  /// logged.  The same single-dispatch rule applies: an unconfirmed outcome is
+  /// never re-sent, and a new password that may already be in effect is not
+  /// the old one, so a caller must not retry this with the old value.
+  Future<void> campusCardChangeTransactionPassword(
+      {required String oldPassword, required String newPassword});
+
+  /// Changes the card's two spending limits, in fen.
+  ///
+  /// The two parameters are named after the wire fields they fill, not after a
+  /// meaning.  The card service's own client pairs `maxconsamt` and
+  /// `maxconstolamt` the opposite way round in its read and write halves and
+  /// there is no evidence available here that says which pairing was
+  /// transposed, so this surface refuses to guess: a caller sets the two
+  /// fields deliberately.  Both are bounded before any request exists.
+  Future<void> campusCardModifySpendingLimit(
+      {required String transactionPassword,
+      required PlatformInt64 maxconsamtCents,
+      required PlatformInt64 maxconstolamtCents});
 
   /// Returns a one-shot campus-card interaction requested by a prior read.
   Future<CampusCardInteractionDto?> campusCardPendingInteraction();
 
+  /// Reports the card lost, so the card service blocks it.
+  ///
+  /// The card's own transaction password is required by the service for this.
+  /// It is the card service's secret, not the account password and not the
+  /// card-SSO password [`Self::campus_card_submit_password`] carries; Rust
+  /// keeps it in a zeroizing wrapper, logs it nowhere, and drops it after the
+  /// one request it belongs to.
+  ///
+  /// The change is dispatched **exactly once**, on this Client's existing
+  /// card session.  An answer reported as `outcome_unconfirmed` was sent but
+  /// its effect is unknown: it is **not** sent again by this call or by any
+  /// retry, and this call does not re-authenticate and resend.  Read
+  /// [`Self::campus_card_account`] to learn the card's state instead.
+  /// `authentication_rejected` is the service's own refusal, so nothing was
+  /// applied and the input was wrong.
+  Future<void> campusCardReportLoss({required String transactionPassword});
+
   /// Submits the target-specific campus-card password requested by the
   /// current Client. Rust consumes and zeroizes the one-shot input.
   Future<void> campusCardSubmitPassword({required String password});
+
+  /// Moves money from the card's own bound bank account onto the card, in fen.
+  ///
+  /// This is the one top-up form the card service carries out itself: it needs
+  /// no payment link and no pay code, so nothing it returns is a payment
+  /// credential.  The card's other top-up entry answers with a payment URL and
+  /// is not implemented at all at any layer, so there is no call here that
+  /// could produce a pay code.
+  ///
+  /// The amount is bounded before any request exists.  The same
+  /// single-dispatch rule applies: a transfer reported as unconfirmed is never
+  /// sent again, because a second send may move the money twice.
+  Future<void> campusCardTopUpFromBank({required PlatformInt64 amountCents});
 
   /// Reads a complete transaction range of at most 31 campus days.
   Future<CampusCardTransactionsResultDto> campusCardTransactions(
