@@ -226,7 +226,7 @@ async fn backend_repair_thos_handoff_uses_reference_selector_and_proves_target_b
         Reply {
             status: 401,
             headers: String::new(),
-            body: String::new(),
+            body: Vec::new(),
         },
         Reply::html("XSRF-TOKEN=fixture-csrf;"),
         Reply::json(
@@ -238,7 +238,7 @@ async fn backend_repair_thos_handoff_uses_reference_selector_and_proves_target_b
                 "Location: /https/{}/fp/view?m=fp\r\nSet-Cookie: thos_fixture=proved; Path=/\r\n",
                 crate::thos::MAPPING
             ),
-            body: String::new(),
+            body: Vec::new(),
         },
         Reply::html("<html>service hall</html>"),
     ];
@@ -268,7 +268,7 @@ async fn backend_repair_thos_read_redirect_to_fixed_home_uses_one_pinned_handoff
                 "Location: /https/{}/fp/view?m=fp#act=fp/formHome\r\n",
                 crate::thos::MAPPING
             ),
-            body: String::new(),
+            body: Vec::new(),
         },
         Reply::html("XSRF-TOKEN=fixture-csrf;"),
         Reply::json(
@@ -280,7 +280,7 @@ async fn backend_repair_thos_read_redirect_to_fixed_home_uses_one_pinned_handoff
                 "Location: /https/{}/fp/view?m=fp\r\nSet-Cookie: thos_fixture=proved; Path=/\r\n",
                 crate::thos::MAPPING
             ),
-            body: String::new(),
+            body: Vec::new(),
         },
         Reply::html("<html>service hall</html>"),
     ];
@@ -316,7 +316,7 @@ async fn backend_repair_thos_gateway_home_redirect_renews_only_target_session() 
         Reply {
             status: 302,
             headers: "Location: /\r\n".into(),
-            body: String::new(),
+            body: Vec::new(),
         },
         Reply::html("XSRF-TOKEN=fixture-csrf;"),
         Reply::json(
@@ -328,7 +328,7 @@ async fn backend_repair_thos_gateway_home_redirect_renews_only_target_session() 
                 "Location: /https/{}/fp/view?m=fp\r\nSet-Cookie: thos_fixture=proved; Path=/\r\n",
                 crate::thos::MAPPING
             ),
-            body: String::new(),
+            body: Vec::new(),
         },
         Reply::html("<html>service hall</html>"),
     ];
@@ -369,7 +369,7 @@ async fn backend_repair_thos_dynamic_identity_form_redirect_uses_pinned_handoff(
             headers: format!(
                 "Location: /https/{IDENTITY_MAPPING}/do/off/ui/auth/login/form/0123456789abcdef0123456789abcdef/0\r\n"
             ),
-            body: String::new(),
+            body: Vec::new(),
         },
         Reply::html("XSRF-TOKEN=fixture-csrf;"),
         Reply::json(
@@ -381,7 +381,7 @@ async fn backend_repair_thos_dynamic_identity_form_redirect_uses_pinned_handoff(
                 "Location: /https/{}/fp/view?m=fp\r\nSet-Cookie: thos_fixture=proved; Path=/\r\n",
                 crate::thos::MAPPING
             ),
-            body: String::new(),
+            body: Vec::new(),
         },
         Reply::html("<html>service hall</html>"),
     ];
@@ -416,7 +416,7 @@ async fn backend_repair_thos_untrusted_read_redirects_never_start_handoff() {
         let server = FixtureServer::new(vec![Reply {
             status: 302,
             headers: format!("Location: {location}\r\n"),
-            body: String::new(),
+            body: Vec::new(),
         }]);
         let base = unique_cache_base("thos-read-redirect-reject");
         let mut runtime = thos_fixture_runtime(&base, &server);
@@ -473,14 +473,14 @@ async fn backend_repair_thos_failed_handoff_is_not_replayed_by_another_read() {
     let expired = || Reply {
         status: 401,
         headers: String::new(),
-        body: String::new(),
+        body: Vec::new(),
     };
     let server = FixtureServer::new(vec![
         expired(),
         Reply {
             status: 503,
             headers: String::new(),
-            body: String::new(),
+            body: Vec::new(),
         },
         expired(),
     ]);

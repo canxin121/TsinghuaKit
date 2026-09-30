@@ -295,7 +295,7 @@ async fn a_cross_origin_redirect_is_refused_before_any_parse() {
     let server = FixtureServer::new(vec![Reply {
         status: 302,
         headers: "Location: https://example.invalid/steal\r\n".into(),
-        body: String::new(),
+        body: Vec::new(),
     }]);
     let base = Url::parse(server.base()).unwrap();
     let transport = CampusHttpTransport::with_timeout("THYou/test", Duration::from_secs(5))

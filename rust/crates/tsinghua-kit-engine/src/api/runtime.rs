@@ -197,6 +197,9 @@ mod campus_card_write_runtime;
 #[path = "runtime_dorm_password_write.rs"]
 mod dorm_password_write_runtime;
 
+#[path = "runtime_sports_write.rs"]
+mod sports_write_runtime;
+
 #[cfg(test)]
 #[path = "runtime_audit_tests.rs"]
 mod api_audit_tests;
@@ -1370,6 +1373,25 @@ pub struct LibraryDaySegmentsResultDto {
 struct ConfirmedLibrarySeat {
     is_available: bool,
     area_type: i64,
+}
+
+/// One free slot of a venue's live slot list, reduced to the facts a booking is
+/// built from.
+///
+/// It is produced only by this Runtime's own slot read, so the venue's own
+/// booking hash, the venue and item identifiers, and the date a booking carries
+/// are never a caller's.  A caller names a slot by the opaque selector this
+/// Runtime minted for that read, and everything else the order body needs comes
+/// from here.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ConfirmedSportsSlot {
+    /// The slot's booking hash, valid for one order.
+    res_hash: String,
+    /// The venue's own cost token, verbatim as the read reported it.
+    cost: Option<String>,
+    gym_id: String,
+    item_id: String,
+    date: String,
 }
 
 /// The account's own reservation list.
@@ -3330,6 +3352,22 @@ pub struct CampusRuntime {
     library_reservation_selectors: HashMap<String, String>,
     library_reservation_owner: Option<String>,
     library_reservation_at: Option<std::time::Instant>,
+    // The venue read is what makes a slot and a reservation selector
+    // meaningful: the venue's own booking hash and booking identifier never
+    // leave this Runtime, so a write names a row this Runtime returned and
+    // nothing else.  The selectors, their account and their age are kept
+    // together exactly as the library reservation rules are.
+    sports_slot_selectors: HashMap<String, ConfirmedSportsSlot>,
+    sports_slot_owner: Option<String>,
+    sports_slot_at: Option<std::time::Instant>,
+    sports_reservation_selectors: HashMap<String, String>,
+    sports_reservation_owner: Option<String>,
+    sports_reservation_at: Option<std::time::Instant>,
+    // The contact number the venue itself reported for this account, kept only
+    // as long as it describes the venue read that produced it.  It is the only
+    // number a booking may carry, so a caller cannot make the venue call a
+    // third party.
+    sports_confirmed_phone: Option<String>,
     // The WebVPN/OAuth/Identity origin graph is part of the Rust runtime's
     // authenticated transport boundary. Production uses the current THU
     // deployment; loopback fixtures may inject a fully validated graph so
@@ -3345,8 +3383,40 @@ fn selected_info_subscription_rule<'a>(
     username: &str,
     selector: &str,
 ) -> Option<&'a str> {
-    (owner == Some(username) && at.is_some_and(|at| at.elapsed() < Duration::from_secs(300)))
+    subscription_rule_is_live(owner, at, username)
         .then(|| selectors.get(selector).map(String::as_str))
+        .flatten()
+}
+
+/// Whether a selector one of this Runtime's own reads minted may still be used.
+///
+/// Two things make a selector dead: it was minted for a different account, or
+/// the read that minted it has aged out.  Both are checked here rather than at
+/// each call site so every selector family — the news subscriptions, the
+/// library's seats and reservations, and the venue's slots and reservations —
+/// answers the question the same way.
+fn subscription_rule_is_live(
+    owner: Option<&str>,
+    at: Option<std::time::Instant>,
+    username: &str,
+) -> bool {
+    owner == Some(username) && at.is_some_and(|at| at.elapsed() < Duration::from_secs(300))
+}
+
+/// Looks up a selector whose row carries more than the identifier.
+///
+/// The venue's slots are the one family whose value is a record rather than a
+/// string, because an order body needs several facts from the same row.  The
+/// owner and age rules are shared with the string-valued families.
+fn selected_confirmed_slot<'a>(
+    owner: Option<&str>,
+    at: Option<std::time::Instant>,
+    selectors: &'a HashMap<String, ConfirmedSportsSlot>,
+    username: &str,
+    selector: &str,
+) -> Option<&'a ConfirmedSportsSlot> {
+    subscription_rule_is_live(owner, at, username)
+        .then(|| selectors.get(selector))
         .flatten()
 }
 
@@ -4017,6 +4087,13 @@ impl CampusRuntime {
             library_reservation_selectors: HashMap::new(),
             library_reservation_owner: None,
             library_reservation_at: None,
+            sports_slot_selectors: HashMap::new(),
+            sports_slot_owner: None,
+            sports_slot_at: None,
+            sports_reservation_selectors: HashMap::new(),
+            sports_reservation_owner: None,
+            sports_reservation_at: None,
+            sports_confirmed_phone: None,
             webvpn_identity_config,
         };
 
@@ -8288,6 +8365,65 @@ impl CampusRuntime {
     ) -> Result<CampusRuntimeStatusDto, String> {
         crate::telemetry::observe("library", "set_library_socket_state", async {
             library_write_runtime::set_socket_state(self, section_id, seat_id, is_available).await
+        })
+        .await
+    }
+
+    /// Reads the venue's own image challenge for the booking form.
+    ///
+    /// The image is an ordinary read on the already-proved venue session, so it
+    /// may be repeated: a person whose first image was unreadable asks for
+    /// another.  The captcha a booking carries is always that person's
+    /// transcription of one of these images — this Runtime never invents,
+    /// guesses, re-reads or retries one.
+    pub async fn load_sports_captcha(
+        &mut self,
+    ) -> Result<crate::sports_write::SportsCaptcha, String> {
+        crate::telemetry::observe("sports", "load_sports_captcha", async {
+            sports_write_runtime::load_sports_captcha(self).await
+        })
+        .await
+    }
+
+    /// Books one slot of a venue whose slot list this Runtime already read.
+    ///
+    /// The slot is named by the opaque selector [`Self::load_sports_resources_result`]
+    /// minted for the same account, so the venue's own booking hash, the venue
+    /// and item identifiers, the date and the cost all come from that same read
+    /// and are never a caller's.  The contact number is the one the venue itself
+    /// reported for this account, so a caller cannot make the venue contact a
+    /// third party.
+    ///
+    /// The order is dispatched exactly once through the exclusive gate and is
+    /// never re-authenticated and re-sent: an order whose answer was lost may
+    /// already be in effect, so the caller is told the outcome is unconfirmed
+    /// (`sports_write_unconfirmed`) rather than having it replayed.  A refusal
+    /// the venue itself worded (`sports_write_refused`) is a definite "nothing
+    /// was booked".
+    pub async fn book_sports_slot(
+        &mut self,
+        selector: String,
+        captcha: String,
+    ) -> Result<CampusRuntimeStatusDto, String> {
+        crate::telemetry::observe("sports", "book_sports_slot", async {
+            sports_write_runtime::book_slot(self, selector, captcha).await
+        })
+        .await
+    }
+
+    /// Withdraws one reservation selected from this Runtime's latest reservation
+    /// read.
+    ///
+    /// The caller names only a selector this Runtime minted for the same
+    /// account; the venue's own booking identifier never leaves this Runtime.
+    /// The withdrawal is dispatched exactly once, and an unconfirmed outcome is
+    /// never replayed.
+    pub async fn cancel_sports_reservation(
+        &mut self,
+        selector: String,
+    ) -> Result<CampusRuntimeStatusDto, String> {
+        crate::telemetry::observe("sports", "cancel_sports_reservation", async {
+            sports_write_runtime::cancel_reservation(self, selector).await
         })
         .await
     }
@@ -16388,11 +16524,18 @@ impl CampusRuntime {
                     if !self.sports_service_is_proven() {
                         return self.fail("体育场馆服务会话证明未确认，请重新建立服务会话");
                     }
+                    let mut resources = read.value;
                     self.last_error = None;
                     self.last_sports_failure_code = None;
                     self.persist_resume_state_after_live_read(&user, "sports");
+                    // The slot list is what makes a booking possible, so the
+                    // rows this read returned are reduced to the facts an order
+                    // body needs and kept under opaque selectors.  A caller
+                    // therefore names a slot by a handle from this read, and the
+                    // venue's own booking hash never itself crosses the bridge.
+                    self.confirm_sports_slots(&mut resources, &user);
                     Ok(SportsResourcesResultDto {
-                        resources: read.value,
+                        resources,
                         generated_at: Utc::now().to_rfc3339(),
                         source: "live".to_owned(),
                         status: "ready".to_owned(),
@@ -16447,11 +16590,18 @@ impl CampusRuntime {
                     if !self.sports_service_is_proven() {
                         return self.fail("体育场馆服务会话证明未确认，请重新建立服务会话");
                     }
+                    let mut records = read.value;
                     self.last_error = None;
                     self.last_sports_failure_code = None;
                     self.persist_resume_state_after_live_read(&user, "sports");
+                    // The rows this read returned are reduced to the facts a
+                    // withdrawal needs and kept under opaque selectors, so a
+                    // caller names a reservation by a handle from this read and
+                    // the venue's own booking identifier never crosses the
+                    // bridge.
+                    self.confirm_sports_reservations(&mut records, &user);
                     Ok(SportsRecordsResultDto {
-                        records: read.value,
+                        records,
                         generated_at: Utc::now().to_rfc3339(),
                         source: "live".to_owned(),
                         status: "ready".to_owned(),
@@ -18313,6 +18463,79 @@ impl CampusRuntime {
     fn invalidate_sports_session(&mut self) {
         self.sports_adapter = None;
         self.sports_proof = None;
+        // Dropping the adapter also drops everything the last venue read minted,
+        // so a selector handed out earlier stops resolving instead of addressing
+        // a slot or a reservation in a session that no longer exists.
+        self.sports_slot_selectors.clear();
+        self.sports_slot_owner = None;
+        self.sports_slot_at = None;
+        self.sports_reservation_selectors.clear();
+        self.sports_reservation_owner = None;
+        self.sports_reservation_at = None;
+        self.sports_confirmed_phone = None;
+    }
+
+    /// Retains the slots of the venue read that just succeeded.
+    ///
+    /// Only slots the service itself offers for online booking, and only ones
+    /// that came with a booking hash, become bookable: a slot without a hash
+    /// cannot be ordered, so handing out a selector for it would only produce a
+    /// refusal later.  Everything the order body needs is copied here from the
+    /// same read, so the venue's own booking hash reaches exactly one request
+    /// body and never a caller, a DTO or a log line.  The phone number is the
+    /// venue's own report of the account's configured number; `None` means the
+    /// service answered that there is none, and a caller must not be able to
+    /// substitute one of its own.
+    fn confirm_sports_slots(&mut self, resources: &mut SportsResources, user: &UserIdentity) {
+        let mut selectors = HashMap::new();
+        for slot in resources.data.iter_mut() {
+            if !slot.can_net_book || slot.res_hash.is_empty() {
+                slot.selector = None;
+                continue;
+            }
+            let selector = Uuid::new_v4().simple().to_string();
+            selectors.insert(
+                selector.clone(),
+                ConfirmedSportsSlot {
+                    res_hash: slot.res_hash.clone(),
+                    cost: slot.cost.clone(),
+                    gym_id: slot.gym_id.clone(),
+                    item_id: slot.item_id.clone(),
+                    date: slot.date.clone(),
+                },
+            );
+            slot.selector = Some(selector);
+        }
+        self.sports_slot_selectors = selectors;
+        self.sports_slot_owner = Some(user.username.clone());
+        self.sports_slot_at = Some(std::time::Instant::now());
+        self.sports_confirmed_phone = resources.phone.clone();
+    }
+
+    /// Retains the reservation rows of the read that just succeeded, and stamps
+    /// each cancellable row with the selector that names it back.
+    ///
+    /// Only rows the service itself offered a withdrawal for carry a selector:
+    /// a row without a booking identifier cannot be withdrawn, and the absence
+    /// of a selector is the service's own statement about that row rather than a
+    /// missing row.  The service's identifier stays here; a caller names the
+    /// selector this Runtime minted for the same account and this same read.
+    fn confirm_sports_reservations(
+        &mut self,
+        records: &mut [SportsReservationRecord],
+        user: &UserIdentity,
+    ) {
+        let mut selectors = HashMap::new();
+        for record in records.iter_mut() {
+            record.selector = record.book_id.as_ref().map(|book_id| {
+                let selector = Uuid::new_v4().simple().to_string();
+                selectors.insert(selector.clone(), book_id.clone());
+                selector
+            });
+        }
+        self.sports_reservation_selectors = selectors;
+        self.sports_reservation_owner = Some(user.username.clone());
+        self.sports_reservation_at = Some(std::time::Instant::now());
     }
 
     fn invalidate_reserves_session(&mut self) {
@@ -18814,6 +19037,15 @@ impl CampusRuntime {
     /// The sports venue's own failure code from the last read.
     pub(crate) fn last_sports_failure_code(&self) -> Option<&'static str> {
         self.last_sports_failure_code
+    }
+
+    /// Clears the venue's recorded failure code.
+    ///
+    /// A caller about to attempt a venue state change clears what the *last*
+    /// read recorded, so a failure it then observes came from its own request
+    /// rather than from an earlier read that happened to leave a code behind.
+    pub(crate) fn clear_sports_failure_code(&mut self) {
+        self.last_sports_failure_code = None;
     }
 
     /// The course-reserve catalogue's own failure code from the last read.
@@ -23186,7 +23418,7 @@ mod tests {
                     "Location: {}do/off/ui/auth/login/form/{PORTAL_ID_APP_ID}\r\n",
                     identity.base()
                 ),
-                body: String::new(),
+                body: Vec::new(),
             },
         ]);
         let oauth = FixtureServer::new(vec![]);
@@ -23963,12 +24195,12 @@ mod tests {
             Reply {
                 status: 401,
                 headers: String::new(),
-                body: String::new(),
+                body: Vec::new(),
             },
             Reply {
                 status: 401,
                 headers: String::new(),
-                body: String::new(),
+                body: Vec::new(),
             },
         ]);
         let base = unique_cache_base("overview-expiry-stale");
@@ -24065,12 +24297,12 @@ mod tests {
             Reply {
                 status: 503,
                 headers: String::new(),
-                body: String::new(),
+                body: Vec::new(),
             },
             Reply {
                 status: 503,
                 headers: String::new(),
-                body: String::new(),
+                body: Vec::new(),
             },
         ]);
         let mut runtime = CampusRuntime::new(
@@ -25268,7 +25500,7 @@ mod tests {
                     "Location: {}do/off/ui/auth/login/form/{PORTAL_ID_APP_ID}\r\n",
                     identity.base()
                 ),
-                body: String::new(),
+                body: Vec::new(),
             },
         ]);
         let oauth = FixtureServer::new(vec![]);
@@ -27644,7 +27876,7 @@ mod tests {
         let server = FixtureServer::new(vec![Reply {
             status: 503,
             headers: String::new(),
-            body: String::new(),
+            body: Vec::new(),
         }]);
         let base = unique_cache_base("learn-announcement-failure");
         let user = test_user("fixture-user");
@@ -27746,7 +27978,7 @@ mod tests {
         let server = FixtureServer::new(vec![Reply {
             status: 503,
             headers: String::new(),
-            body: String::new(),
+            body: Vec::new(),
         }]);
         let base = unique_cache_base("learn-stale");
         let user = test_user("2026000000");
@@ -27790,7 +28022,7 @@ mod tests {
         let server = FixtureServer::new(vec![Reply {
             status: 503,
             headers: String::new(),
-            body: String::new(),
+            body: Vec::new(),
         }]);
         let base = unique_cache_base("learn-course-too-old");
         let user = test_user("fixture-user");
@@ -28319,7 +28551,7 @@ mod tests {
         let server = FixtureServer::new(vec![Reply {
             status: 200,
             headers: "Content-Type: application/javascript\r\n".to_owned(),
-            body: "thyouCalendar([])".to_owned(),
+            body: b"thyouCalendar([])".to_vec(),
         }]);
         let base = unique_cache_base("schedule-live");
         let user = test_user("2026000000");

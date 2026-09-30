@@ -1093,7 +1093,7 @@ async fn backend_repair_run072714_terminal_card_prompts_once_after_current_passw
         Reply {
             status: 302,
             headers: format!("Location: {}handoff\r\n", card.base()),
-            body: String::new(),
+            body: Vec::new(),
         },
     ]);
     let mut r = run072714_card_runtime(&id, &card, &root);
@@ -1170,7 +1170,7 @@ async fn backend_repair_run072714_terminal_card_transport_failure_never_prompts_
     let card = FixtureServer::new(vec![Reply {
         status: 503,
         headers: String::new(),
-        body: String::new(),
+        body: Vec::new(),
     }]);
     let mut r = run072714_card_runtime(&id, &card, &root);
     let mut prompt = Prompt {
@@ -1462,7 +1462,7 @@ async fn backend_repair_run113847_todo_expiry_stops_remaining_buckets_and_invali
         Reply {
             status: 401,
             headers: String::new(),
-            body: String::new(),
+            body: Vec::new(),
         },
     ]);
     let mut r = run113847_learn_runtime(&server, &root);
@@ -1635,7 +1635,7 @@ async fn backend_repair_run113847_debug_course_failure_does_not_trigger_second_r
     let server = FixtureServer::new(vec![Reply {
         status: 503,
         headers: String::new(),
-        body: String::new(),
+        body: Vec::new(),
     }]);
     let mut r = run113847_learn_runtime(&server, &root);
     r.portal_bootstrapped = true;

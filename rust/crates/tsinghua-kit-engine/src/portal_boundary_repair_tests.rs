@@ -18,7 +18,7 @@ fn redirect(target: &str) -> Reply {
     Reply {
         status: 302,
         headers: format!("Location: {target}\r\n"),
-        body: String::new(),
+        body: Vec::new(),
     }
 }
 
@@ -70,7 +70,7 @@ impl Flow {
             "unavailable" => Reply {
                 status: 503,
                 headers: "Retry-After: 1\r\n".into(),
-                body: String::new(),
+                body: Vec::new(),
             },
             _ => panic!("unknown synthetic outcome"),
         };

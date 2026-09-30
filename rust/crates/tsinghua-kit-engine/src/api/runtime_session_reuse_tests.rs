@@ -134,13 +134,13 @@ async fn backend_repair_cache_miss_retries_transient_vault_failure_and_reuses_on
             "Location: {}do/off/ui/auth/login/form/fixture-app/0?appId=fixture-app\r\n",
             identity.base()
         ),
-        body: String::new(),
+        body: Vec::new(),
     }]);
     let webvpn = FixtureServer::new(vec![
         Reply {
             status: 302,
             headers: format!("Location: {}thu-oauth/auth?state=fixture\r\n", oauth.base()),
-            body: String::new(),
+            body: Vec::new(),
         },
         Reply::html("XSRF-TOKEN=fixture-info;"),
         Reply::json(r#"{"object":{"ryh":"fixture-student"}}"#),
@@ -320,7 +320,7 @@ async fn backend_repair_restored_login_boundary_followed_by_network_failure_does
         Reply {
             status: 302,
             headers: "Location: /login\r\n".into(),
-            body: String::new(),
+            body: Vec::new(),
         },
         unavailable(),
     ]);
@@ -962,7 +962,7 @@ async fn backend_repair_reuse_real_target_challenges_are_continued_not_replaced_
         let service = FixtureServer::new(vec![Reply {
             status: 401,
             headers: String::new(),
-            body: String::new(),
+            body: Vec::new(),
         }]);
         let mut r = runtime(&identity);
         match target {
@@ -1183,13 +1183,13 @@ async fn backend_repair_private_credential_recovery_runs_dynamic_bootstrap_once(
             "Location: {}do/off/ui/auth/login/form/fixture-app/0?appId=fixture-app\r\n",
             identity.base()
         ),
-        body: String::new(),
+        body: Vec::new(),
     }]);
     let webvpn = FixtureServer::new(vec![
         Reply {
             status: 302,
             headers: format!("Location: {}thu-oauth/auth?state=fixture\r\n", oauth.base()),
-            body: String::new(),
+            body: Vec::new(),
         },
         Reply::html("XSRF-TOKEN=fixture-info;"),
         Reply::json(r#"{"object":{"ryh":"fixture-student"}}"#),
@@ -2078,7 +2078,7 @@ async fn backend_repair_lifecycle_live_portal_password_boundary_must_reach_opt_i
     let portal = FixtureServer::new(vec![Reply {
         status: 401,
         headers: String::new(),
-        body: String::new(),
+        body: Vec::new(),
     }]);
     let oauth = FixtureServer::new(vec![]);
     let mut r = lifecycle_audit_runtime(&root.0, &identity, &portal, &oauth);
@@ -2193,7 +2193,7 @@ fn lifecycle_unauthorized() -> Reply {
     Reply {
         status: 401,
         headers: String::new(),
-        body: String::new(),
+        body: Vec::new(),
     }
 }
 fn lifecycle_install_info(r: &mut CampusRuntime) {
@@ -2305,7 +2305,7 @@ async fn backend_repair_lifecycle_password_fallback_reaches_handoff_and_original
             portal.base().trim_end_matches('/'),
             INFO_TARGET_PREFIX
         ),
-        body: String::new(),
+        body: Vec::new(),
     }]);
     let form = format!(
         r#"<div id="sm2publicKey">{}</div><form method="post" action="/do/off/ui/auth/login/check"><input name="i_user"><input name="i_pass" type="password"></form>"#,
@@ -2320,7 +2320,7 @@ async fn backend_repair_lifecycle_password_fallback_reaches_handoff_and_original
                 "Location: {}f/info/gxfw_fg/common/index\r\n",
                 INFO_DIRECT_ORIGIN
             ),
-            body: String::new(),
+            body: Vec::new(),
         },
     ]);
     let mut r = lifecycle_audit_runtime(&root.0, &identity, &portal, &oauth);
@@ -2579,7 +2579,7 @@ async fn backend_repair_lifecycle_card_saved_password_recovers_two_independent_r
     let callback = || Reply {
         status: 302,
         headers: format!("Location: {}handoff\r\n", service.base()),
-        body: String::new(),
+        body: Vec::new(),
     };
     let identity = FixtureServer::new(vec![
         lifecycle_password_form(),
@@ -2646,7 +2646,7 @@ async fn backend_repair_lifecycle_electricity_saved_password_reaches_original_ba
             portal.base().trim_end_matches('/'),
             mapped_path
         ),
-        body: String::new(),
+        body: Vec::new(),
     }]);
     let identity = FixtureServer::new(vec![
         lifecycle_password_form(),
@@ -2654,7 +2654,7 @@ async fn backend_repair_lifecycle_electricity_saved_password_reaches_original_ba
             status: 302,
             headers: "Location: http://myhome.tsinghua.edu.cn/default.aspx?ticket=synthetic\r\n"
                 .into(),
-            body: String::new(),
+            body: Vec::new(),
         },
     ]);
     let mut r = lifecycle_audit_runtime(&root.0, &identity, &portal, &oauth);

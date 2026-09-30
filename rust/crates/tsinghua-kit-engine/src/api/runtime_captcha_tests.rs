@@ -438,12 +438,12 @@ async fn backend_repair_captcha_active_primary_challenge_stops_before_password_p
             "Location: {}do/off/ui/auth/login/form/fixture-app/0\r\n",
             identity.base()
         ),
-        body: String::new(),
+        body: Vec::new(),
     }]);
     let portal = FixtureServer::new(vec![Reply {
         status: 302,
         headers: format!("Location: {}thu-oauth/auth\r\n", oauth.base()),
-        body: String::new(),
+        body: Vec::new(),
     }]);
     let mut runtime = runtime();
     runtime.webvpn_identity_config =

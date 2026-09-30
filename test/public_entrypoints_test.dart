@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tsinghua_kit/assessment.dart' as assessment;
 import 'package:tsinghua_kit/auth.dart' as auth;
@@ -255,9 +257,14 @@ void main() {
     expect(_publicType<sports.SportsResource>(), isNull);
     expect(_publicType<sports.SportsResources>(), isNull);
     expect(_publicType<sports.SportsReservationRecord>(), isNull);
+    expect(_publicType<sports.SportsCaptcha>(), isNull);
+    // The handles are exported types with no public constructor, so only a
+    // venue read can mint one and no caller can invent a booking.
+    expect(_publicType<sports.SportsSlotReference>(), isNull);
+    expect(_publicType<sports.SportsReservationReference>(), isNull);
     // A venue's own cost token is carried verbatim: the service supplies no
     // unit, so no currency conversion may be implied here.
-    const slot = sports.SportsResource(
+    final slot = sports.SportsResource(
       resId: '3998000',
       resHash: 'HASH-OPAQUE',
       timeSession: '20:00-21:00',
@@ -269,16 +276,20 @@ void main() {
       locked: false,
       userType: null,
       paymentStatus: null,
+      bookable: null,
     );
     expect(slot.cost, '20');
     expect(slot.bookId, isNull);
+    // A slot the venue does not offer for online booking carries no handle: an
+    // absent handle is the venue's own statement, not a read failure.
+    expect(slot.bookable, isNull);
     // The slot list is unmodifiable, so a caller cannot present a venue's
     // answer as something the service did not send.
     final resources = sports.SportsResources(
       count: 1,
       init: 1,
       phone: null,
-      data: const [slot],
+      data: [slot],
     );
     expect(resources.data, hasLength(1));
     expect(
@@ -286,7 +297,7 @@ void main() {
       throwsUnsupportedError,
     );
     // A paid row and an unpaid row are both plain reservation records.
-    const record = sports.SportsReservationRecord(
+    final record = sports.SportsReservationRecord(
       name: '气膜馆羽毛球场',
       field: '1号场',
       time: '2026-09-30 20:00-21:00',
@@ -295,8 +306,22 @@ void main() {
       bookTimestamp: null,
       bookId: null,
       payId: null,
+      withdrawable: null,
     );
     expect(record.method, '已支付');
+    // A row the venue printed without a cancellation control carries no
+    // withdrawal handle either.
+    expect(record.withdrawable, isNull);
+    // The challenge is a caller-owned copy of the venue's own bytes, so a
+    // caller cannot mutate what another caller sees.
+    final captcha = sports.SportsCaptcha(
+      contentType: 'image/png',
+      bytes: Uint8List.fromList(const [137, 80, 78, 71]),
+    );
+    expect(captcha.contentType, 'image/png');
+    expect(captcha.bytes, hasLength(4));
+    captcha.bytes[0] = 0;
+    expect(captcha.bytes[0], 0);
     expect(_publicType<reserves.ReservesClient>(), isNull);
     expect(_publicType<reserves.ReservesSearch>(), isNull);
     expect(_publicType<reserves.ReservesBook>(), isNull);

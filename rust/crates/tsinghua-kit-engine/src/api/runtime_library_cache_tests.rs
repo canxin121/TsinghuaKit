@@ -450,7 +450,7 @@ async fn backend_repair_library_stale_area_cache_falls_back_after_live_failure()
     let server = FixtureServer::new(vec![Reply {
         status: 503,
         headers: String::new(),
-        body: String::new(),
+        body: Vec::new(),
     }]);
     let base = cache_base("area-stale");
     let account = user("fixture-user");

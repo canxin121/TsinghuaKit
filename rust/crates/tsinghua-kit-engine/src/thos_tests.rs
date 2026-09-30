@@ -438,7 +438,7 @@ async fn backend_repair_thos_never_replays_redirected_read_posts() {
         let server = FixtureServer::new(vec![Reply {
             status,
             headers: "Location: /unrelated\r\n".into(),
-            body: String::new(),
+            body: Vec::new(),
         }]);
         assert!(matches!(
             client(&server).counts().await,
@@ -449,7 +449,7 @@ async fn backend_repair_thos_never_replays_redirected_read_posts() {
     let server = FixtureServer::new(vec![Reply {
         status: 503,
         headers: "Retry-After: 2\r\n".into(),
-        body: String::new(),
+        body: Vec::new(),
     }]);
     assert!(matches!(
         client(&server).counts().await,
@@ -463,7 +463,7 @@ async fn backend_repair_thos_handoff_rejects_other_paths_before_dispatch() {
     let server = FixtureServer::new(vec![Reply {
         status: 302,
         headers: "Location: /https/another/fp/home\r\n".into(),
-        body: String::new(),
+        body: Vec::new(),
     }]);
     let transport = CampusHttpTransport::new("fixture").unwrap();
     let base = Url::parse(server.base()).unwrap();
@@ -525,7 +525,7 @@ async fn backend_repair_thos_home_fragment_preserves_handoff_path_boundary() {
         Reply {
             status: 302,
             headers: format!("Location: /https/{MAPPING}/fp/view?m=fp#act=fp/formHome\r\n"),
-            body: String::new(),
+            body: Vec::new(),
         },
         Reply::html("<html>service hall</html>"),
     ]);

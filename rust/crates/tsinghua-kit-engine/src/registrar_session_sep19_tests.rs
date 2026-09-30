@@ -11,7 +11,7 @@ async fn handoff_with_calendar(
 ) {
     let server = FixtureServer::new(vec![
         Reply::json("\"registrar-ticket\""),
-        Reply { status: 302, headers: "Location: /http/registrar-fixture/\r\nSet-Cookie: fixture-registrar=ready; Path=/http/registrar-fixture/\r\n".into(), body: String::new() },
+        Reply { status: 302, headers: "Location: /http/registrar-fixture/\r\nSet-Cookie: fixture-registrar=ready; Path=/http/registrar-fixture/\r\n".into(), body: Vec::new() },
         Reply::html("<html><script src='/wengine-vpn/webvpn.js'></script><script>const message='请先登录';</script><h1>教务门户</h1></html>"),
         calendar,
     ]);

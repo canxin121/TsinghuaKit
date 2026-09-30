@@ -419,12 +419,12 @@ async fn backend_repair_graduate_exams_stale_fallback_is_explicit_and_finite() {
         Reply {
             status: 503,
             headers: String::new(),
-            body: String::new(),
+            body: Vec::new(),
         },
         Reply {
             status: 503,
             headers: String::new(),
-            body: String::new(),
+            body: Vec::new(),
         },
     ]);
     let base = unique_cache_base("graduate-stale-exams");

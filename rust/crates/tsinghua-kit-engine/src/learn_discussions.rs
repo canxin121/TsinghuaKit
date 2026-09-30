@@ -289,7 +289,7 @@ mod tests {
             Reply {
                 status: 302,
                 headers: "Location: https://example.invalid/external\r\n".into(),
-                body: String::new(),
+                body: Vec::new(),
             },
             Reply::html("<html>login</html>"),
         ]);

@@ -138,7 +138,7 @@ async fn backend_repair_deep_api_same_scope_cache_remains_explicit_fallback_on_o
     let s = FixtureServer::new(vec![Reply {
         status: 503,
         headers: String::new(),
-        body: String::new(),
+        body: Vec::new(),
     }]);
     let mut r = runtime();
     install_academic(&mut r, &s);
@@ -555,7 +555,7 @@ async fn backend_repair_tunet_disconnect_unclear_result_consumes_target_without_
     let server = FixtureServer::new(vec![Reply {
         status: 503,
         headers: String::new(),
-        body: String::new(),
+        body: Vec::new(),
     }]);
     let mut runtime = tunet_runtime(&server);
 
@@ -620,7 +620,7 @@ async fn backend_repair_deep_api_legacy_cache_other_semester_cannot_mask_failed_
     let s = FixtureServer::new(vec![Reply {
         status: 503,
         headers: String::new(),
-        body: String::new(),
+        body: Vec::new(),
     }]);
     let mut r = runtime();
     install_academic(&mut r, &s);

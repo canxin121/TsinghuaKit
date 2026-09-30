@@ -11,7 +11,7 @@ async fn backend_repair_api_audit_webvpn_encoded_separator_same_mapping_remains_
         Reply {
             status: 302,
             headers: format!("Location: /https/{mapping}%2Fnext\r\n"),
-            body: String::new(),
+            body: Vec::new(),
         },
         Reply::html("ok"),
     ]);
@@ -230,7 +230,7 @@ async fn backend_repair_api_audit_homework_aggregation_expiry_stops_after_first_
         Reply {
             status: 403,
             headers: String::new(),
-            body: String::new(),
+            body: Vec::new(),
         },
     ]);
     let error = todo_source(&server)
@@ -251,7 +251,7 @@ async fn backend_repair_api_audit_webvpn_nested_encoded_traversal_is_stopped_bef
         let server = FixtureServer::new(vec![Reply {
             status: 307,
             headers: format!("Location: {path}\r\n"),
-            body: String::new(),
+            body: Vec::new(),
         }]);
         let transport = CampusHttpTransport::new("THYou/api-audit").unwrap();
         let response = transport
@@ -274,7 +274,7 @@ async fn backend_repair_api_audit_webvpn_login_redirect_is_exposed_without_busin
     let server = FixtureServer::new(vec![Reply {
         status: 302,
         headers: "Location: /login\r\n".into(),
-        body: String::new(),
+        body: Vec::new(),
     }]);
     let transport = CampusHttpTransport::new("THYou/api-audit").unwrap();
     let response = transport
@@ -311,7 +311,7 @@ async fn backend_repair_api_audit_homework_expiry_keeps_typed_service_identity()
     let server = FixtureServer::new(vec![Reply {
         status: 403,
         headers: String::new(),
-        body: String::new(),
+        body: Vec::new(),
     }]);
     let error = todo_source(&server)
         .list_course_homework("fixture-course")
@@ -331,7 +331,7 @@ async fn backend_repair_api_audit_homework_outage_not_misclassified_as_expiry() 
     let server = FixtureServer::new(vec![Reply {
         status: 503,
         headers: String::new(),
-        body: String::new(),
+        body: Vec::new(),
     }]);
     let error = todo_source(&server)
         .list_course_homework("fixture-course")
@@ -347,7 +347,7 @@ async fn backend_repair_api_audit_todo_course_discovery_expiry_keeps_typed_ident
     let server = FixtureServer::new(vec![Reply {
         status: 403,
         headers: String::new(),
-        body: String::new(),
+        body: Vec::new(),
     }]);
     let error = todo_source(&server)
         .list_todos(crate::domain::TodoFilter::default())
@@ -684,7 +684,7 @@ async fn backend_repair_api_audit_webvpn_redirect_cannot_forward_body_to_other_m
     let server = FixtureServer::new(vec![Reply {
         status: 307,
         headers: format!("Location: /https/{mapping_b}/wrong\r\n"),
-        body: String::new(),
+        body: Vec::new(),
     }]);
     let transport = CampusHttpTransport::new("THYou/api-audit").unwrap();
     let response = transport
@@ -713,7 +713,7 @@ async fn backend_repair_api_audit_webvpn_same_mapping_redirect_preserves_cookie_
             headers: format!(
                 "Location: /https/{mapping}/next\r\nSet-Cookie: fixture=ok; Path=/\r\n"
             ),
-            body: String::new(),
+            body: Vec::new(),
         },
         Reply::html("done"),
     ]);

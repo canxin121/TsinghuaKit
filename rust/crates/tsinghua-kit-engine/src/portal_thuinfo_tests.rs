@@ -28,7 +28,7 @@ async fn backend_repair_thuinfo_http_200_location_metadata_does_not_trigger_anot
     let oauth = FixtureServer::new(vec![Reply {
         status: 302,
         headers: format!("Location: {}https/fixturemap/f/info/index\r\n", vpn.base()),
-        body: String::new(),
+        body: Vec::new(),
     }]);
     let cfg = WebVpnIdentityConfig::new(vpn.base(), oauth.base(), id.base()).unwrap();
     navigate_portal_target(
@@ -53,7 +53,7 @@ async fn backend_repair_thuinfo_non_redirect_statuses_do_not_become_navigation_s
         let oauth = FixtureServer::new(vec![Reply {
             status,
             headers: format!("Location: {}https/fixturemap/f/info/index\r\n", vpn.base()),
-            body: String::new(),
+            body: Vec::new(),
         }]);
         let cfg = WebVpnIdentityConfig::new(vpn.base(), oauth.base(), id.base()).unwrap();
         assert!(
@@ -98,7 +98,7 @@ async fn backend_repair_thuinfo_navigation_must_still_pass_csrf_and_account_proo
         let oauth = FixtureServer::new(vec![Reply {
             status: 302,
             headers: format!("Location: {}\r\n", vpn.base()),
-            body: String::new(),
+            body: Vec::new(),
         }]);
         let cfg = WebVpnIdentityConfig::new(vpn.base(), oauth.base(), id.base()).unwrap();
         let execution = execution(id.base());
@@ -159,7 +159,7 @@ async fn backend_repair_thuinfo_terminal_page_menu_links_are_not_extra_auth_requ
             "Location: {}https/fixturemap/f/info/gxfw_fg/common/index\r\n",
             vpn.base()
         ),
-        body: String::new(),
+        body: Vec::new(),
     }]);
     let cfg = WebVpnIdentityConfig::new(vpn.base(), oauth.base(), id.base()).unwrap();
     navigate_portal_target(
@@ -224,7 +224,7 @@ async fn backend_repair_thuinfo_repeated_location_is_reported_without_ticket_rep
     let oauth = FixtureServer::new(vec![Reply {
         status: 302,
         headers: "Location: /thu-oauth/auth?ticket=FIXTURE\r\n".into(),
-        body: String::new(),
+        body: Vec::new(),
     }]);
     let cfg = WebVpnIdentityConfig::new(vpn.base(), oauth.base(), id.base()).unwrap();
     let result = navigate_portal_target(
@@ -256,7 +256,7 @@ fn backend_repair_thuinfo_blocked_route_diagnostics_do_not_include_queries_or_pa
             "Location: {}private-user-path?ticket=FIXTURE-SECRET\r\n",
             denied.base()
         ),
-        body: String::new(),
+        body: Vec::new(),
     }]);
     let cfg = WebVpnIdentityConfig::new(vpn.base(), oauth.base(), id.base()).unwrap();
     tracing::dispatcher::with_default(&log.dispatch, || {
@@ -360,8 +360,8 @@ fn backend_repair_thuinfo_exact_mapping_root_is_not_a_different_service() {
 #[tokio::test]
 async fn backend_repair_thuinfo_gateway_root_redirect_continues_with_exact_wire_url() {
     let vpn=FixtureServer::new(vec![
-        Reply {status:302,headers:"Location: /https/fixturemap\r\n".into(),body:String::new()},
-        Reply {status:302,headers:"Location: /https/fixturemap/f/info/gxfw_fg/common/index\r\nSet-Cookie: fixture-info=ready; Path=/\r\n".into(),body:String::new()},
+        Reply {status:302,headers:"Location: /https/fixturemap\r\n".into(),body:Vec::new()},
+        Reply {status:302,headers:"Location: /https/fixturemap/f/info/gxfw_fg/common/index\r\nSet-Cookie: fixture-info=ready; Path=/\r\n".into(),body:Vec::new()},
         Reply::html("<html>fixture target landing</html>"),
     ]);
     let oauth = FixtureServer::new(vec![Reply {
@@ -370,7 +370,7 @@ async fn backend_repair_thuinfo_gateway_root_redirect_continues_with_exact_wire_
             "Location: {}https/fixturemap%2F?ticket=FIXTURE%2Babc%3D\r\n",
             vpn.base()
         ),
-        body: String::new(),
+        body: Vec::new(),
     }]);
     let id = FixtureServer::new(vec![]);
     let config = WebVpnIdentityConfig::new(vpn.base(), oauth.base(), id.base()).unwrap();
@@ -411,7 +411,7 @@ async fn backend_repair_thuinfo_clean_webvpn_home_returns_for_business_proof_not
     let oauth = FixtureServer::new(vec![Reply {
         status: 302,
         headers: format!("Location: {}\r\n", vpn.base()),
-        body: String::new(),
+        body: Vec::new(),
     }]);
     let id = FixtureServer::new(vec![]);
     let config = WebVpnIdentityConfig::new(vpn.base(), oauth.base(), id.base()).unwrap();
@@ -462,7 +462,7 @@ async fn backend_repair_thuinfo_foreign_redirect_is_not_fetched_or_retried() {
             "Location: {}private?ticket=SECRET-FIXTURE\r\n",
             denied.base()
         ),
-        body: String::new(),
+        body: Vec::new(),
     }]);
     let cfg = WebVpnIdentityConfig::new(vpn.base(), oauth.base(), id.base()).unwrap();
     assert!(

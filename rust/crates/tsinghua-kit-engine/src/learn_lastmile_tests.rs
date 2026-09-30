@@ -6,7 +6,7 @@ async fn backend_repair_lastmile_learn_404_uses_reference_directory_route_once()
         Reply {
             status: 404,
             headers: String::new(),
-            body: String::new(),
+            body: Vec::new(),
         },
         Reply::html("<html><meta name='_csrf' content='fixture-csrf'></html>"),
     ]);
@@ -52,7 +52,7 @@ async fn backend_repair_lastmile_learn_server_redirect_to_documented_home_is_not
         Reply {
             status: 302,
             headers: "Location: /f/wlxt/index/course/student/\r\n".into(),
-            body: String::new(),
+            body: Vec::new(),
         },
         Reply::html("<meta name='_csrf' content='fixture'>"),
     ]);
@@ -75,12 +75,12 @@ async fn backend_repair_lastmile_learn_missing_both_homes_stops_after_two_gets()
         Reply {
             status: 404,
             headers: String::new(),
-            body: String::new(),
+            body: Vec::new(),
         },
         Reply {
             status: 404,
             headers: String::new(),
-            body: String::new(),
+            body: Vec::new(),
         },
     ]);
     let mut client =
@@ -99,7 +99,7 @@ async fn backend_repair_lastmile_learn_student_cannot_accept_teacher_home_or_wro
             Reply {
                 status: 302,
                 headers: format!("Location: {target}\r\n"),
-                body: String::new(),
+                body: Vec::new(),
             },
             Reply::html("<meta name='_csrf' content='fixture'>"),
         ]);

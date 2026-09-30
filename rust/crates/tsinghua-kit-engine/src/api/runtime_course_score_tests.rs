@@ -69,7 +69,7 @@ fn course_score_replies(answer: Reply) -> Vec<Reply> {
         Reply {
             status: 401,
             headers: String::new(),
-            body: String::new(),
+            body: Vec::new(),
         },
         Reply::html("XSRF-TOKEN=fixture-course-score-csrf;"),
         Reply::json(
@@ -81,7 +81,7 @@ fn course_score_replies(answer: Reply) -> Vec<Reply> {
                 "Location: /https/{}/fp/view?m=fp\r\nSet-Cookie: thos_fixture=proved; Path=/\r\n",
                 crate::thos::MAPPING
             ),
-            body: String::new(),
+            body: Vec::new(),
         },
         Reply::html("<html>service hall</html>"),
         Reply::json(r#"{"zbNum":0,"AuditSvsNum":0}"#),

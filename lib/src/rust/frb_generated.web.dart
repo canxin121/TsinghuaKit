@@ -1062,6 +1062,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
       dynamic raw);
 
   @protected
+  SportsCaptchaDto dco_decode_sports_captcha_dto(dynamic raw);
+
+  @protected
   SportsRecordsDataDto dco_decode_sports_records_data_dto(dynamic raw);
 
   @protected
@@ -2285,6 +2288,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   ServiceHallWorkflowTaskDto sse_decode_service_hall_workflow_task_dto(
       SseDeserializer deserializer);
+
+  @protected
+  SportsCaptchaDto sse_decode_sports_captcha_dto(SseDeserializer deserializer);
 
   @protected
   SportsRecordsDataDto sse_decode_sports_records_data_dto(
@@ -3540,6 +3546,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_service_hall_workflow_task_dto(
       ServiceHallWorkflowTaskDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_sports_captcha_dto(
+      SportsCaptchaDto self, SseSerializer serializer);
 
   @protected
   void sse_encode_sports_records_data_dto(

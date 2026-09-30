@@ -68,7 +68,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0';
 
   @override
-  int get rustContentHash => -954890620;
+  int get rustContentHash => -358571440;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -458,6 +458,17 @@ abstract class RustLibApi extends BaseApi {
       {required ClientHandle that,
       required ServiceHallTaskViewDto view,
       required ServiceHallReadPolicyDto policy});
+
+  Future<void> crateSdkApiClientHandleSportsCancelReservation(
+      {required ClientHandle that, required String reservationReferenceId});
+
+  Future<SportsCaptchaDto> crateSdkApiClientHandleSportsCaptcha(
+      {required ClientHandle that});
+
+  Future<void> crateSdkApiClientHandleSportsMakeOrder(
+      {required ClientHandle that,
+      required String slotReferenceId,
+      required String captcha});
 
   Future<SportsRecordsResultDto> crateSdkApiClientHandleSportsRecordsResult(
       {required ClientHandle that});
@@ -3441,6 +3452,92 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  Future<void> crateSdkApiClientHandleSportsCancelReservation(
+      {required ClientHandle that, required String reservationReferenceId}) {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
+            that, serializer);
+        sse_encode_String(reservationReferenceId, serializer);
+        pdeCallFfi(generalizedFrbRustBinding, serializer,
+            funcId: 97, port: port_);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_unit,
+        decodeErrorData: sse_decode_sdk_error_dto,
+      ),
+      constMeta: kCrateSdkApiClientHandleSportsCancelReservationConstMeta,
+      argValues: [that, reservationReferenceId],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateSdkApiClientHandleSportsCancelReservationConstMeta =>
+      const TaskConstMeta(
+        debugName: "ClientHandle_sports_cancel_reservation",
+        argNames: ["that", "reservationReferenceId"],
+      );
+
+  @override
+  Future<SportsCaptchaDto> crateSdkApiClientHandleSportsCaptcha(
+      {required ClientHandle that}) {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
+            that, serializer);
+        pdeCallFfi(generalizedFrbRustBinding, serializer,
+            funcId: 98, port: port_);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_sports_captcha_dto,
+        decodeErrorData: sse_decode_sdk_error_dto,
+      ),
+      constMeta: kCrateSdkApiClientHandleSportsCaptchaConstMeta,
+      argValues: [that],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateSdkApiClientHandleSportsCaptchaConstMeta =>
+      const TaskConstMeta(
+        debugName: "ClientHandle_sports_captcha",
+        argNames: ["that"],
+      );
+
+  @override
+  Future<void> crateSdkApiClientHandleSportsMakeOrder(
+      {required ClientHandle that,
+      required String slotReferenceId,
+      required String captcha}) {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
+            that, serializer);
+        sse_encode_String(slotReferenceId, serializer);
+        sse_encode_String(captcha, serializer);
+        pdeCallFfi(generalizedFrbRustBinding, serializer,
+            funcId: 99, port: port_);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_unit,
+        decodeErrorData: sse_decode_sdk_error_dto,
+      ),
+      constMeta: kCrateSdkApiClientHandleSportsMakeOrderConstMeta,
+      argValues: [that, slotReferenceId, captcha],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateSdkApiClientHandleSportsMakeOrderConstMeta =>
+      const TaskConstMeta(
+        debugName: "ClientHandle_sports_make_order",
+        argNames: ["that", "slotReferenceId", "captcha"],
+      );
+
+  @override
   Future<SportsRecordsResultDto> crateSdkApiClientHandleSportsRecordsResult(
       {required ClientHandle that}) {
     return handler.executeNormal(NormalTask(
@@ -3449,7 +3546,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
             that, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 97, port: port_);
+            funcId: 100, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_sports_records_result_dto,
@@ -3482,7 +3579,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_String(itemId, serializer);
         sse_encode_String(date, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 98, port: port_);
+            funcId: 101, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_sports_resources_result_dto,
@@ -3511,7 +3608,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             that, serializer);
         sse_encode_String(username, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 99, port: port_);
+            funcId: 102, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_self_service_captcha_dto,
@@ -3545,7 +3642,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_String(password, serializer);
         sse_encode_bool(rememberCredentials, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 100, port: port_);
+            funcId: 103, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_self_service_captcha_dto,
@@ -3576,7 +3673,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_second_factor_method_dto(method, serializer);
         sse_encode_String(code, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 101, port: port_);
+            funcId: 104, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_identity_login_result_dto,
@@ -3608,7 +3705,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_String(answer, serializer);
         sse_encode_opt_String(smsCode, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 102, port: port_);
+            funcId: 105, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_self_service_login_result_dto,
@@ -3645,7 +3742,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_network_access_method_dto(method, serializer);
         sse_encode_opt_String(password, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 103, port: port_);
+            funcId: 106, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_network_profile_dto,
@@ -3672,7 +3769,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientHandle(
             that, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 104, port: port_);
+            funcId: 107, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_list_laundry_option_dto,
@@ -3700,7 +3797,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             that, serializer);
         sse_encode_String(deliveryId, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 105, port: port_);
+            funcId: 108, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_water_user_dto,
@@ -3727,7 +3824,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerNetworkProfilePasswordHandle(
             that, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 106, port: port_);
+            funcId: 109, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_String,
@@ -3755,7 +3852,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPreparedNetworkProfile(
             that, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 107, port: port_);
+            funcId: 110, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_network_profile_fill_dto,
@@ -3779,7 +3876,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       callFfi: (port_) {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 108, port: port_);
+            funcId: 111, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_list_laundry_option_dto,
@@ -3803,7 +3900,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       callFfi: (port_) {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 109, port: port_);
+            funcId: 112, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_list_laundry_option_dto,
@@ -3828,7 +3925,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         sse_encode_String(username, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 110, port: port_);
+            funcId: 113, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_opt_box_autoadd_login_stage_dto,
@@ -3852,7 +3949,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       callFfi: (port_) {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 111, port: port_);
+            funcId: 114, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_list_laundry_option_dto,
@@ -7218,6 +7315,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  SportsCaptchaDto dco_decode_sports_captcha_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return SportsCaptchaDto(
+      contentType: dco_decode_opt_String(arr[0]),
+      bytes: dco_decode_list_prim_u_8_strict(arr[1]),
+    );
+  }
+
+  @protected
   SportsRecordsDataDto dco_decode_sports_records_data_dto(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -7245,8 +7354,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 8)
-      throw Exception('unexpected arr length: expect 8 but see ${arr.length}');
+    if (arr.length != 9)
+      throw Exception('unexpected arr length: expect 9 but see ${arr.length}');
     return SportsReservationRecordDto(
       name: dco_decode_String(arr[0]),
       field: dco_decode_String(arr[1]),
@@ -7256,6 +7365,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       bookTimestamp: dco_decode_opt_box_autoadd_i_64(arr[5]),
       bookId: dco_decode_opt_String(arr[6]),
       payId: dco_decode_opt_String(arr[7]),
+      selector: dco_decode_opt_String(arr[8]),
     );
   }
 
@@ -7263,8 +7373,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   SportsResourceDto dco_decode_sports_resource_dto(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 11)
-      throw Exception('unexpected arr length: expect 11 but see ${arr.length}');
+    if (arr.length != 12)
+      throw Exception('unexpected arr length: expect 12 but see ${arr.length}');
     return SportsResourceDto(
       resId: dco_decode_String(arr[0]),
       resHash: dco_decode_String(arr[1]),
@@ -7277,6 +7387,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       locked: dco_decode_opt_box_autoadd_bool(arr[8]),
       userType: dco_decode_opt_String(arr[9]),
       paymentStatus: dco_decode_opt_box_autoadd_bool(arr[10]),
+      selector: dco_decode_opt_String(arr[11]),
     );
   }
 
@@ -10937,6 +11048,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  SportsCaptchaDto sse_decode_sports_captcha_dto(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_contentType = sse_decode_opt_String(deserializer);
+    var var_bytes = sse_decode_list_prim_u_8_strict(deserializer);
+    return SportsCaptchaDto(contentType: var_contentType, bytes: var_bytes);
+  }
+
+  @protected
   SportsRecordsDataDto sse_decode_sports_records_data_dto(
       SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
@@ -10966,6 +11085,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_bookTimestamp = sse_decode_opt_box_autoadd_i_64(deserializer);
     var var_bookId = sse_decode_opt_String(deserializer);
     var var_payId = sse_decode_opt_String(deserializer);
+    var var_selector = sse_decode_opt_String(deserializer);
     return SportsReservationRecordDto(
         name: var_name,
         field: var_field,
@@ -10974,7 +11094,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         method: var_method,
         bookTimestamp: var_bookTimestamp,
         bookId: var_bookId,
-        payId: var_payId);
+        payId: var_payId,
+        selector: var_selector);
   }
 
   @protected
@@ -10992,6 +11113,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_locked = sse_decode_opt_box_autoadd_bool(deserializer);
     var var_userType = sse_decode_opt_String(deserializer);
     var var_paymentStatus = sse_decode_opt_box_autoadd_bool(deserializer);
+    var var_selector = sse_decode_opt_String(deserializer);
     return SportsResourceDto(
         resId: var_resId,
         resHash: var_resHash,
@@ -11003,7 +11125,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         bookId: var_bookId,
         locked: var_locked,
         userType: var_userType,
-        paymentStatus: var_paymentStatus);
+        paymentStatus: var_paymentStatus,
+        selector: var_selector);
   }
 
   @protected
@@ -13886,6 +14009,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_sports_captcha_dto(
+      SportsCaptchaDto self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_opt_String(self.contentType, serializer);
+    sse_encode_list_prim_u_8_strict(self.bytes, serializer);
+  }
+
+  @protected
   void sse_encode_sports_records_data_dto(
       SportsRecordsDataDto self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
@@ -13912,6 +14043,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_box_autoadd_i_64(self.bookTimestamp, serializer);
     sse_encode_opt_String(self.bookId, serializer);
     sse_encode_opt_String(self.payId, serializer);
+    sse_encode_opt_String(self.selector, serializer);
   }
 
   @protected
@@ -13929,6 +14061,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_box_autoadd_bool(self.locked, serializer);
     sse_encode_opt_String(self.userType, serializer);
     sse_encode_opt_box_autoadd_bool(self.paymentStatus, serializer);
+    sse_encode_opt_String(self.selector, serializer);
   }
 
   @protected
@@ -14853,8 +14986,72 @@ class ClientHandleImpl extends RustOpaque implements ClientHandle {
       RustLib.instance.api.crateSdkApiClientHandleServiceHallTasks(
           that: this, view: view, policy: policy);
 
+  /// Withdraws one reservation from this Client's latest reservation read.
+  ///
+  /// The handle is consumed before dispatch for the same reason
+  /// [`Self::sports_make_order`] consumes the slot handle: a withdrawal whose
+  /// result is unconfirmed must not be sent twice.
+  ///
+  /// No client has ever observed this route's refusal wording, so a readable
+  /// answer that is not affirmative is reported as `outcome_unconfirmed`
+  /// rather than as a refusal.
+  Future<void> sportsCancelReservation(
+          {required String reservationReferenceId}) =>
+      RustLib.instance.api.crateSdkApiClientHandleSportsCancelReservation(
+          that: this, reservationReferenceId: reservationReferenceId);
+
+  /// Reads the booking form's own image challenge.
+  ///
+  /// The image is a read on the already-proved venue session and may be
+  /// repeated — a person whose first image was unreadable asks for another.
+  /// The bytes are the venue's own rendering and the content type is verified
+  /// in Rust to be a bounded raster image, so a login page or an error
+  /// document arriving with HTTP 200 is a failure rather than an image shown
+  /// to the user.
+  Future<SportsCaptchaDto> sportsCaptcha() =>
+      RustLib.instance.api.crateSdkApiClientHandleSportsCaptcha(
+        that: this,
+      );
+
+  /// Places one booking of a slot from this Client's latest slot read.
+  ///
+  /// `slot_reference_id` is the `selector` of a [`SportsResourceDto`] returned
+  /// by [`Self::sports_resources_result`] for the same account.  Nothing else
+  /// is accepted — not the venue's own `res_hash` and not a venue or date the
+  /// caller supplies — so the hash, the venue and item identifiers, the date
+  /// and the cost all come from that one read.  The contact number is the one
+  /// the venue itself reported for this account, so a caller cannot make the
+  /// venue call a third party.
+  ///
+  /// `captcha` is a person's own transcription of the image
+  /// [`Self::sports_captcha`] returned.  Nothing here invents, guesses,
+  /// re-reads or retries one: each attempt against the venue is a distinct
+  /// order attempt.
+  ///
+  /// The order is dispatched **exactly once**, and the handle is consumed
+  /// before the dispatch:
+  ///
+  /// * the venue answered its own acceptance message — the booking is placed;
+  /// * the venue worded a refusal — `authentication_rejected`, a definite
+  ///   "nothing was booked";
+  /// * the answer could not be read, or the request left without one —
+  ///   `outcome_unconfirmed`.
+  ///
+  /// The last case is **never** resolved by calling this again: an order whose
+  /// answer was lost may already be in effect.  Re-read
+  /// [`Self::sports_records_result`] to learn what the account now holds.
+  Future<void> sportsMakeOrder(
+          {required String slotReferenceId, required String captcha}) =>
+      RustLib.instance.api.crateSdkApiClientHandleSportsMakeOrder(
+          that: this, slotReferenceId: slotReferenceId, captcha: captcha);
+
   /// Reads the account's unpaid sports reservations followed by its paid
-  /// ones.  Nothing here orders, pays, or cancels.
+  /// ones.
+  ///
+  /// This is also the read that mints the withdrawal handles: each row the
+  /// venue printed with a cancellation control gets a fresh `selector`, and a
+  /// [`SportsReservationRecordDto`] without one cannot be withdrawn.  Any
+  /// newer read replaces the whole set.
   Future<SportsRecordsResultDto> sportsRecordsResult() =>
       RustLib.instance.api.crateSdkApiClientHandleSportsRecordsResult(
         that: this,
@@ -14864,6 +15061,13 @@ class ClientHandleImpl extends RustOpaque implements ClientHandle {
   /// for one `YYYY-MM-DD` date.  `gym_id` and `item_id` must be digit strings
   /// and `date` a real calendar day; anything else is refused in Rust before
   /// any request.
+  ///
+  /// This is also the read that mints the slot handles: each slot the venue
+  /// offers for online booking gets a fresh `selector`, and a
+  /// [`SportsResourceDto`] without one cannot be ordered at all.  Any newer
+  /// read of this venue replaces the whole set, so an older handle stops
+  /// working rather than booking against a slot list the venue has moved on
+  /// from.
   Future<SportsResourcesResultDto> sportsResourcesResult(
           {required String gymId,
           required String itemId,

@@ -40,7 +40,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -954890620;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -358571440;
 
 // Section: executor
 
@@ -5738,6 +5738,185 @@ fn wire__crate__sdk_api__ClientHandle_service_hall_tasks_impl(
         },
     )
 }
+fn wire__crate__sdk_api__ClientHandle_sports_cancel_reservation_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "ClientHandle_sports_cancel_reservation",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<ClientHandle>,
+            >>::sse_decode(&mut deserializer);
+            let api_reservation_reference_id = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, crate::sdk_api::SdkErrorDto>(
+                    (move || async move {
+                        let mut api_that_guard = None;
+                        let decode_indices_ =
+                            flutter_rust_bridge::for_generated::lockable_compute_decode_order(
+                                vec![flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                    &api_that, 0, true,
+                                )],
+                            );
+                        for i in decode_indices_ {
+                            match i {
+                                0 => {
+                                    api_that_guard =
+                                        Some(api_that.lockable_decode_async_ref_mut().await)
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
+                        let mut api_that_guard = api_that_guard.unwrap();
+                        let output_ok = crate::sdk_api::ClientHandle::sports_cancel_reservation(
+                            &mut *api_that_guard,
+                            api_reservation_reference_id,
+                        )
+                        .await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__sdk_api__ClientHandle_sports_captcha_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "ClientHandle_sports_captcha",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<ClientHandle>,
+            >>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, crate::sdk_api::SdkErrorDto>(
+                    (move || async move {
+                        let mut api_that_guard = None;
+                        let decode_indices_ =
+                            flutter_rust_bridge::for_generated::lockable_compute_decode_order(
+                                vec![flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                    &api_that, 0, true,
+                                )],
+                            );
+                        for i in decode_indices_ {
+                            match i {
+                                0 => {
+                                    api_that_guard =
+                                        Some(api_that.lockable_decode_async_ref_mut().await)
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
+                        let mut api_that_guard = api_that_guard.unwrap();
+                        let output_ok =
+                            crate::sdk_api::ClientHandle::sports_captcha(&mut *api_that_guard)
+                                .await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__sdk_api__ClientHandle_sports_make_order_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "ClientHandle_sports_make_order",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<ClientHandle>,
+            >>::sse_decode(&mut deserializer);
+            let api_slot_reference_id = <String>::sse_decode(&mut deserializer);
+            let api_captcha = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, crate::sdk_api::SdkErrorDto>(
+                    (move || async move {
+                        let mut api_that_guard = None;
+                        let decode_indices_ =
+                            flutter_rust_bridge::for_generated::lockable_compute_decode_order(
+                                vec![flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                    &api_that, 0, true,
+                                )],
+                            );
+                        for i in decode_indices_ {
+                            match i {
+                                0 => {
+                                    api_that_guard =
+                                        Some(api_that.lockable_decode_async_ref_mut().await)
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
+                        let mut api_that_guard = api_that_guard.unwrap();
+                        let output_ok = crate::sdk_api::ClientHandle::sports_make_order(
+                            &mut *api_that_guard,
+                            api_slot_reference_id,
+                            api_captcha,
+                        )
+                        .await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
 fn wire__crate__sdk_api__ClientHandle_sports_records_result_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -10621,6 +10800,18 @@ impl SseDecode for crate::sdk_api::ServiceHallWorkflowTaskDto {
     }
 }
 
+impl SseDecode for crate::sdk_api::SportsCaptchaDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_contentType = <Option<String>>::sse_decode(deserializer);
+        let mut var_bytes = <Vec<u8>>::sse_decode(deserializer);
+        return crate::sdk_api::SportsCaptchaDto {
+            content_type: var_contentType,
+            bytes: var_bytes,
+        };
+    }
+}
+
 impl SseDecode for crate::sdk_api::SportsRecordsDataDto {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -10655,6 +10846,7 @@ impl SseDecode for crate::sdk_api::SportsReservationRecordDto {
         let mut var_bookTimestamp = <Option<i64>>::sse_decode(deserializer);
         let mut var_bookId = <Option<String>>::sse_decode(deserializer);
         let mut var_payId = <Option<String>>::sse_decode(deserializer);
+        let mut var_selector = <Option<String>>::sse_decode(deserializer);
         return crate::sdk_api::SportsReservationRecordDto {
             name: var_name,
             field: var_field,
@@ -10664,6 +10856,7 @@ impl SseDecode for crate::sdk_api::SportsReservationRecordDto {
             book_timestamp: var_bookTimestamp,
             book_id: var_bookId,
             pay_id: var_payId,
+            selector: var_selector,
         };
     }
 }
@@ -10682,6 +10875,7 @@ impl SseDecode for crate::sdk_api::SportsResourceDto {
         let mut var_locked = <Option<bool>>::sse_decode(deserializer);
         let mut var_userType = <Option<String>>::sse_decode(deserializer);
         let mut var_paymentStatus = <Option<bool>>::sse_decode(deserializer);
+        let mut var_selector = <Option<String>>::sse_decode(deserializer);
         return crate::sdk_api::SportsResourceDto {
             res_id: var_resId,
             res_hash: var_resHash,
@@ -10694,6 +10888,7 @@ impl SseDecode for crate::sdk_api::SportsResourceDto {
             locked: var_locked,
             user_type: var_userType,
             payment_status: var_paymentStatus,
+            selector: var_selector,
         };
     }
 }
@@ -11314,78 +11509,96 @@ fn pde_ffi_dispatcher_primary_impl(
             rust_vec_len,
             data_len,
         ),
-        97 => wire__crate__sdk_api__ClientHandle_sports_records_result_impl(
+        97 => wire__crate__sdk_api__ClientHandle_sports_cancel_reservation_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        98 => wire__crate__sdk_api__ClientHandle_sports_resources_result_impl(
+        98 => wire__crate__sdk_api__ClientHandle_sports_captcha_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        99 => wire__crate__sdk_api__ClientHandle_start_saved_self_service_login_impl(
+        99 => wire__crate__sdk_api__ClientHandle_sports_make_order_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        100 => wire__crate__sdk_api__ClientHandle_start_self_service_login_impl(
+        100 => wire__crate__sdk_api__ClientHandle_sports_records_result_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        101 => wire__crate__sdk_api__ClientHandle_submit_identity_code_impl(
+        101 => wire__crate__sdk_api__ClientHandle_sports_resources_result_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        102 => wire__crate__sdk_api__ClientHandle_submit_self_service_captcha_impl(
+        102 => wire__crate__sdk_api__ClientHandle_start_saved_self_service_login_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        103 => wire__crate__sdk_api__ClientHandle_update_network_profile_impl(
+        103 => wire__crate__sdk_api__ClientHandle_start_self_service_login_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        104 => wire__crate__sdk_api__ClientHandle_water_brand_labels_impl(
+        104 => wire__crate__sdk_api__ClientHandle_submit_identity_code_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        105 => {
+        105 => wire__crate__sdk_api__ClientHandle_submit_self_service_captcha_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        106 => wire__crate__sdk_api__ClientHandle_update_network_profile_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        107 => wire__crate__sdk_api__ClientHandle_water_brand_labels_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        108 => {
             wire__crate__sdk_api__ClientHandle_water_user_impl(port, ptr, rust_vec_len, data_len)
         }
-        106 => wire__crate__sdk_api__NetworkProfilePasswordHandle_expose_for_form_impl(
+        109 => wire__crate__sdk_api__NetworkProfilePasswordHandle_expose_for_form_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        107 => wire__crate__sdk_api__PreparedNetworkProfile_form_fields_impl(
+        110 => wire__crate__sdk_api__PreparedNetworkProfile_form_fields_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        108 => wire__crate__sdk_api__laundry_providers_impl(port, ptr, rust_vec_len, data_len),
-        109 => wire__crate__sdk_api__laundry_statuses_impl(port, ptr, rust_vec_len, data_len),
-        110 => wire__crate__sdk_api__suggest_identity_login_stage_impl(
+        111 => wire__crate__sdk_api__laundry_providers_impl(port, ptr, rust_vec_len, data_len),
+        112 => wire__crate__sdk_api__laundry_statuses_impl(port, ptr, rust_vec_len, data_len),
+        113 => wire__crate__sdk_api__suggest_identity_login_stage_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        111 => wire__crate__sdk_api__water_brands_impl(port, ptr, rust_vec_len, data_len),
+        114 => wire__crate__sdk_api__water_brands_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -15930,6 +16143,27 @@ impl flutter_rust_bridge::IntoIntoDart<crate::sdk_api::ServiceHallWorkflowTaskDt
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::sdk_api::SportsCaptchaDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.content_type.into_into_dart().into_dart(),
+            self.bytes.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::sdk_api::SportsCaptchaDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::sdk_api::SportsCaptchaDto>
+    for crate::sdk_api::SportsCaptchaDto
+{
+    fn into_into_dart(self) -> crate::sdk_api::SportsCaptchaDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::sdk_api::SportsRecordsDataDto {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [self.records.into_into_dart().into_dart()].into_dart()
@@ -15979,6 +16213,7 @@ impl flutter_rust_bridge::IntoDart for crate::sdk_api::SportsReservationRecordDt
             self.book_timestamp.into_into_dart().into_dart(),
             self.book_id.into_into_dart().into_dart(),
             self.pay_id.into_into_dart().into_dart(),
+            self.selector.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -16009,6 +16244,7 @@ impl flutter_rust_bridge::IntoDart for crate::sdk_api::SportsResourceDto {
             self.locked.into_into_dart().into_dart(),
             self.user_type.into_into_dart().into_dart(),
             self.payment_status.into_into_dart().into_dart(),
+            self.selector.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -19118,6 +19354,14 @@ impl SseEncode for crate::sdk_api::ServiceHallWorkflowTaskDto {
     }
 }
 
+impl SseEncode for crate::sdk_api::SportsCaptchaDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <Option<String>>::sse_encode(self.content_type, serializer);
+        <Vec<u8>>::sse_encode(self.bytes, serializer);
+    }
+}
+
 impl SseEncode for crate::sdk_api::SportsRecordsDataDto {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -19144,6 +19388,7 @@ impl SseEncode for crate::sdk_api::SportsReservationRecordDto {
         <Option<i64>>::sse_encode(self.book_timestamp, serializer);
         <Option<String>>::sse_encode(self.book_id, serializer);
         <Option<String>>::sse_encode(self.pay_id, serializer);
+        <Option<String>>::sse_encode(self.selector, serializer);
     }
 }
 
@@ -19161,6 +19406,7 @@ impl SseEncode for crate::sdk_api::SportsResourceDto {
         <Option<bool>>::sse_encode(self.locked, serializer);
         <Option<String>>::sse_encode(self.user_type, serializer);
         <Option<bool>>::sse_encode(self.payment_status, serializer);
+        <Option<String>>::sse_encode(self.selector, serializer);
     }
 }
 

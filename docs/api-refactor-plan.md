@@ -1856,3 +1856,125 @@ https://webvpn.tsinghua.edu.cn/http/77726476706e69737468656265737421fdee49932a35
 `docs/api-surface-baseline.json` 已按本节源码与重新渲染的 Rustdoc 刷新到第十一版：`source_revision` 前进到 `2e3f62c`（§68 那一次提交；本轮改动尚未提交）；`root_public_modules` 69 → **70**（新增 `dorm_password_write`）；根 `pub use` 56 → **57**；`rendered_crate_root_item_counts` struct 352 → **358**、enum 171 → **178**、fn 64 → **66**、constant 75 → **83**（本模块 23 个公开项在 crate 根渲染为 6 struct / 7 enum / 8 constant / 2 fn），`trait` / `type` 不变；runtime `public_methods` 107 → **108**（新增 `apply_dorm_password_reset`，行号 8248；因该方法的插入，其后的方法行号统一下移 36 行，本版**逐条重新锚定全部 108 条**并同时修正了 `public_free_functions` 6 条的旧行号），`direct_state_field_count` 126 → **128**，`line_count` 29183 → **29232**；runtime `dto_structs` 84（本轮无新 DTO）。
 
 **未验证**：该路由的线上可用性**未验证**，需要另行真实只读验收；本轮**未对任何真实账号发起任何请求**，也**未修改任何账号的口令**。按 §59 起的约定，密码重置**一律不进入只读验收**，只在其结果上做"是否未确认"的判定。参考实现的 `"id"` 漫游策略（一次真正的校园身份登录，会把账号口令 POST 到 `id.tsinghua.edu.cn`）**已记录、未实现**。在此之前不得用 fixture 或空结果冒充线上证据。
+
+## 70. 2026-09-30 体育场馆的写入半（一次性写：下单、退订；验证码是普通读）
+
+计划阶段 5 的第二半。§61 已经补上体育场馆的**只读**半（场地资源与预约记录），但当时把写操作整片排除在模块之外（"不可达比被守卫更强"）。本节把这一片补上，同时**保留**两条边界：支付链仍然不可达，联系电话更新**没有**跨过桥。
+
+**参考实现的三条写路由**
+
+`thu_reference/thu-info-app/packages/thu-info-lib/src/lib/sports.ts` 里三条路由的观测形态是：
+
+```ts
+// 下单：不是表单，而是一个扁平的 JSON 对象，键是部署自己的名字
+const orderResult = await uFetch(SPORTS_MAKE_ORDER_URL, {
+    "bookData.totalCost": totalCost,
+    "bookData.book_person_zjh": "",
+    "bookData.book_person_name": "",
+    "bookData.book_person_phone": phone,
+    "bookData.book_mode": "from-phone",
+    "gymnasium_idForCache": gymId,
+    "item_idForCache": itemId,
+    "time_dateForCache": date,
+    "userTypeNumForCache": 1,
+    "putongRes": "putongRes",
+    "code": captcha,
+    "selectedPayWay": 1,
+    "allFieldTime": `${resHashId}#${date}`,
+}).then(JSON.parse);
+if (orderResult.msg !== "预定成功") { throw new SportsError(orderResult.msg); }
+
+// 退订：体里只有一个字段
+await uFetch(SPORTS_UNSUBSCRIBE_URL, {bookId});
+
+// 联系电话：**体是空的**，值全在 query 里，最后一个是账号自己的登录 id
+await uFetch(`${SPORTS_UPDATE_PHONE_URL}${phone}&gzzh=${helper.userId}`, {});
+if (response.includes("找回密码")) { throw new LibError(); }
+```
+
+三条路由都在**既有的** venue 映射（`a5a70f88…`）与**既有的** selector（`5539ECF8CD815C7D3F5A8EE0A2D72441`）上——`roamingWrapperWithMocks(helper, "default", …)` 与只读半用的是同一个策略名。因此本轮**没有**新增 selector、映射、主机、`ServiceId`、认证方式或 Cookie jar：写半与只读半共用 `ensure_info_session` + `additional_roaming` 已经证明过的那一条会话。
+
+**线格式：四处与直觉相反、因此写死在代码里的观测值**
+
+| 事实 | 值 | 为什么必须写死 |
+| --- | --- | --- |
+| 下单体不是表单 | 扁平的 13 个键，其中四个带 JavaBean 前缀（`bookData.totalCost` / `bookData.book_person_zjh` / `bookData.book_person_name` / `bookData.book_person_phone`） | 它**不是** `<form>` 的字段集合，用页面元素去读会一个都读不到。`ORDER_FIELD_*` 十三个常量钉住的就是这个集合，一个不多一个不少 |
+| 两个"人物"字段是**空串** | `bookData.book_person_zjh` 与 `bookData.book_person_name` 送 `""` | 观察到的客户端**主动送空**，不是省略。本模块照作，并且因此**不接受**任何"预约人"参数：预约人只能是账号自己 |
+| 时段令牌与日期是拼接的 | `allFieldTime = "{resHash}#{date}"`，分隔符是 `#` | 参考实现把它拼在请求体里；写成两个字段会指向一个不存在的输入 |
+| 事件/账号参数名 | 联系电话路由的账号参数叫 `gzzh`，其值是**账号自己的登录 id** | 它由 runtime 从已证明的身份派生（与 §57 课程成绩的 `XH` 同一条规则），**不是**调用方参数、不是结果字段、不是日志字段 |
+
+**支付链：记录而绝不请求**
+
+`ms=newPay` / `ms=newPayForLater` → `zjjsfw` 映射（`f6f60c93…`）→ `check.do` + `webPay.do` → `generalGetPayCode`。它在 `sports_write` 里**只有常量**：`SPORTS_PAYMENT_MAPPING_TOKEN`、`SPORTS_PAYMENT_HOST`、`SPORTS_MAKE_PAYMENT_PATH`、`SPORTS_PAYMENT_CHECK_PATH`、`SPORTS_PAYMENT_ACTION_PATH`。四条独立的理由，第一条单独就足够：
+
+1. **它唯一的产物是支付码。** 整条链终于 `generalGetPayCode`，它从支付页读 `input[name=qrCode]` 并返回该值的最后一段路径——一次支付的一次性持有者令牌。支付码不得进 DTO、日志或台账，而这条路由不产出别的东西，实现它等于交给调用方一个无法收尾的调用（与 §68 记录 `CARD_QR_TOPUP_PATH` 时完全同一条理由）。另需注意 `ms=newPay` **本身就是资金动作**，不是什么"无害的前半段"。
+2. **它会为第二个主机再登记一次映射。** 那需要在 `info_session` 的允许名单里加一条**只为了携带一个支付凭证**而存在的臂。
+3. **观察到的客户端自己这一步就不可靠。** 它 POST 到 `paymentResultForm.attr()!.action`，而参考自己的注释写着 `attr()` 返回 `undefined`——本引擎要复现的这一步，参考自己都不信。
+4. **取令牌那一步依赖重定向的 method 降级。** 观察到的传输在 303（以及 POST 后的 301/302）上丢弃方法，令牌正是这样到达 `webPay.do` 的。本模块的独占派发**不跟随重定向**，等价的一步只能是一次显式的第二次 GET——那将是本模块的发明而不是观测。
+
+测试 `backend_refactor_sports_write_never_reaches_the_payment_chain` 钉住的是"任何计划都无法指向这几条路径"，包括一个**未来**的调用方也无法构造（计划只能由 profile 的三个构造函数产出，三者的 path 都是常量）。
+
+**联系电话更新：模块里有，桥上没有**
+
+`SportsWriteProfile::update_phone_request` 与 `SportsWriteAdapter::update_phone` 是**完整的实现**（含 query 拼接、账号 id 校验、空体、`looks_like_html` 会话判定），有 3 项测试覆盖它，但**没有任何 runtime 方法调用它**：`ClientHandle` 上没有对应方法、SDK 上没有、Dart 上没有。这是一条**有意的收窄**，理由与支付链不同：
+
+- 它的**唯一输入是手机号**，而号码在账本里属于个人信息。§61 已经为只读半定下"手机号只读、只解码、不进 `Debug`"的规则；把它变成**可写**意味着这个域第一次有了"接受一个个人信息作为调用方参数"的方法，而它的收益（在 App 里改场馆联系电话）本轮没有产品侧需求，风险（App 侧多一条个人信息流）是确定的。
+- 它**没有**可用于判定的拒绝措辞：参考实现的唯一检查是"响应里包含 `找回密码`"，那是登录页标记，落在共享的登录分类器里，因此这条路由**只能**是 `Accepted` / `LoginRequired` / `Unrecognized`。一个没有"服务说不"的能力，在桥上有害无益。
+
+因此 `SportsWriteOperation::UpdatePhone` 存在、被测试、被文档记录，但**不可达**；`SPORTS_UPDATE_PHONE_QUERY_PREFIX` 与 `SPORTS_UPDATE_PHONE_ACCOUNT_PARAM` 作为常量导出，供将来的一轮直接使用。
+
+**验证码是一次普通读**
+
+`SportsCaptcha`（`content_type` + 有界 raster 字节）经 `SportsWriteAdapter::read_captcha` 取得，走的是**普通 `send`** 而不是独占派发——它不改变任何状态，所以可以重复：一个看不清图的人再要一张是正常行为。观察到的客户端自己给 URL 加了一个 `Math.floor(Math.random() * 100)=` 的缓存破坏参数，本模块照作（用时间戳的次秒位，不是随机数——它只是让代理不去拿旧图，不是凭证）。**不是**图片的 200 响应（登录页、错误文档、声明为 `text/html` 的字节）是错误而不是空图，与 §61 只读半的分类一致。
+
+**"恰好发一次"的三层**
+
+1. **适配器**：三条写都经 `transport.execute_once_exclusive(...)`——占满 gate、**不跟随重定向**、返回第一个响应。`dispatch` 里对一个未跟随的重定向、一个非 2xx、一个路径/ query 与预期不符的响应统一返回 `Ok(None)`，调用方一律判为 `Unrecognized`。
+2. **错误文本被丢弃**：`Err(_error) => Ok(None)`。reqwest 的失败信息可能带请求 URL，而下单路由的**体**里装着一次性 booking hash、联系电话路由的 **query** 里装着账号登录 id 与联系电话，所以失败信息不进日志、不进错误、不进 DTO。
+3. **runtime 不重试、不自动重认证**：`LoginRequired` 只作废场馆会话与 INFO 会话并记 `sports_write_session_expired`；其余未确认记 `sports_write_unconfirmed`。这与只读半是**结构性差别**：只读半会在 session expired 后 `refresh_nonacademic_service_after_expiry` 再读一次，写半**绝不**——重认证后重发一次效果未知的状态变更就是重放它。
+
+**句柄的来源与控制权的消耗**
+
+`load_sports_resources_result` 在成功时调 `confirm_sports_slots`：只为 `can_net_book == true` 且带 `res_hash` 的时段铸一个 UUID selector，并把**同一个读**里的 `res_hash` / `cost` / `gym_id` / `item_id` / `date` 一起存进 `ConfirmedSportsSlot`；`load_sports_records_result` 通过 `confirm_sports_reservations` 只为带 `book_id` 的行铸 selector。两个家族与新闻订阅、图书馆座位共用同一条活性规则 `subscription_rule_is_live`：**owner 相同 AND `at.elapsed() < 300s`**。
+
+`book_sports_slot` / `cancel_sports_reservation` 在成功之后 `remove(&selector)`：场馆确认之后这个句柄就退休，同一个句柄不能再发第二次（验证码无论如何都是一次性的）。桥接层更进一步：`ClientHandle` 在派发**之前**就 `remove()` 掉自己的 `SportsSlotRef` / `SportsReservationRef`，因此一个未确认的结果**结构上不可能**被同一个句柄重放。两层是防御纵深，不是重复：runtime 的 map 是 provenance 的唯一权威（账号 + 读的归属），FFI 的 map 只是上下文守卫。
+
+未确认时句柄**不**退休——这是刻意的：一个答案丢失的下单可能已经生效，也可能没有，而无论哪种情况调用方都只能靠**重新读 `records()`** 定论；把句柄留着并不能让它重发（FFI 层已经消耗了它），只是不假装知道结果。
+
+**拒绝与未知是两码事，而且只有一条路由有"拒绝"**
+
+`SportsWriteOutcome` 四态：`Accepted` / `Refused` / `LoginRequired` / `Unrecognized`。只有下单路由会产生 `Refused`，因为只有它印了自己的 `msg`（`classify_order_answer` 只接受 `预定成功` 为接受，其余可读的 `msg` 是拒绝）。退订与联系电话路由**从未被任何客户端观测到拒绝措辞**，因此 `classify_unconfirmed_only` 只承认肯定证据（空体、`OK`、`{"status"|"result"|"success": 1|true}` 且无失败标记），其余一律 `Unrecognized`：凭空造一个拒绝态等于把"我不知道"说成"你没退成"。
+
+**本地边界与它们的来源**
+
+| 边界 | 值 | 来源 |
+| --- | --- | --- |
+| `MAX_SPORTS_CAPTCHA_CHARS` | 12 | 本模块自己的上界：验证码是给人读并敲进去的，太长是调用方错误 |
+| `MAX_SPORTS_HASH_CHARS` | 64 | 观测到的 hash 长度 48，留出余量；与只读半的解析上界一致 |
+| `MAX_SPORTS_RECEIPT_CHARS` | 32 | 只被记录下来的支付链消费（`VALID_RECEIPT_TITLES` 三个值都远短于此） |
+| `SPORTS_MAX_SINGLE_PAYMENT_COST` | 42 | **观察到的客户端自己的**常量（参考的预约页拒绝 42 以上的单笔支付并给出"出于安全考虑…单笔金额不得超过 42 元"）。保留它，因为观察到的客户端强制的边界是证据，而本模块发明的边界不是 |
+| 联系电话 | 大陆手机号（`1[3-9]…` / `15[036789]…` / `18[89]…`，11 位） | 参考实现自己的正则，逐字复现；在**任何请求存在之前**生效 |
+| 场馆 / 项目号 / 账号 id | 1–10 位纯数字 | 与只读半的解析上界一致，使读回来的值一定写得回去 |
+
+`SportsPhone` 与 `SportsCaptchaCode` 都包 `Zeroizing<String>`，`Debug` 只打 `digits: N` / `chars: N`，`expose()` 是 `pub(crate)`；`SportsWritePlan` 的 `Debug` 只打 `operation` / `method` / `path` / query **段数** / `field_count`，**不**打 query 本身（联系电话路由的 query 里装着账号 id 与号码）。
+
+**SDK / FFI / Dart**
+
+- 引擎：新增 `sports_write`（17 常量 / 6 struct / 7 enum / 3 fn）与 `#[cfg(test)] mod sports_write_tests`；`api/runtime_sports_write.rs` 新增 `load_sports_captcha` / `book_slot` / `cancel_reservation` / `ensure_sports_write_session` / `write_adapter` / `finish_sports_write`；runtime 新增 `load_sports_captcha` / `book_sports_slot` / `cancel_sports_reservation` 三个公开方法、`sports_slot_selectors` / `sports_slot_owner` / `sports_slot_at` / `sports_reservation_selectors` / `sports_reservation_owner` / `sports_reservation_at` / `sports_confirmed_phone` 七个状态字段，`ConfirmedSportsSlot` 一个私有 struct，`confirm_sports_slots` / `confirm_sports_reservations` / `selected_confirmed_slot` / `clear_sports_failure_code` 与 `invalidate_sports_session` 的扩展。`reference_test_support::Reply::body` 从 `String` 改成 `Vec<u8>`（新增 `Reply::bytes`），因为验证码路由答的是**图片字节**，fixture 必须能原样送出这些字节而不是一次有损的再编码；由此 22 个既有 fixture 断言的 `String::new()` 改成 `Vec::new()`。
+- SDK：`SportsClient::{captcha, make_order, unsubscribe}`（薄包装，与 `ElectricityClient` 同构），`sports` 模块 re-export `SportsCaptcha` 与 `SportsWriteOutcome`；`public_api.rs` 新增 `compile_sports_api` 的写半与一条新断言。
+- FFI：`ClientHandle::{sports_captcha, sports_make_order, sports_cancel_reservation}`、`SportsCaptchaDto`、`pub(crate)` 的 `SportsSlotRef` / `SportsReservationRef`（私有构造、`Debug` 只打 `selector_len`）与两个 `replace_sports_*_references`；`invalidate_auth_bound_references` 一并清空这两张表。FRB 2.13.0 重新生成，生成物未手工编辑。
+- Dart：`lib/src/sports.dart` 新增 `SportsSlotReference` / `SportsReservationReference`（`const X._(this._id)` 私有构造）、`SportsCaptcha`（`Uint8List.fromList` 防御性拷贝）与三个方法；`SportsResource.bookable` / `SportsReservationRecord.withdrawable` 承载句柄；`lib/sports.dart` 入口与 `test/public_entrypoints_test.dart` 同步。
+
+**验证**
+
+引擎定向：`cargo test -p tsinghua_kit_engine --lib sports` **27 项通过 / 0 失败**（`sports_tests` 16 项只读 + `sports_write_tests` 9 项写 + `api::runtime::sports_write_runtime` 2 项；§61 的 16 项不变）。写半 9 项覆盖：下单体恰好是观测到的 13 个字段且 booking hash 只出现在 `allFieldTime` 里、账号 id 不进下单体、只有场馆自己的 `预定成功` 算接受而**另一句可读的 `msg` 是拒绝**（且拒绝措辞不出现在 `Debug` 里）、HTML/空体/无 `msg` 的对象一律未确认而**不是**拒绝、未跟随的重定向判未确认且**只发一次**、401 与登录重定向在任何体被读取之前判会话失效、验证码是图片否则是错误（登录页冒充 `image/png` 与真图冒充 `text/html` 两种都拒）、退订体只有 `bookId` 且可读但非肯定的回答是未确认、联系电话路由体为空且 query 里带账号 id、`Debug` 不出现验证码 / `res_hash` / 手机号 / 账号 id、每个调用方值（空与超长）、成本（空/带空格/科学计数/超 42）、场馆与日期（`2024-09-31`、`2024-9-20`）、hash 形状、账号 id 非数字都在**任何请求存在之前**被拒、支付链的三条路径都无法被任何计划指向。runtime 2 项断言 selector 只对**产生它的那次读与那个账号**有效（别人的账号、未知 selector、超过 300 秒、没有 owner 四种都解析为 `None`），以及单笔上界确实是观察到的那个常量。
+
+桥接层 `cargo test -p tsinghua_kit_ffi --lib` **55 项通过**（本轮 2 项定向：`Debug` 不出现 booking token、账号手机号、私有 selector 与验证码字节，而 `SportsCaptchaDto` 只打 `content_type` 与 `byte_len`；被拒参数零请求且 `auth_status` 仍是 `SignedOut`）。SDK `cargo test -p tsinghua_kit --test public_api` **24 项通过**（新增一项：无会话时 `captcha` / `make_order` / `unsubscribe` 都以 `Service::Sports` + `SessionRequired` 返回、**不是** `OutcomeUnconfirmed`，且账号仍是 `SignedOut`——一个根本没派发的调用没有未知效果）。`cargo check --workspace --all-targets` 退出 0；`cargo fmt --all -- --check` 干净；严格 `RUSTDOCFLAGS="-D warnings" cargo doc -p tsinghua_kit` 干净；`flutter analyze lib test` 无问题；`flutter test test/public_entrypoints_test.dart` 通过并覆盖 `SportsCaptcha` 与两个句柄类型（两者都无可公开构造，因此只有场馆的读能铸出一个句柄）。
+
+**同过滤器下的既有失败**：`library` 过滤器仍为既有的 4 项失败，`tsinghua_kit_ffi` 的 `classroom_contract` 集成测试 3 项 `MissingDateHeaders` 失败，引擎 rustdoc `-D warnings` 仍有 4 条既有私有链接错误（`assessment_read`/`invoice_read`/`library_room_read`/`reserves_read`），整套 `--lib` 引擎运行仍会因既有栈溢出中断（`backend_repair_learn_fresh_announcement_cache_skips_live_handoff`）——均为 HEAD 既有、与本轮无关（见 §64/§67/§68/§69 的归因），本轮**未修**。
+
+**baseline**
+
+`docs/api-surface-baseline.json` 已按本节源码与重新渲染的 Rustdoc 刷新到第十二版：`source_revision` 前进到 `af1e96e`（§69 那一次提交；本轮改动尚未提交）；`root_public_modules` 70 → **71**（新增 `sports_write`）；根 `pub use` 57 → **58**；`rendered_crate_root_item_counts` struct 358 → **364**、enum 178 → **184**、fn 66 → **69**、constant 83 → **100**（本模块 26 个公开项在 crate 根渲染为 6 struct / 6 enum / 17 constant / 3 fn；另有 §61 已计过的只读半不变），`trait` / `type` 不变；runtime `public_methods` 108 → **111**（新增 `load_sports_captcha` / `book_sports_slot` / `cancel_sports_reservation`，行号 8379 / 8403 / 8421，插在 `apply_campus_card_write` 与 `cancel_library_booking` 之间——**不是**列表末尾，§69 那一次把它记在末尾是错的；本版按当前源码**逐条重新锚定全部 111 条**并同时修正了 `public_free_functions` 6 条的行号：`impl` 之前的插入使前 52 条方法（含被错排在末尾的 `apply_dorm_password_reset`）下移 77 行，三个新方法之后的 51 条再下移 59 行，`load_sports_records_result` 再下移 7 行、其后的 4 条 `reserves` / `library_room` 方法再下移 7 行），`direct_state_field_count` 128 → **135**（新增七个），`line_count` 29232 → **29464**（与 `git diff --numstat` 的 `245 13` 一致：净 +232）；runtime `dto_structs` 84（本轮无新 runtime DTO，`SportsCaptchaDto` 定义在 FFI crate）。
+
+**未验证**：三条写路由与验证码读的线上可用性**未验证**，需要另行真实只读验收。本轮**未对任何真实账号发起任何请求**，**未发起下单、退订、支付或手机号更新**，也**未请求过任何真实验证码图片**。按 §59 起的约定，下单与退订**一律不进入只读验收**：它们的"结果是否未确认"只能作为判定语义来验，不能作为线上证据。在此之前不得用 fixture 或空结果冒充线上证据。宿舍卫生分的结论（§58）不变。

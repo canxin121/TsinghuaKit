@@ -397,7 +397,7 @@ async fn backend_repair_classroom_stale_cache_falls_back_after_live_failure() {
     let server = FixtureServer::new(vec![Reply {
         status: 503,
         headers: String::new(),
-        body: String::new(),
+        body: Vec::new(),
     }]);
     let base = cache_base("classroom-stale");
     let account = user("fixture-user");
@@ -638,7 +638,7 @@ async fn backend_repair_electricity_stale_history_falls_back_after_live_failure(
         Reply {
             status: 503,
             headers: String::new(),
-            body: String::new(),
+            body: Vec::new(),
         },
     ]);
     let base = cache_base("electricity-stale");
@@ -834,7 +834,7 @@ async fn backend_repair_card_stale_transactions_fall_back_after_live_failure() {
         Reply {
             status: 503,
             headers: String::new(),
-            body: String::new(),
+            body: Vec::new(),
         },
     ]);
     let base = cache_base("card-stale");

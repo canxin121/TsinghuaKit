@@ -75,7 +75,7 @@ async fn backend_repair_api_audit_info_query_drift_is_not_a_valid_requested_arti
         Reply {
             status: 302,
             headers: "Location: /target/b/info/xxfb_fg/xnzx/template/detail?xxid=other\r\n".into(),
-            body: String::new(),
+            body: Vec::new(),
         },
         Reply::json(
             r#"{"result":"success","object":{"xxDto":{"bt":"Fixture","nr":"%3Cp%3Ebody%3C%2Fp%3E"}}}"#,
@@ -99,7 +99,7 @@ async fn backend_repair_api_audit_card_later_page_auth_expiry_clears_only_card()
         Reply {
             status: 401,
             headers: String::new(),
-            body: String::new(),
+            body: Vec::new(),
         },
     ])
     .await;
@@ -346,7 +346,7 @@ async fn backend_repair_api_audit_usereg_explicit_unauthorized_clears_only_usere
         Reply {
             status: 401,
             headers: String::new(),
-            body: String::new(),
+            body: Vec::new(),
         },
     ]);
     let mut runtime = usereg_runtime(&server);
@@ -371,7 +371,7 @@ async fn backend_repair_api_audit_usereg_failed_refresh_discards_device_actions_
         Reply {
             status: 503,
             headers: String::new(),
-            body: String::new(),
+            body: Vec::new(),
         },
     ]);
     let mut runtime = usereg_runtime(&server);
@@ -433,7 +433,7 @@ async fn backend_repair_api_audit_tunet_read_outage_preserves_login_capability()
     let server = FixtureServer::new(vec![Reply {
         status: 503,
         headers: String::new(),
-        body: String::new(),
+        body: Vec::new(),
     }]);
     let mut runtime = tunet_runtime(&server);
     assert!(load_tunet_target_status(&mut runtime).await.is_err());

@@ -3153,7 +3153,7 @@ mod tests {
             Reply {
                 status: 200,
                 headers: "Set-Cookie: fixture-target=ready; Path=/\r\n".into(),
-                body: String::new(),
+                body: Vec::new(),
             },
         ]);
         let adapter = InfoSessionAdapter::new(

@@ -303,17 +303,27 @@ pub mod water {
 pub use client::{Client, ClientBuilder};
 pub use error::Error;
 
-/// Sports-venue resources and reservation records (`体育场馆`).
+/// Sports-venue resources, reservation records, and the venue's own state
+/// changes (`体育场馆`).
 ///
-/// The venue's availability and the account's own reservation list are read
-/// live on every call; nothing here orders, pays, or cancels, so the venue's
-/// captcha and payment routes are not reachable through this SDK.
+/// The venue's availability and the account's own reservation list are read live
+/// on every call.  An order names its slot by the selector that read minted and
+/// a withdrawal names its reservation the same way, so the venue's own booking
+/// hash and identifier never leave Rust.  The order form's image challenge is
+/// readable, but nothing here submits or retries it: an order is dispatched
+/// exactly once and an unconfirmed outcome is never replayed.
+///
+/// The funding-settlement payment chain that follows an order is deliberately
+/// not reachable.  Its mapping token, host and routes are recorded as boundary
+/// constants in `tsinghua_kit_engine::sports_write`, and no write in this module
+/// can address them, so a caller cannot move money through this SDK.
 pub mod sports {
     pub use crate::client::SportsClient;
     pub use tsinghua_kit_engine::sports_read::{
         PAID_METHOD, SPORTS_MAPPING_TOKEN, SPORTS_WEBVPN_TARGET, SportsLimits,
         SportsReservationRecord, SportsResource, SportsResources,
     };
+    pub use tsinghua_kit_engine::sports_write::{SportsCaptcha, SportsWriteOutcome};
 }
 
 /// The course-reserve textbook catalogue, reached through the INFO WebVPN

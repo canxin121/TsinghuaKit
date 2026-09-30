@@ -313,7 +313,7 @@ mod tests {
             Reply {
                 status: 302,
                 headers: "Location: /login\r\n".into(),
-                body: String::new(),
+                body: Vec::new(),
             },
             Reply {
                 status: 200,

@@ -162,7 +162,7 @@ async fn backend_repair_news_redirect_answer_is_not_followed() {
         Reply {
             status: 302,
             headers: format!("Location: {INFO}/b/info/gxfw_fg/common/addFavorite/XXFB/other\r\n"),
-            body: String::new(),
+            body: Vec::new(),
         },
         accepted(),
     ]);

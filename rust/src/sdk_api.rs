@@ -1420,6 +1420,7 @@ fn sports_resources_result(value: ReadResult<SportsResources>) -> SportsResource
                     locked: slot.locked,
                     user_type: slot.user_type,
                     payment_status: slot.payment_status,
+                    selector: slot.selector,
                 })
                 .collect(),
         },
@@ -1445,6 +1446,7 @@ fn sports_records_result(
                     book_timestamp: record.book_timestamp,
                     book_id: record.book_id,
                     pay_id: record.pay_id,
+                    selector: record.selector,
                 })
                 .collect(),
         },
@@ -2649,6 +2651,14 @@ pub struct SportsResourceDto {
     pub locked: Option<bool>,
     pub user_type: Option<String>,
     pub payment_status: Option<bool>,
+    /// The opaque handle that names this slot back to the venue when booking it.
+    ///
+    /// It is `None` exactly when the venue does not offer the slot for online
+    /// booking or did not give it a booking hash, so a `null` here is the
+    /// venue's own statement that the slot cannot be ordered rather than a read
+    /// failure.  Handing it to `sports_make_order` is the only way to book;
+    /// [`Self::res_hash`] must never be sent anywhere.
+    pub selector: Option<String>,
 }
 
 impl fmt::Debug for SportsResourceDto {
@@ -2666,6 +2676,7 @@ impl fmt::Debug for SportsResourceDto {
             .field("locked", &self.locked)
             .field("user_type", &self.user_type)
             .field("payment_status", &self.payment_status)
+            .field("bookable", &self.selector.is_some())
             .finish()
     }
 }
@@ -2710,6 +2721,13 @@ pub struct SportsReservationRecordDto {
     pub book_timestamp: Option<i64>,
     pub book_id: Option<String>,
     pub pay_id: Option<String>,
+    /// The opaque handle that names this reservation back to the venue when
+    /// withdrawing it.
+    ///
+    /// It is `None` exactly when the venue printed the row without a
+    /// cancellation control, so a `null` here is the venue's own statement that
+    /// this reservation can no longer be withdrawn rather than a read failure.
+    pub selector: Option<String>,
 }
 
 impl fmt::Debug for SportsReservationRecordDto {
@@ -2724,6 +2742,7 @@ impl fmt::Debug for SportsReservationRecordDto {
             .field("book_timestamp", &self.book_timestamp)
             .field("has_book_id", &self.book_id.is_some())
             .field("has_pay_id", &self.pay_id.is_some())
+            .field("withdrawable", &self.selector.is_some())
             .finish()
     }
 }
@@ -2737,6 +2756,88 @@ pub struct SportsRecordsDataDto {
 pub struct SportsRecordsResultDto {
     pub data: SportsRecordsDataDto,
     pub metadata: ReadMetadataDto,
+}
+
+/// The booking form's own image challenge.
+///
+/// The bytes are the venue's own rendering, verified in Rust to be a bounded
+/// raster image before they reach a caller.  The `Debug` form prints the
+/// declared type and a length: an image is opaque payload, and its content is
+/// never logged.
+#[derive(Clone, PartialEq, Eq)]
+pub struct SportsCaptchaDto {
+    pub content_type: Option<String>,
+    pub bytes: Vec<u8>,
+}
+
+impl fmt::Debug for SportsCaptchaDto {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("SportsCaptchaDto")
+            .field("content_type", &self.content_type)
+            .field("byte_len", &self.bytes.len())
+            .finish()
+    }
+}
+
+/// One slot handle held by this Client.
+///
+/// It carries the Runtime's own opaque selector for one row of the latest slot
+/// read.  The venue's booking hash, the venue and item identifiers and the date
+/// stay inside Rust: this value exists only so the handle can be handed back to
+/// the Runtime, which is the only place the selector means anything.
+#[derive(Clone, PartialEq, Eq)]
+pub(crate) struct SportsSlotRef {
+    selector: String,
+}
+
+impl SportsSlotRef {
+    pub(crate) fn new(selector: String) -> Self {
+        Self { selector }
+    }
+
+    pub(crate) fn selector(&self) -> &str {
+        &self.selector
+    }
+}
+
+impl fmt::Debug for SportsSlotRef {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // The selector is an unguessable handle to a bookable slot, so it is
+        // treated as a secret: only its presence is reported.
+        formatter
+            .debug_struct("SportsSlotRef")
+            .field("selector_len", &self.selector.len())
+            .finish()
+    }
+}
+
+/// One reservation handle held by this Client.
+///
+/// As with [`SportsSlotRef`], the value is the Runtime's own opaque selector and
+/// the venue's booking identifier never leaves Rust.
+#[derive(Clone, PartialEq, Eq)]
+pub(crate) struct SportsReservationRef {
+    selector: String,
+}
+
+impl SportsReservationRef {
+    pub(crate) fn new(selector: String) -> Self {
+        Self { selector }
+    }
+
+    pub(crate) fn selector(&self) -> &str {
+        &self.selector
+    }
+}
+
+impl fmt::Debug for SportsReservationRef {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("SportsReservationRef")
+            .field("selector_len", &self.selector.len())
+            .finish()
+    }
 }
 
 /// One catalogue record as the bridge reports it.
@@ -4958,6 +5059,16 @@ pub struct ClientHandle {
     library_availability_references: HashMap<String, LibraryAvailability>,
     library_seat_reference_ids: HashMap<SeatRef, String>,
     library_reservation_references: HashMap<String, LibraryReservationRef>,
+    /// The venue-slot handles of the latest slot read, and the account they were
+    /// minted for.
+    ///
+    /// A handle is consumed by the one order it names and is dropped by any
+    /// newer read, so it can never dispatch two orders or be used by another
+    /// account's read.
+    sports_slot_references: HashMap<String, SportsSlotRef>,
+    /// The venue-reservation handles of the latest reservation read.  Same
+    /// lifetime rule as [`Self::sports_slot_references`].
+    sports_reservation_references: HashMap<String, SportsReservationRef>,
     classroom_building_references: HashMap<String, BuildingRef>,
 }
 
@@ -5055,6 +5166,8 @@ impl ClientHandle {
             library_availability_references: HashMap::new(),
             library_seat_reference_ids: HashMap::new(),
             library_reservation_references: HashMap::new(),
+            sports_slot_references: HashMap::new(),
+            sports_reservation_references: HashMap::new(),
             classroom_building_references: HashMap::new(),
         })
     }
@@ -6062,6 +6175,13 @@ impl ClientHandle {
     /// for one `YYYY-MM-DD` date.  `gym_id` and `item_id` must be digit strings
     /// and `date` a real calendar day; anything else is refused in Rust before
     /// any request.
+    ///
+    /// This is also the read that mints the slot handles: each slot the venue
+    /// offers for online booking gets a fresh `selector`, and a
+    /// [`SportsResourceDto`] without one cannot be ordered at all.  Any newer
+    /// read of this venue replaces the whole set, so an older handle stops
+    /// working rather than booking against a slot list the venue has moved on
+    /// from.
     pub async fn sports_resources_result(
         &mut self,
         gym_id: String,
@@ -6073,14 +6193,107 @@ impl ClientHandle {
             .sports()
             .resources(&gym_id, &item_id, &date)
             .await?;
+        self.replace_sports_slot_references(&result);
         Ok(sports_resources_result(result))
     }
 
     /// Reads the account's unpaid sports reservations followed by its paid
-    /// ones.  Nothing here orders, pays, or cancels.
+    /// ones.
+    ///
+    /// This is also the read that mints the withdrawal handles: each row the
+    /// venue printed with a cancellation control gets a fresh `selector`, and a
+    /// [`SportsReservationRecordDto`] without one cannot be withdrawn.  Any
+    /// newer read replaces the whole set.
     pub async fn sports_records_result(&mut self) -> Result<SportsRecordsResultDto, SdkErrorDto> {
         let result = self.inner.sports().records().await?;
+        self.replace_sports_reservation_references(&result);
         Ok(sports_records_result(result))
+    }
+
+    /// Reads the booking form's own image challenge.
+    ///
+    /// The image is a read on the already-proved venue session and may be
+    /// repeated — a person whose first image was unreadable asks for another.
+    /// The bytes are the venue's own rendering and the content type is verified
+    /// in Rust to be a bounded raster image, so a login page or an error
+    /// document arriving with HTTP 200 is a failure rather than an image shown
+    /// to the user.
+    pub async fn sports_captcha(&mut self) -> Result<SportsCaptchaDto, SdkErrorDto> {
+        let captcha = self.inner.sports().captcha().await?;
+        Ok(SportsCaptchaDto {
+            content_type: captcha.content_type,
+            bytes: captcha.bytes,
+        })
+    }
+
+    /// Places one booking of a slot from this Client's latest slot read.
+    ///
+    /// `slot_reference_id` is the `selector` of a [`SportsResourceDto`] returned
+    /// by [`Self::sports_resources_result`] for the same account.  Nothing else
+    /// is accepted — not the venue's own `res_hash` and not a venue or date the
+    /// caller supplies — so the hash, the venue and item identifiers, the date
+    /// and the cost all come from that one read.  The contact number is the one
+    /// the venue itself reported for this account, so a caller cannot make the
+    /// venue call a third party.
+    ///
+    /// `captcha` is a person's own transcription of the image
+    /// [`Self::sports_captcha`] returned.  Nothing here invents, guesses,
+    /// re-reads or retries one: each attempt against the venue is a distinct
+    /// order attempt.
+    ///
+    /// The order is dispatched **exactly once**, and the handle is consumed
+    /// before the dispatch:
+    ///
+    /// * the venue answered its own acceptance message — the booking is placed;
+    /// * the venue worded a refusal — `authentication_rejected`, a definite
+    ///   "nothing was booked";
+    /// * the answer could not be read, or the request left without one —
+    ///   `outcome_unconfirmed`.
+    ///
+    /// The last case is **never** resolved by calling this again: an order whose
+    /// answer was lost may already be in effect.  Re-read
+    /// [`Self::sports_records_result`] to learn what the account now holds.
+    pub async fn sports_make_order(
+        &mut self,
+        slot_reference_id: String,
+        captcha: String,
+    ) -> Result<(), SdkErrorDto> {
+        // The handle is taken out of the map rather than borrowed: after this
+        // call the same handle can never dispatch a second order.
+        let Some(reference) = self.sports_slot_references.remove(&slot_reference_id) else {
+            return Err(context_mismatch("sports"));
+        };
+        self.inner
+            .sports()
+            .make_order(reference.selector(), &captcha)
+            .await
+            .map_err(SdkErrorDto::from)
+    }
+
+    /// Withdraws one reservation from this Client's latest reservation read.
+    ///
+    /// The handle is consumed before dispatch for the same reason
+    /// [`Self::sports_make_order`] consumes the slot handle: a withdrawal whose
+    /// result is unconfirmed must not be sent twice.
+    ///
+    /// No client has ever observed this route's refusal wording, so a readable
+    /// answer that is not affirmative is reported as `outcome_unconfirmed`
+    /// rather than as a refusal.
+    pub async fn sports_cancel_reservation(
+        &mut self,
+        reservation_reference_id: String,
+    ) -> Result<(), SdkErrorDto> {
+        let Some(reference) = self
+            .sports_reservation_references
+            .remove(&reservation_reference_id)
+        else {
+            return Err(context_mismatch("sports"));
+        };
+        self.inner
+            .sports()
+            .unsubscribe(reference.selector())
+            .await
+            .map_err(SdkErrorDto::from)
     }
 
     /// Searches the course-reserve textbook catalogue by book name.
@@ -6417,6 +6630,48 @@ impl ClientHandle {
         Ok(())
     }
 
+    /// Replaces the slot handles with the ones the read just minted.
+    ///
+    /// The set is replaced wholesale rather than merged, so a handle from a
+    /// superseded slot read stops resolving instead of naming a slot the venue
+    /// has since changed.  A row the venue does not offer for online booking has
+    /// no selector, and so gets no handle.
+    fn replace_sports_slot_references(&mut self, value: &ReadResult<SportsResources>) {
+        self.sports_slot_references = value
+            .data()
+            .data
+            .iter()
+            .filter_map(|slot| {
+                slot.selector
+                    .as_ref()
+                    .map(|selector| (selector.clone(), SportsSlotRef::new(selector.clone())))
+            })
+            .collect();
+    }
+
+    /// Replaces the reservation handles with the ones the read just minted.
+    ///
+    /// Same wholesale replacement as [`Self::replace_sports_slot_references`]: a
+    /// row the venue printed without a cancellation control has no selector and
+    /// so gets no handle.
+    fn replace_sports_reservation_references(
+        &mut self,
+        value: &ReadResult<Vec<SportsReservationRecord>>,
+    ) {
+        self.sports_reservation_references = value
+            .data()
+            .iter()
+            .filter_map(|record| {
+                record.selector.as_ref().map(|selector| {
+                    (
+                        selector.clone(),
+                        SportsReservationRef::new(selector.clone()),
+                    )
+                })
+            })
+            .collect();
+    }
+
     fn invalidate_auth_bound_references(&mut self) {
         self.service_hall_phase_references.clear();
         self.service_hall_phase_reference_ids.clear();
@@ -6433,6 +6688,8 @@ impl ClientHandle {
         self.invoice_references.clear();
         self.reserves_references.clear();
         self.assessment_references.clear();
+        self.sports_slot_references.clear();
+        self.sports_reservation_references.clear();
         self.classroom_building_references.clear();
     }
 
@@ -7966,6 +8223,7 @@ mod tests {
             locked: Some(false),
             user_type: None,
             payment_status: None,
+            selector: Some("private-selector".into()),
         };
         let rendered = format!("{slot:?}");
         assert!(rendered.contains("SportsResourceDto"));
@@ -7973,8 +8231,12 @@ mod tests {
         assert!(rendered.contains("20:00-21:00"));
         assert!(rendered.contains("has_res_hash"));
         assert!(rendered.contains("has_book_id"));
+        // The booking handle is an opaque one-shot value, so its presence is
+        // reported and its text never is.
+        assert!(rendered.contains("bookable: true"));
         assert!(!rendered.contains("private-hash"));
         assert!(!rendered.contains("private-book"));
+        assert!(!rendered.contains("private-selector"));
 
         let resources = SportsResourcesDto {
             count: 1,
@@ -7995,14 +8257,42 @@ mod tests {
             book_timestamp: Some(1759204800000),
             book_id: Some("private-book".into()),
             pay_id: Some("private-pay".into()),
+            selector: Some("private-selector".into()),
         };
         let rendered = format!("{record:?}");
         assert!(rendered.contains("SportsReservationRecordDto"));
         assert!(rendered.contains("已支付"));
         assert!(rendered.contains("has_book_id"));
         assert!(rendered.contains("has_pay_id"));
+        assert!(rendered.contains("withdrawable: true"));
         assert!(!rendered.contains("private-book"));
         assert!(!rendered.contains("private-pay"));
+        assert!(!rendered.contains("private-selector"));
+
+        // The Client's own handles are unguessable selectors, so they are
+        // treated as secrets too: only a length is ever printed.
+        let slot_handle = SportsSlotRef::new("private-selector".into());
+        let rendered = format!("{slot_handle:?}");
+        assert!(rendered.contains("SportsSlotRef"));
+        assert!(rendered.contains("selector_len"));
+        assert!(!rendered.contains("private-selector"));
+        assert_eq!(slot_handle.selector(), "private-selector");
+        let reservation_handle = SportsReservationRef::new("private-selector".into());
+        let rendered = format!("{reservation_handle:?}");
+        assert!(rendered.contains("SportsReservationRef"));
+        assert!(!rendered.contains("private-selector"));
+        assert_eq!(reservation_handle.selector(), "private-selector");
+
+        // An image challenge is opaque payload: its declared type and length are
+        // reported, its content never is.
+        let captcha = SportsCaptchaDto {
+            content_type: Some("image/png".into()),
+            bytes: vec![137, 80, 78, 71],
+        };
+        let rendered = format!("{captcha:?}");
+        assert!(rendered.contains("image/png"));
+        assert!(rendered.contains("byte_len: 4"));
+        assert!(!rendered.contains("137"));
     }
 
     /// A refused venue argument is answered by Rust with no request and no

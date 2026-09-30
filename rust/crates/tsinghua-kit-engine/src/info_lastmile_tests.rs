@@ -35,12 +35,12 @@ async fn backend_repair_lastmile_info_scoped_redirect_uses_final_reference_templ
         Reply {
             status: 302,
             headers: format!("Location: {INFO}/f/redirecting\r\n"),
-            body: String::new(),
+            body: Vec::new(),
         },
         Reply {
             status: 302,
             headers: format!("Location: {LEGACY}/notice/fixture.aspx\r\n"),
-            body: String::new(),
+            body: Vec::new(),
         },
         Reply::html(
             "<html><div class=box3><table><tr><td>Fixture content from the actual target template</td></tr></table></div></html>",
@@ -68,7 +68,7 @@ async fn backend_repair_lastmile_info_unknown_mapping_and_foreign_hosts_not_fetc
             Reply {
                 status: 302,
                 headers: format!("Location: {target}\r\n"),
-                body: String::new(),
+                body: Vec::new(),
             },
         ]);
         assert!(
@@ -91,7 +91,7 @@ async fn backend_repair_lastmile_info_reference_titleless_legacy_policy_is_not_f
         Reply {
             status: 302,
             headers: format!("Location: {LEGACY}/notice.aspx\r\n"),
-            body: String::new(),
+            body: Vec::new(),
         },
         Reply::html(first["html"].as_str().unwrap()),
     ]);
@@ -121,7 +121,7 @@ async fn backend_repair_lastmile_info_redirect_cycle_and_cross_mapping_csrf_neve
             Reply {
                 status: 302,
                 headers: format!("Location: {target}\r\n"),
-                body: String::new(),
+                body: Vec::new(),
             },
         ]);
         assert!(

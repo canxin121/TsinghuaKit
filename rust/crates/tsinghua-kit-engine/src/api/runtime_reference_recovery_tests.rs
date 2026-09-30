@@ -325,7 +325,7 @@ fn oauth_redirect(identity: &FixtureServer) -> Reply {
             "Location: {}do/off/ui/auth/login/form/fixture-app/0?appId=fixture-app\r\n",
             identity.base()
         ),
-        body: String::new(),
+        body: Vec::new(),
     }
 }
 
@@ -333,7 +333,7 @@ fn webvpn_redirect(oauth: &FixtureServer) -> Reply {
     Reply {
         status: 302,
         headers: format!("Location: {}thu-oauth/auth?state=fixture\r\n", oauth.base()),
-        body: String::new(),
+        body: Vec::new(),
     }
 }
 

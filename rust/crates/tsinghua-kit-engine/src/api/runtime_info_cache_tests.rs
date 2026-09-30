@@ -254,7 +254,7 @@ async fn backend_repair_info_detail_stale_cache_falls_back_after_live_failure() 
     let server = FixtureServer::new(vec![Reply {
         status: 503,
         headers: String::new(),
-        body: String::new(),
+        body: Vec::new(),
     }]);
     let base = cache_base("stale");
     let user = fixture_user("fixture-user");
@@ -295,7 +295,7 @@ async fn backend_repair_info_detail_stale_cache_is_discovered_after_runtime_rest
     let server = FixtureServer::new(vec![Reply {
         status: 503,
         headers: String::new(),
-        body: String::new(),
+        body: Vec::new(),
     }]);
     let base = cache_base("stale-restart");
     let user = fixture_user("fixture-user");

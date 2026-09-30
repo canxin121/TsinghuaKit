@@ -49,7 +49,7 @@ async fn backend_repair_binding_exam_location_header_without_redirect_is_not_aut
     let s = FixtureServer::new(vec![Reply {
         status: 304,
         headers: location,
-        body: String::new(),
+        body: Vec::new(),
     }]);
     assert!(!matches!(
         registrar(&s).fetch_exam_page().await.unwrap_err(),
@@ -328,7 +328,7 @@ async fn backend_repair_binding_exam_page_blocked_login_redirect_retains_expiry_
             "Location: {}do/off/ui/auth/login/form/fixture/0\r\n",
             target.base()
         ),
-        body: String::new(),
+        body: Vec::new(),
     }]);
     let error = registrar(&s).fetch_exam_page().await.unwrap_err();
     assert!(matches!(error, RegistrarClientError::LoginExpired { .. }));
@@ -346,7 +346,7 @@ async fn backend_repair_binding_exam_course_blocked_login_redirect_retains_expir
             "Location: {}do/off/ui/auth/login/form/fixture/0\r\n",
             target.base()
         ),
-        body: String::new(),
+        body: Vec::new(),
     }]);
     let query = RegistrarExamCourseQuery::new(
         "30240512",
@@ -368,7 +368,7 @@ async fn backend_repair_binding_exam_other_redirect_and_outage_do_not_become_exp
         Reply {
             status: 302,
             headers: format!("Location: {}maintenance\r\n", target.base()),
-            body: String::new(),
+            body: Vec::new(),
         },
         Reply {
             status: 503,

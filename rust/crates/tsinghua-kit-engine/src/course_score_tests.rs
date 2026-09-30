@@ -234,7 +234,7 @@ async fn backend_repair_course_score_classifies_login_bodies_and_envelopes() {
     let server = FixtureServer::new(vec![Reply {
         status: 302,
         headers: "Location: /unrelated\r\n".into(),
-        body: String::new(),
+        body: Vec::new(),
     }]);
     assert!(matches!(
         client(&server).course_score("CS0001", STUDENT_ID).await,

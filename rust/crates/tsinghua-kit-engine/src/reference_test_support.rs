@@ -13,7 +13,10 @@ use std::{
 pub(crate) struct Reply {
     pub status: u16,
     pub headers: String,
-    pub body: String,
+    /// The answer's bytes, not a string: one route under test answers an image,
+    /// and a fixture must be able to serve exactly the bytes the service would
+    /// rather than a lossy re-encoding of them.
+    pub body: Vec<u8>,
 }
 
 pub(crate) fn captcha_png() -> Vec<u8> {
@@ -28,7 +31,7 @@ impl Reply {
         Self {
             status: 200,
             headers: "Content-Type: application/json\r\n".into(),
-            body: body.into(),
+            body: body.as_bytes().to_vec(),
         }
     }
 
@@ -36,7 +39,16 @@ impl Reply {
         Self {
             status: 200,
             headers: "Content-Type: text/html; charset=utf-8\r\n".into(),
-            body: body.into(),
+            body: body.as_bytes().to_vec(),
+        }
+    }
+
+    /// One answer of arbitrary bytes and an explicit content type.
+    pub fn bytes(status: u16, content_type: &str, body: Vec<u8>) -> Self {
+        Self {
+            status,
+            headers: format!("Content-Type: {content_type}\r\n"),
+            body,
         }
     }
 }
@@ -79,16 +91,18 @@ impl FixtureServer {
                         let reply = replies.next().unwrap_or(Reply {
                             status: 500,
                             headers: String::new(),
-                            body: "unexpected fixture request".into(),
+                            body: b"unexpected fixture request".to_vec(),
                         });
-                        let _ = write!(
-                            stream,
-                            "HTTP/1.1 {} Fixture\r\n{}Content-Length: {}\r\nConnection: close\r\n\r\n{}",
-                            reply.status,
-                            reply.headers,
-                            reply.body.len(),
-                            reply.body
+                        let _ = stream.write_all(
+                            format!(
+                                "HTTP/1.1 {} Fixture\r\n{}Content-Length: {}\r\nConnection: close\r\n\r\n",
+                                reply.status,
+                                reply.headers,
+                                reply.body.len()
+                            )
+                            .as_bytes(),
                         );
+                        let _ = stream.write_all(&reply.body);
                     }
                     Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
                         thread::sleep(Duration::from_millis(2));

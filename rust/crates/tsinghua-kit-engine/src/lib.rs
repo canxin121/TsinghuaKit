@@ -70,6 +70,7 @@ pub mod service_hall;
 pub mod services;
 pub mod session;
 pub mod sports_read;
+pub mod sports_write;
 pub mod telemetry;
 pub mod transport;
 pub mod tunet;
@@ -364,6 +365,17 @@ pub use sports_read::{
     parse_sports_paid_records_html, parse_sports_phone_body, parse_sports_resources_html,
     parse_sports_unpaid_records_html,
 };
+pub use sports_write::{
+    MAX_SPORTS_CAPTCHA_CHARS, MAX_SPORTS_HASH_CHARS, MAX_SPORTS_RECEIPT_CHARS,
+    SPORTS_BOOK_ACTION_PATH, SPORTS_CAPTCHA_PATH, SPORTS_MAKE_ORDER_PATH, SPORTS_MAKE_ORDER_QUERY,
+    SPORTS_MAKE_PAYMENT_PATH, SPORTS_MAX_SINGLE_PAYMENT_COST, SPORTS_PAYMENT_ACTION_PATH,
+    SPORTS_PAYMENT_CHECK_PATH, SPORTS_PAYMENT_HOST, SPORTS_PAYMENT_MAPPING_TOKEN,
+    SPORTS_UNSUBSCRIBE_QUERY, SPORTS_UPDATE_PHONE_ACCOUNT_PARAM, SPORTS_UPDATE_PHONE_QUERY_PREFIX,
+    SportsCaptcha, SportsCaptchaCode, SportsPhone, SportsWriteAdapter, SportsWriteAdapterError,
+    SportsWriteError, SportsWriteMethod, SportsWriteOperation, SportsWriteOutcome, SportsWritePlan,
+    SportsWriteProfile, SportsWriteSessionPrerequisite, VALID_RECEIPT_TITLES,
+    classify_order_answer, classify_unconfirmed_only, receipt_title_is_valid,
+};
 pub use transport::{CampusHttpTransport, TransportError};
 pub use tunet_auth::{
     SrunLoginError, SrunLoginMaterial, SrunPasswordDigestScheme, build_srun_login_material,
@@ -405,6 +417,9 @@ mod physical_exam_tests;
 
 #[cfg(test)]
 mod sports_tests;
+
+#[cfg(test)]
+mod sports_write_tests;
 
 #[cfg(test)]
 mod invoice_tests;

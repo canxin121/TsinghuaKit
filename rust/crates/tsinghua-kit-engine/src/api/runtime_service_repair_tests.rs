@@ -221,7 +221,7 @@ async fn backend_repair_service_followup_primary_factor_consumes_broker_then_web
     let broker = FixtureServer::new(vec![Reply {
         status: 302,
         headers: format!("Location: {}login?code=fixture-code\r\n", gateway.base()),
-        body: String::new(),
+        body: Vec::new(),
     }]);
     let callback = format!(
         "{}thu-oauth/auth?ticket=SYNTHETIC-TICKET&state=fixture",

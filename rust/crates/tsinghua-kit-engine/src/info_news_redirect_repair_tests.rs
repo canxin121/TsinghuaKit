@@ -513,7 +513,7 @@ fn redirect(target: &str) -> Reply {
     Reply {
         status: 302,
         headers: format!("Location: {target}\r\n"),
-        body: String::new(),
+        body: Vec::new(),
     }
 }
 fn publication() -> Reply {

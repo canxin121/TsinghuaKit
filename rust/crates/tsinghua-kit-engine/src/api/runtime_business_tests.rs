@@ -132,7 +132,7 @@ async fn backend_repair_followup_electricity_mapped_callback_foreign_redirect_is
     let vpn = FixtureServer::new(vec![Reply {
         status: 302,
         headers: format!("Location: {}private?ticket=FIXTURE\r\n", foreign.base()),
-        body: String::new(),
+        body: Vec::new(),
     }]);
     let identity = FixtureServer::new(vec![]);
     let oauth = FixtureServer::new(vec![]);
@@ -279,7 +279,7 @@ async fn backend_repair_sep19_electricity_compound_callback_reaches_balance_with
             "Location: {}http/electric-fixture/default.aspx\r\n",
             vpn.base()
         ),
-        body: String::new(),
+        body: Vec::new(),
     }]);
     let flow = electricity_auth::ElectricityFlow {
         vpn: WebVpnIdentityConfig::new(vpn.base(), oauth.base(), identity.base()).unwrap(),
@@ -394,7 +394,7 @@ async fn backend_repair_business_electricity_broker_navigation_requires_real_bal
             "Location: {}http/electric-fixture/default.aspx?ticket=FIXTURE%2Babc\r\n",
             vpn.base()
         ),
-        body: String::new(),
+        body: Vec::new(),
     }]);
     let flow = electricity_auth::ElectricityFlow {
         vpn: WebVpnIdentityConfig::new(vpn.base(), oauth.base(), identity.base()).unwrap(),
@@ -461,7 +461,7 @@ async fn backend_repair_business_electricity_navigation_alone_never_marks_servic
             "Location: {}http/electric-fixture/default.aspx\r\n",
             vpn.base()
         ),
-        body: String::new(),
+        body: Vec::new(),
     }]);
     let flow = electricity_auth::ElectricityFlow {
         vpn: WebVpnIdentityConfig::new(vpn.base(), oauth.base(), identity.base()).unwrap(),

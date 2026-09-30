@@ -80,7 +80,7 @@ async fn backend_repair_lastmile_runtime_learn_handoff_404_alias_binds_only_new_
         Reply {
             status: 404,
             headers: String::new(),
-            body: String::new(),
+            body: Vec::new(),
         },
         Reply::html("<html><meta name='_csrf' content='fixture-learn-only'></html>"),
     ]);
@@ -127,7 +127,7 @@ async fn backend_repair_lastmile_electricity_https_broker_consumed_then_business
             "Location: {}http/electric-fixture/default.aspx\r\n",
             vpn.base()
         ),
-        body: String::new(),
+        body: Vec::new(),
     }]);
     let mut r = runtime_with_info(&vpn);
     let flow = electricity_auth::ElectricityFlow {

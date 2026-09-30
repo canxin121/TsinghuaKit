@@ -341,7 +341,7 @@ async fn reset_reports_a_login_redirect_as_a_gone_session() {
         Reply {
             status: 302,
             headers: format!("Location: {MAPPING}/login\r\n"),
-            body: String::new(),
+            body: Vec::new(),
         },
     ]);
     let adapter = adapter(&server);

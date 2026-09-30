@@ -91,6 +91,7 @@ use crate::{
         ServiceHallReadPolicy, TaskView, WorkflowTask, WorkflowTaskList, WorkflowTaskRef,
     },
     sports_read::{SportsReservationRecord, SportsResources},
+    sports_write::SportsCaptcha,
 };
 
 /// Cache-directory behavior for a client instance.
@@ -1414,6 +1415,71 @@ impl SportsClient<'_> {
         )?;
         Ok(ReadResult::new(dto.records, metadata))
     }
+
+    /// Reads the booking form's own image challenge.
+    ///
+    /// The image is a read on the already-proved venue session, so it may be
+    /// repeated — a person whose first image was unreadable asks for another.
+    /// Only a verified bounded raster image is returned; a login page or an
+    /// error document arriving with HTTP 200 is a failure rather than an image.
+    pub async fn captcha(&mut self) -> Result<SportsCaptcha, Error> {
+        self.runtime.clear_sports_failure_code();
+        self.runtime
+            .load_sports_captcha()
+            .await
+            .map_err(|_| sports_failure(self.runtime))
+    }
+
+    /// Places one booking of a slot the caller's most recent slot read returned.
+    ///
+    /// The slot is named by the opaque selector carried on the
+    /// [`crate::sports_read::SportsResource`] — never by the venue's own booking
+    /// hash — so the hash, the venue and item identifiers, the date and the cost
+    /// all come from that same read and must belong to one account's one slot
+    /// list.  The contact number is the one the venue itself reported for the
+    /// account, so a caller cannot make the venue call a third party.
+    ///
+    /// `captcha` is a person's own transcription of the image
+    /// [`Self::captcha`] returned.  This SDK never invents, guesses, re-reads or
+    /// retries one, because each attempt against the venue is a distinct order
+    /// attempt.
+    ///
+    /// The order is dispatched **exactly once**:
+    ///
+    /// * the venue answered its own acceptance message — the booking is placed;
+    /// * the venue worded a refusal — [`ErrorCode::AuthenticationRejected`], a
+    ///   definite "nothing was booked";
+    /// * the answer could not be read, or the request left without one —
+    ///   [`ErrorCode::OutcomeUnconfirmed`].
+    ///
+    /// The last case is never resolved by calling this again: an order whose
+    /// answer was lost may already be in effect.  A caller learns what the
+    /// account now holds by re-reading [`Self::records`].
+    pub async fn make_order(&mut self, selector: &str, captcha: &str) -> Result<(), Error> {
+        self.runtime.clear_sports_failure_code();
+        self.runtime
+            .book_sports_slot(selector.to_owned(), captcha.to_owned())
+            .await
+            .map_err(|_| sports_failure(self.runtime))?;
+        Ok(())
+    }
+
+    /// Withdraws one reservation the caller's most recent reservation read
+    /// returned.
+    ///
+    /// The reservation is named by the opaque selector the read minted, never by
+    /// the venue's own booking identifier.  No client has ever observed this
+    /// route's refusal wording, so a readable answer that is not affirmative is
+    /// [`ErrorCode::OutcomeUnconfirmed`] rather than a refusal — and, as with
+    /// the order, an unconfirmed outcome is never replayed.
+    pub async fn unsubscribe(&mut self, selector: &str) -> Result<(), Error> {
+        self.runtime.clear_sports_failure_code();
+        self.runtime
+            .cancel_sports_reservation(selector.to_owned())
+            .await
+            .map_err(|_| sports_failure(self.runtime))?;
+        Ok(())
+    }
 }
 
 /// Read-only course-reserve textbook catalogue.
@@ -2253,6 +2319,22 @@ fn sports_failure(runtime: &CampusRuntime) -> Error {
             "sports_origin" | "sports_path" => ErrorCode::RedirectRefused,
             "sports_http" => ErrorCode::ServiceUnavailable,
             "sports_too_large" => ErrorCode::IncompleteResult,
+            // A venue state change is never retried and is never reported as a
+            // failure with an unknown effect: a withdrawal or an order whose
+            // answer was lost is `OutcomeUnconfirmed`, so a caller cannot be
+            // tempted to repeat it.  A worded refusal is the venue's own "no",
+            // and a session the write discarded needs a fresh read to recover.
+            "sports_write_unconfirmed" => ErrorCode::OutcomeUnconfirmed,
+            "sports_write_refused" => ErrorCode::AuthenticationRejected,
+            "sports_write_session_expired" => ErrorCode::SessionExpired,
+            "sports_write_request" => ErrorCode::InvalidInput,
+            "sports_write_not_allowed" => ErrorCode::NotAvailable,
+            "sports_write_network" => ErrorCode::NetworkUnavailable,
+            "sports_write_http" => ErrorCode::ServiceUnavailable,
+            // The remaining write codes are shape failures of the venue's own
+            // answer, so they are reported as an unreadable response rather than
+            // collapsed into one of the outcomes above.
+            value if value.starts_with("sports_write_") => ErrorCode::InvalidResponse,
             _ => ErrorCode::InvalidResponse,
         };
         return Error::new(Service::Sports, code);

@@ -65,7 +65,7 @@ async fn backend_repair_binding_public_exam_auth_errors_clear_only_registrar() {
         Reply {
             status: 401,
             headers: String::new(),
-            body: String::new(),
+            body: Vec::new(),
         },
         Reply::html(
             "<html><form><input name=\"j_username\"><input type=\"password\" name=\"j_password\"></form></html>",
@@ -76,7 +76,7 @@ async fn backend_repair_binding_public_exam_auth_errors_clear_only_registrar() {
                 "Location: {}do/off/ui/auth/login/form/fixture/0\r\n",
                 target.base()
             ),
-            body: String::new(),
+            body: Vec::new(),
         },
     ] {
         let s = FixtureServer::new(vec![reply]);

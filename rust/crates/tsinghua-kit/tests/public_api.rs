@@ -51,7 +51,10 @@ use tsinghua_kit::{
         PendingTasks, ServiceDirectory, ServiceHallReadPolicy, TaskView, WorkflowTaskList,
         WorkflowTaskRef,
     },
-    sports::{PAID_METHOD, SportsLimits, SportsReservationRecord, SportsResource, SportsResources},
+    sports::{
+        PAID_METHOD, SportsCaptcha, SportsLimits, SportsReservationRecord, SportsResource,
+        SportsResources,
+    },
     water::{WATER_BRANDS, WaterError, WaterLookupError, WaterUser, read_water_user},
 };
 
@@ -297,8 +300,14 @@ async fn compile_electricity_api(client: &mut tsinghua_kit::Client) -> Result<()
     Ok(())
 }
 
-/// Sports reads are `Client` methods because both are account-bound, and both
-/// are read-only: this module has no order, payment, or cancellation to reach.
+/// Sports reads and writes are `Client` methods because all of them are
+/// account-bound to the same venue session.  The reads are what make a write
+/// possible: a slot's `selector` is the only handle an order accepts, and a
+/// record's `selector` is the only handle a withdrawal accepts.
+///
+/// Paying is deliberately absent.  The funding-settlement mapping, host and
+/// routes are recorded as documented constants and are not registered as a
+/// roaming selector, so no call here can move money.
 #[allow(dead_code)]
 async fn compile_sports_api(client: &mut tsinghua_kit::Client) -> Result<()> {
     let mut sports = client.sports();
@@ -316,6 +325,22 @@ async fn compile_sports_api(client: &mut tsinghua_kit::Client) -> Result<()> {
     if let Some(record) = records.data().first() {
         let _: &SportsReservationRecord = record;
         let _is_paid = record.method == PAID_METHOD;
+        if let Some(_selector) = record.selector.as_deref() {
+            // The handle is a `&str` for the write call; the venue's own
+            // booking identifier is not reachable from this type at all.
+            let _withdrawal: fn(&mut tsinghua_kit::sports::SportsClient<'_>, &str) =
+                |sports, selector| {
+                    let _ = sports.unsubscribe(selector);
+                };
+        }
+    }
+    let captcha: SportsCaptcha = sports.captcha().await?;
+    let _content_type = captcha.content_type.as_deref();
+    let _byte_len = captcha.bytes.len();
+    if let Some(slot) = resources.data().data.first() {
+        if let Some(selector) = slot.selector.as_deref() {
+            sports.make_order(selector, "abcd").await?;
+        }
     }
     Ok(())
 }
@@ -616,6 +641,7 @@ fn rust_consumers_can_import_curated_domain_modules_without_ffi() {
     let _ = compile_classrooms_api;
     let _ = compile_campus_card_api;
     let _ = compile_campus_card_write_api;
+    let _ = compile_sports_api;
     let _ = compile_electricity_api;
     let _ = compile_network_profiles_api;
     let _ = compile_portal_api;
@@ -784,6 +810,39 @@ async fn sports_reads_require_identity_and_return_service_scoped_errors() {
     for error in [resources_error, records_error] {
         assert_eq!(error.service(), Service::Sports);
         assert_eq!(error.code(), ErrorCode::SessionRequired);
+    }
+    assert_eq!(
+        client.auth().status().identity().state(),
+        AccountAuthState::SignedOut
+    );
+}
+
+/// The venue's three state changes are session-bound and refuse before any
+/// request when there is no session.  None of them reports an outcome: a call
+/// that was never dispatched has no unknown effect, so the answer is the
+/// missing session rather than `OutcomeUnconfirmed`.
+#[tokio::test]
+async fn sports_writes_report_the_missing_session_instead_of_an_outcome() {
+    let mut client = tsinghua_kit::Client::builder().build().unwrap();
+    let (captcha_error, order_error, withdrawal_error) = {
+        let mut sports = client.sports();
+        (
+            sports.captcha().await.unwrap_err(),
+            sports
+                .make_order("synthetic-selector", "abcd")
+                .await
+                .unwrap_err(),
+            sports.unsubscribe("synthetic-selector").await.unwrap_err(),
+        )
+    };
+    // The challenge is an ordinary read on the same session, so it reports the
+    // session too rather than an outcome.
+    assert_eq!(captcha_error.service(), Service::Sports);
+    assert_eq!(captcha_error.code(), ErrorCode::SessionRequired);
+    for error in [order_error, withdrawal_error] {
+        assert_eq!(error.service(), Service::Sports);
+        assert_eq!(error.code(), ErrorCode::SessionRequired);
+        assert_ne!(error.code(), ErrorCode::OutcomeUnconfirmed);
     }
     assert_eq!(
         client.auth().status().identity().state(),

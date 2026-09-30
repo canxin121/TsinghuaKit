@@ -56,6 +56,7 @@ use reqwest::{StatusCode, Url, header::LOCATION};
 use thiserror::Error;
 
 use crate::campus_html::{self, PageClass, RawElement};
+use crate::sports_write::SportsWriteAdapterError;
 use crate::transport::{CampusHttpTransport, TransportError};
 
 /// The sports-venue roaming selector.
@@ -280,6 +281,27 @@ pub struct SportsResource {
     pub user_type: Option<String>,
     /// Whether the service marked the slot's payment as settled.
     pub payment_status: Option<bool>,
+    /// The venue and item the slot belongs to, in the form the caller named them
+    /// when this list was read.
+    ///
+    /// They are carried so a booking can be built from the read result alone,
+    /// rather than from a caller's separate arguments: a slot's own venue and
+    /// date are the ones the row came from, and a booking must not be able to mix
+    /// one venue's slot with another venue's identifier.
+    pub gym_id: String,
+    pub item_id: String,
+    /// The `YYYY-MM-DD` date this list was read for.
+    pub date: String,
+    /// The opaque handle that names this slot back to the venue.
+    ///
+    /// It is minted by the Runtime for the account and the read that produced
+    /// this row, and it is the **only** way a booking can name a slot: the
+    /// venue's own booking hash, the venue and item identifiers and the date all
+    /// stay behind the handle.  A row the venue does not offer for online
+    /// booking, or one that came without a hash, carries `None`, because such a
+    /// slot cannot be ordered at all.  The parser never fills this in — it is
+    /// set by the read that retained the row, so a parser test sees `None`.
+    pub selector: Option<String>,
 }
 
 /// `res_hash` and `book_id` are single-purpose booking tokens, so `Debug`
@@ -299,6 +321,7 @@ impl fmt::Debug for SportsResource {
             .field("locked", &self.locked)
             .field("user_type", &self.user_type)
             .field("payment_status", &self.payment_status)
+            .field("has_selector", &self.selector.is_some())
             .finish()
     }
 }
@@ -351,6 +374,14 @@ pub struct SportsReservationRecord {
     pub book_id: Option<String>,
     /// The payment identifier, present only when the row offers a payment.
     pub pay_id: Option<String>,
+    /// The opaque handle that names this row back to the venue.
+    ///
+    /// It is minted by the Runtime for the account and the read that produced
+    /// this row, and the venue's own booking identifier stays behind it.  A row
+    /// the service printed without a cancellation control carries `None`, which
+    /// is the service's own statement about that reservation rather than a read
+    /// failure.  A raw parse leaves it `None`.
+    pub selector: Option<String>,
 }
 
 /// The booking and payment identifiers are single-purpose tokens, so `Debug`
@@ -367,6 +398,7 @@ impl fmt::Debug for SportsReservationRecord {
             .field("book_timestamp", &self.book_timestamp)
             .field("has_book_id", &self.book_id.is_some())
             .field("has_pay_id", &self.pay_id.is_some())
+            .field("has_selector", &self.selector.is_some())
             .finish()
     }
 }
@@ -603,6 +635,29 @@ impl SportsAdapter {
         self.profile
     }
 
+    /// The mapping root this adapter was configured with.
+    ///
+    /// The write half is configured from exactly this root, so a write can only
+    /// ever go to the deployment the read half proved.  It is a mapping origin,
+    /// not a route: no query, and no path beyond the opaque mapping directory.
+    pub fn base_url(&self) -> &Url {
+        &self.base_url
+    }
+
+    /// The write client for this same proved session.
+    ///
+    /// It is built from the adapter's own base URL and the transport that
+    /// already carries the identity/INFO/WebVPN cookie jar, so a write cannot
+    /// open a session of its own, and it shares this adapter's request gate.
+    pub fn write_adapter(
+        &self,
+    ) -> Result<crate::sports_write::SportsWriteAdapter, SportsWriteAdapterError> {
+        crate::sports_write::SportsWriteAdapter::try_with_transport(
+            self.base_url.clone(),
+            self.transport.clone(),
+        )
+    }
+
     /// Reads the limits, the phone number, and the slot table for one venue and
     /// date.
     ///
@@ -631,7 +686,8 @@ impl SportsAdapter {
         let book = self.get(&requests[0]).await?;
         let limits = parse_sports_limits_html(&book).map_err(Self::map_parse_error)?;
         let detail = self.get(&requests[1]).await?;
-        let data = parse_sports_resources_html(&detail).map_err(Self::map_parse_error)?;
+        let data = parse_sports_resources_html(&detail, gym_id, item_id, date)
+            .map_err(Self::map_parse_error)?;
         let phone_body = self.get(&requests[2]).await?;
         let phone = parse_sports_phone_body(&phone_body).map_err(Self::map_parse_error)?;
         Ok(SportsResourcesRead {
@@ -871,7 +927,16 @@ pub fn parse_sports_phone_body(body: &str) -> Result<Option<String>, SportsParse
 /// slot is dropped rather than given a neighbouring slot's hash.  A slot entry
 /// that carries no identifier is an unrecognized entry, not a dropped one: an
 /// unreadable page must not look like an empty venue.
-pub fn parse_sports_resources_html(html: &str) -> Result<Vec<SportsResource>, SportsParseError> {
+///
+/// `gym_id`, `item_id` and `date` are the ones the caller read the list for.
+/// They are stamped onto every row so a booking can be built from the read
+/// result alone and cannot pair a slot with another venue's identifiers.
+pub fn parse_sports_resources_html(
+    html: &str,
+    gym_id: &str,
+    item_id: &str,
+    date: &str,
+) -> Result<Vec<SportsResource>, SportsParseError> {
     let trimmed = guard_page(html)?;
     let hashes = script_string_calls(trimmed, "resourcesm.put", 2);
     let costs = script_string_calls(trimmed, "addCost", 2);
@@ -915,6 +980,13 @@ pub fn parse_sports_resources_html(html: &str) -> Result<Vec<SportsResource>, Sp
             locked: status.map(|args| args[2] == "1"),
             user_type: colour.map(|args| bounded_script_value(args[1])),
             payment_status: colour.map(|args| args[2] == "1"),
+            gym_id: gym_id.to_owned(),
+            item_id: item_id.to_owned(),
+            date: date.to_owned(),
+            // The handle is minted by the read that retains this row, not by the
+            // parser: a raw parse has no Runtime and therefore no account to
+            // bind a selector to.
+            selector: None,
         });
     }
     Ok(resources)
@@ -1051,6 +1123,10 @@ fn unpaid_row(
         book_timestamp,
         book_id,
         pay_id,
+        // The handle is minted by the read that retains this row, not by the
+        // parser: a raw parse has no Runtime and therefore no account to bind a
+        // selector to.
+        selector: None,
     })
 }
 
@@ -1071,6 +1147,7 @@ fn paid_row(
         book_timestamp: None,
         book_id: None,
         pay_id: None,
+        selector: None,
     })
 }
 

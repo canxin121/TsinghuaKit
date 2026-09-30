@@ -511,7 +511,7 @@ async fn a_redirect_to_another_origin_is_refused_before_it_is_followed() {
     let server = FixtureServer::new(vec![Reply {
         status: 302,
         headers: "Location: https://elsewhere.invalid/steal\r\n".into(),
-        body: String::new(),
+        body: Vec::new(),
     }]);
     let error = adapter(&server).read_catalog().await.unwrap_err();
     assert!(
@@ -527,7 +527,7 @@ async fn a_redirect_within_the_origin_but_outside_the_mapping_is_refused() {
     let server = FixtureServer::new(vec![Reply {
         status: 302,
         headers: "Location: /elsewhere/steal\r\n".into(),
-        body: String::new(),
+        body: Vec::new(),
     }]);
     let error = adapter(&server).read_catalog().await.unwrap_err();
     assert!(

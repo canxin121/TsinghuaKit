@@ -219,7 +219,8 @@ async fn a_configured_phone_absence_is_a_validated_absence() {
 
 #[test]
 fn a_slot_whose_hash_statement_misses_it_is_not_given_a_neighbour() {
-    let resources = parse_sports_resources_html(&detail_page()).expect("resources");
+    let resources = parse_sports_resources_html(&detail_page(), "3998000", "4045681", "2024-09-20")
+        .expect("resources");
     assert_eq!(resources.len(), 2);
     assert!(
         resources
@@ -239,7 +240,7 @@ fn an_unreadable_slot_entry_is_an_error_not_a_shorter_list() {
 resourceArray.push({time_session:'20:00-21:00',field_name:'台1'});
 </script></body></html>"#;
     assert!(matches!(
-        parse_sports_resources_html(page),
+        parse_sports_resources_html(page, "3998000", "4045681", "2024-09-20"),
         Err(SportsParseError::UnrecognizedSlot { index: 0 })
     ));
 }
@@ -336,7 +337,7 @@ fn a_login_or_expired_page_is_a_session_failure() {
                 .is_session_expired()
         );
         assert!(
-            parse_sports_resources_html(page)
+            parse_sports_resources_html(page, "3998000", "4045681", "2024-09-20")
                 .expect_err("must fail")
                 .is_session_expired()
         );
@@ -381,7 +382,7 @@ async fn a_non_success_status_and_a_foreign_origin_are_never_data() {
     let server = FixtureServer::new(vec![Reply {
         status: 502,
         headers: "Content-Type: text/html\r\n".into(),
-        body: limits_page("5", "2"),
+        body: limits_page("5", "2").into_bytes(),
     }]);
     let adapter = adapter(&server);
     assert!(matches!(
@@ -399,7 +400,7 @@ async fn a_redirect_off_the_mapping_is_refused() {
     let server = FixtureServer::new(vec![Reply {
         status: 302,
         headers: "Location: https://example.test/gymbook\r\n".into(),
-        body: String::new(),
+        body: Vec::new(),
     }]);
     let adapter = adapter(&server);
     assert!(matches!(

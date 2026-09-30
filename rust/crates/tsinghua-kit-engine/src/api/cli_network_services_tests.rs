@@ -109,7 +109,7 @@ async fn backend_repair_network_probe_parse_and_http_failures_never_claim_offlin
         Reply {
             status: 503,
             headers: "Retry-After: 1\r\n".into(),
-            body: String::new(),
+            body: Vec::new(),
         },
     ] {
         let server = FixtureServer::new(vec![reply]);

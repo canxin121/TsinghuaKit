@@ -130,7 +130,7 @@ fn replies(proof: Reply) -> Vec<Reply> {
             headers: format!(
                 "Location: {REG_PATH}jxmh.do?m=home\r\nSet-Cookie: fixture-registrar=ready; Path={REG_PATH}\r\n"
             ),
-            body: String::new(),
+            body: Vec::new(),
         },
         Reply::html(
             "<html><script src='/wengine-vpn/webvpn.js'></script><h1>Academic portal</h1></html>",
@@ -970,7 +970,7 @@ async fn backend_repair_followup_registrar_auto_detects_graduate_after_undergrad
             headers: format!(
                 "Location: {REG_PATH}jxmh.do?m=home\r\nSet-Cookie: fixture-registrar=ready; Path={REG_PATH}\r\n"
             ),
-            body: String::new(),
+            body: Vec::new(),
         },
         Reply::html(
             "<html><script src='/wengine-vpn/webvpn.js'></script><h1>Academic portal</h1></html>",
@@ -1379,7 +1379,7 @@ async fn backend_repair_run072714_grade_outage_is_not_permission_for_report_hand
     let server = FixtureServer::new(vec![Reply {
         status: 503,
         headers: String::new(),
-        body: String::new(),
+        body: Vec::new(),
     }]);
     let mut r = run072714_grade_runtime(&server, true);
     let error = r.load_grades().await.unwrap_err();

@@ -70,6 +70,7 @@ use tsinghua_kit_engine::{
         WorkflowTaskList, WorkflowTaskRef,
     },
     sports_read::{SportsReservationRecord, SportsResources},
+    sports_write::SportsCaptcha,
 };
 use zeroize::Zeroize;
 
@@ -917,12 +918,20 @@ impl BankClient<'_> {
     }
 }
 
-/// Sports-venue resources and reservation records.
+/// Sports-venue resources, reservation records, and the venue's own state
+/// changes.
 ///
 /// Both reads go live on every call and are never served from a cached copy: a
 /// venue's availability changes minute by minute and a reservation list is a
 /// booking state, so a retained copy would present a taken court as free or a
 /// cancelled booking as live.
+///
+/// The writes are the venue's own three: an order, a withdrawal, and the order
+/// form's image challenge.  Each of them is dispatched exactly once and an
+/// outcome the venue did not confirm is reported as `outcome_unconfirmed` and
+/// never replayed — a venue state change whose answer was lost may already be in
+/// effect.  The payment chain that follows an order is deliberately not
+/// reachable: see `tsinghua_kit_engine::sports_write`'s boundary constants.
 pub struct SportsClient<'client> {
     inner: EngineSportsClient<'client>,
 }
@@ -934,6 +943,11 @@ impl SportsClient<'_> {
     /// `gym_id` and `item_id` must be digit strings and `date` a real calendar
     /// day; a value that is not is refused before any request, so caller text
     /// never becomes a service-side filter.
+    ///
+    /// This read is also what makes an order possible: every slot the venue
+    /// offers for online booking comes back with a `selector`, and only that
+    /// handle can name the slot to [`Self::make_order`].  Any newer read of the
+    /// venue replaces the whole set.
     pub async fn resources(
         &mut self,
         gym_id: &str,
@@ -944,8 +958,56 @@ impl SportsClient<'_> {
     }
 
     /// Reads the account's unpaid reservations followed by its paid ones.
+    ///
+    /// This read is what makes a withdrawal possible: every row the venue still
+    /// lets this account cancel comes back with a `selector`, and only that
+    /// handle can name the reservation to [`Self::unsubscribe`].
     pub async fn records(&mut self) -> Result<ReadResult<Vec<SportsReservationRecord>>, Error> {
         self.inner.records().await
+    }
+
+    /// Reads the booking form's own image challenge.
+    ///
+    /// This is a read on the already-proved venue session and may be repeated: a
+    /// person whose first image was unreadable asks for another.  The bytes are
+    /// the venue's own rendering and the content type is verified in Rust to be
+    /// a bounded raster image, so a login page or an error document answered
+    /// with HTTP 200 is an error rather than an image.
+    pub async fn captcha(&mut self) -> Result<SportsCaptcha, Error> {
+        self.inner.captcha().await
+    }
+
+    /// Places one order for a slot from this client's latest [`Self::resources`]
+    /// read.
+    ///
+    /// `selector` must be a `SportsResource::selector()` of that read; the
+    /// venue's own `res_hash`, the venue and item identifiers, the date and the
+    /// cost all come from the same read, so nothing a caller supplies reaches
+    /// the venue as an identifier.  The contact number is the one the venue
+    /// itself reported for this account.
+    ///
+    /// `captcha` is a person's own transcription of [`Self::captcha`]'s image.
+    /// Nothing here invents, guesses, re-reads or retries one.
+    ///
+    /// The order is dispatched **exactly once**.  An answer the venue worded as
+    /// a refusal is a definite "nothing was booked"; an answer that could not be
+    /// read, or a request that left without one, is `outcome_unconfirmed` and
+    /// must never be resolved by calling this again — re-read [`Self::records`]
+    /// to learn what the account now holds.
+    pub async fn make_order(&mut self, selector: &str, captcha: &str) -> Result<(), Error> {
+        self.inner.make_order(selector, captcha).await
+    }
+
+    /// Withdraws one reservation from this client's latest [`Self::records`]
+    /// read.
+    ///
+    /// `selector` must be a `SportsReservationRecord::selector()` of that read.
+    /// The withdrawal is dispatched exactly once; no client has ever observed
+    /// this route's refusal wording, so a readable answer that is not
+    /// affirmative is reported as `outcome_unconfirmed` rather than as a
+    /// refusal, and an unconfirmed outcome is never replayed.
+    pub async fn unsubscribe(&mut self, selector: &str) -> Result<(), Error> {
+        self.inner.unsubscribe(selector).await
     }
 }
 

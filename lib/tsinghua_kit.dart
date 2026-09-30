@@ -394,8 +394,8 @@ class TsinghuaKitClient {
   /// no campus session is required.
   final WaterClient water;
 
-  /// Sports-venue availability and this account's reservation records.
-  /// Read-only: no order, payment, or cancellation is reachable.
+  /// Sports-venue availability, this account's reservation records, and the
+  /// venue's own booking and withdrawal. Paying is not modelled.
   final SportsClient sports;
 
   /// The course-reserve textbook collection. Read-only, and account-bound to
