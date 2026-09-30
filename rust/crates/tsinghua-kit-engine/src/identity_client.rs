@@ -1115,6 +1115,30 @@ impl IdentityClient {
             && url.fragment().is_none()
     }
 
+    /// Returns true when a ticketless anchor may be treated as the next hop
+    /// even though the response still renders the credential form.
+    ///
+    /// The deployed login template keeps its password-reset link
+    /// (`/f/recovery/password/reset`) inside the credential form, so a
+    /// pristine — or credential-rejected — response exposes a same-origin
+    /// `/f/` anchor.  That link is self-service navigation, not a service
+    /// handoff: promoting it both hides a real login failure and spends a
+    /// request on an unrelated page.  While the form is still present a
+    /// same-origin anchor must therefore be one of the profile's own
+    /// continuation routes; allowlisted cross-origin handoffs keep their
+    /// existing behavior and still have to be proven downstream.
+    fn ticketless_anchor_leaves_the_login_form(&self, href: &str, has_login_form: bool) -> bool {
+        if !has_login_form {
+            return true;
+        }
+        let Ok(url) = self.resolve_redirect_url(href) else {
+            return false;
+        };
+        !same_origin(&self.config.base_url, &url)
+            || self.is_identity_callback_url(&url)
+            || self.is_verified_identity_continuation_url(&url)
+    }
+
     /// Returns true for a redirect URL that may be returned directly by the
     /// second-factor JSON response. Service `/b/` and `/f/` URLs are excluded:
     /// those are HTML anchor evidence and must be reached only after the
@@ -1738,8 +1762,19 @@ impl IdentityClient {
         // would reject a real handoff.  The ticket is still checked against
         // both origin and path allowlists above and is later proven by the
         // downstream service request.
+        //
+        // A ticketless public `/b/` or `/f/` anchor is not on its own evidence
+        // that the response left the credential form.  The deployed login
+        // template places its password-reset link (`/f/recovery/password/reset`)
+        // inside the form, so a pristine — or credential-rejected — page
+        // exposes exactly one `/f/`-prefix anchor.  Promoting that page would
+        // both mask a real login failure and spend a request on an unrelated
+        // self-service page.  While the login form is still active, only a
+        // profiled continuation is strong enough evidence.
         if page.anchor_ticket.as_ref().is_some_and(|anchor| {
-            anchor.ticket.is_none() && self.is_safe_handoff_redirect(&anchor.href)
+            anchor.ticket.is_none()
+                && self.is_safe_handoff_redirect(&anchor.href)
+                && self.ticketless_anchor_leaves_the_login_form(&anchor.href, page.has_login_form)
         }) {
             // The deployed success template can retain the original login
             // form (including its hidden fields) while exposing the OAuth or
@@ -5164,6 +5199,47 @@ mod tests {
     }
 
     #[test]
+    fn does_not_promote_the_deployed_password_reset_link_into_a_handoff() {
+        // Deployment shape recorded on 2026-09-30: the credential form keeps
+        // its password-reset link, so a pristine — or credential-rejected —
+        // page exposes `/f/recovery/password/reset` as its only anchored `/f/`
+        // path.  Promoting it would both hide the rejection and spend a
+        // request on an unrelated self-service page.
+        let client = client(FormEncoding::UrlEncoded);
+        let final_url = Url::parse("https://id.example.test/do/off/ui/auth/login/check")
+            .expect("identity check URL");
+        let html = r#"
+            <form id="theform" action="/do/off/ui/auth/login/check" method="post">
+              <input name="i_user" />
+              <input name="i_pass" type="password" />
+              <input type="hidden" name="i_pass" />
+              <a href="/f/recovery/password/reset">忘记密码</a>
+            </form>
+        "#;
+
+        let result = client.classify_login_response(StatusCode::OK, &final_url, html);
+        let LoginResponseClassification::LoginPage(page) = result else {
+            panic!("a live credential form must not become a handoff");
+        };
+        assert!(page.has_login_form);
+        assert_eq!(
+            page.anchor_ticket
+                .as_ref()
+                .map(|anchor| anchor.href.as_str()),
+            Some("https://id.example.test/f/recovery/password/reset")
+        );
+
+        // The same shape on the callback route still has the callback itself
+        // as its profiled continuation, so the routed branch is unaffected.
+        let callback = Url::parse("https://id.example.test/do/off/ui/auth/login/redirect2Jsp")
+            .expect("identity callback URL");
+        assert!(matches!(
+            client.classify_login_response(StatusCode::OK, &callback, html),
+            LoginResponseClassification::RedirectCallback(_)
+        ));
+    }
+
+    #[test]
     fn accepts_only_the_encoded_webvpn_root_wrapper_as_a_cookie_handoff() {
         let client = client_with_webvpn_and_oauth_routes();
         for path in [
@@ -5361,7 +5437,6 @@ mod tests {
             "https://webvpn.example.test/?ticket=ROOT_TICKET_REDACTED",
             "https://webvpn.example.test/https/opaque-map/unrelated?ticket=UNRELATED_TICKET_REDACTED",
             "https://webvpn.example.test/https/opaque-map/f/other?ticket=OTHER_TICKET_REDACTED",
-            "https://oauth.example.test/thu-oauth/callback?ticket=OAUTH_TICKET_REDACTED",
         ] {
             assert!(
                 client
@@ -5371,6 +5446,25 @@ mod tests {
                 "untrusted wrapper shape was accepted: {href}"
             );
         }
+
+        // The OAuth broker's own callback may carry an opaque ticket that the
+        // broker exchanges; it stays a navigable Cookie continuation, but the
+        // allowlist reads a ticket only from an allowlisted anchor origin, so
+        // it must never be lifted out as a Learn service ticket.
+        let oauth_href =
+            "https://oauth.example.test/thu-oauth/callback?ticket=OAUTH_TICKET_REDACTED";
+        assert!(
+            client
+                .parse_login_page(&format!(r#"<a href="{oauth_href}">candidate</a>"#))
+                .anchor_ticket
+                .and_then(|anchor| anchor.ticket)
+                .is_none(),
+            "a broker ticket must never become a service ticket"
+        );
+        assert!(
+            client
+                .is_cookie_backed_handoff_url(&Url::parse(oauth_href).expect("OAuth ticket query"))
+        );
     }
 
     #[test]
@@ -5402,13 +5496,20 @@ mod tests {
                     .expect("foreign OAuth path")
             )
         );
+        // The broker's opaque ticket is a navigable Cookie continuation (the
+        // broker exchanges it), but it is never a service ticket: only the
+        // allowlisted anchor origins can supply one.
+        let broker_ticket = Url::parse(
+            "https://oauth.example.test/thu-oauth/callback?ticket=OAUTH_TICKET_REDACTED",
+        )
+        .expect("OAuth ticket query");
+        assert!(client.is_cookie_backed_handoff_url(&broker_ticket));
         assert!(
-            !client.is_cookie_backed_handoff_url(
-                &Url::parse(
-                    "https://oauth.example.test/thu-oauth/callback?ticket=OAUTH_TICKET_REDACTED"
-                )
-                .expect("OAuth ticket query")
-            )
+            client
+                .parse_login_page(&format!(r#"<a href="{broker_ticket}">c</a>"#))
+                .anchor_ticket
+                .and_then(|anchor| anchor.ticket)
+                .is_none()
         );
     }
 

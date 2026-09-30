@@ -2192,3 +2192,35 @@ match (first_number(left), first_number(right)) {
 
 **同过滤器下的既有失败**（改动前把工作区备份一份、还原到未修改状态跑一遍对照确认，**不是本轮引入**）：`registrar_academic::tests::rejects_a_same_sized_non_grade_table_instead_of_returning_empty_data` 两种状态下同样失败；`api::runtime::tests::backend_repair_learn_fresh_announcement_cache_skips_live_handoff` 在基线就是栈溢出（SIGABRT）；`identity_client` 的两条与 `usereg` 的两条只在按模块名批量过滤时失败、单独跑通过（与当前工作目录及共享状态有关）。`cargo fmt --all` 干净，`cargo check --workspace --all-targets` 退出 0。
 
+
+## 74. 2026-10-01 登录页里的密码重置链接被当成了服务跳板
+
+§73 修好解析器之后重跑只读验收（`run-20260930T125551Z-3af93983…`，构建指纹 `8e1750875bac`，即 §73 的修订），身份项仍然是 `[失败][identity] 统一身份认证 — other`，但形状变了：**5 次 HTTP**、`decoded_text_bytes=38730`、`transport_failures=0`、`body_failures=0`，失败在提交之后。日志里的三段证据把链条钉死：
+
+```
+seq 38  identity_response  phase=primary_submit  http_status=200  login_form_present=true  reason=redirect_callback  ticket_present=false
+seq 45  identity_response  phase=handoff_fetch   http_status=200  login_form_present=false reason=other_page        ticket_present=false
+seq 46  identity_handoff   phase=primary_handoff handoff_proven=false reason=missing_anchor_ticket
+```
+
+也就是：提交凭证得到 200，页面上**仍然挂着登录表单**，分类器却判成 `redirect_callback`；会话层于是照做，去 GET 那个"回调"（第 5 个请求，1477 字节），回来后既没有表单也没有票据，报 `MissingAnchorTicket`——它的公开话术「统一认证成功页未找到服务票据，请稍后重试」既不含"登录"也不含"会话"，被 `live_validation::error_reason` 兜底成 `other`，和 §73 一样看不见真实原因。
+
+**根因**
+
+`find_anchor_ticket` 在没有票据时按文档顺序取**第一个**通过白名单的公开锚点；默认锚点路径前缀是 `/b/`、`/f/`、`/do/off/ui/auth/login/redirect2Jsp`。线上模板把「忘记密码」链接（`/f/recovery/password/reset`）放在登录表单**内部**，于是任何一张**未登录/被拒绝**的页面都恰好带着一个 `/f/` 前缀的同源锚点。它满足了 `is_safe_handoff_redirect`，于是走到票据分支下面的"票据缺失但锚点安全 → `RedirectCallback`"——**把一张纯登录页伪装成握手页**，既掩盖了真实的登录失败，又白花一个请求去读自助改密页。
+
+**修复**
+
+新增 `IdentityClient::ticketless_anchor_leaves_the_login_form(href, has_login_form)`：只有当响应**不含登录表单**，或该锚点是跨源白名单跳板 / 身份回调路径 / profile 自己的续接路由（`checkSingle` 等）时，才允许把无票据锚点升格为 `RedirectCallback`。同源 `/f/…`、`/b/…` 一律不再是证据。
+
+实测（临时探针，用完即删）：两份线上抓取（`/tmp/idprobe4/page.html`、`/tmp/idp5/p_bb5df852…html`，均 18690/18292 字节、`has_login_form=true`）在旧判定下是 `RedirectCallback(anchor=/f/recovery/password/reset)`，新判定下是 `LoginPage`。于是同一条链在分类器处就结束，走 `IdentitySessionError::LoginPageReturned`（公开话术「统一认证返回登录页，请检查账号或登录方式」，含"登录"→ `session`），不再发第 5 个请求。跨源跳板的既有行为不变：`prefers_an_allowlisted_oauth_continuation_over_a_stale_login_form` 仍通过（WebVPN/OAuth 续接是跨源，`!same_origin` 为真）。
+
+**顺带修正两条陈旧断言**：`navigation_query_allowed` 对 `/thu-oauth/` 的**单个** `ticket=` 有明确放行分支（broker 自己兑换该票据），所以 `extracts_only_a_learn_ticket_from_a_webvpn_wrapper_fixture` 与 `treats_only_the_explicit_oauth_callback_path_as_a_cookie_handoff_location` 里"broker 票据既不可导航也不可读"的旧断言与实现不符。改写成实现真正保证的性质：**broker 自己的票据是可导航的 Cookie 续接，但永远不会被当成服务票据**（只有白名单锚点来源能提供票据）。这两条在修改前的 HEAD 上同样失败，不是本轮引入。
+
+**回归测试**：`identity_client::tests::does_not_promote_the_deployed_password_reset_link_into_a_handoff`——部署形状的 fixture，断言仍是 `LoginPage` 且锚点就是那条 `/f/` 链接；同一形状落在回调路由上仍是 `RedirectCallback`（路由分支不受影响）。
+
+**测试结果**：`cargo test -p tsinghua_kit_engine --lib identity_client` → **67 通过 / 0 失败**；`--lib identity` → 214 通过 / 7 失败，与改动前 HEAD 的 211/9 相比**净修好 2 条、未新增失败**（那 7 条是既有失败：6 条 `backend_repair_*` 与 1 条 `trusted_device_response_*`，均与本次改动无关）；`cargo fmt` 干净。
+
+**线上验证：待办**。本轮证据是线上页面字节、失败运行的三段事件、以及两份抓取的分类前后对照；`identity_session` 仍未在真实账号下重跑通过，必须由用户在自己的交互终端重跑 §71 的脚本才能把身份域及其下游标为已验证。
+
+**运行台账更正**（供后续核对）：`.local/backend-check/` 下的构建指纹是**编译输入的 sha256**（`tools/backend_check.py::source_revision`），不是 Git commit。按此口径：`d753a27ed9fd` = `e187e5a`/`d8db976`（§71 脚本补齐那一版）；`8e1750875bac` = `cd8d09b`/`1b9db02`（洗衣修复与 §73 的解析修复，两者没改 `rust/src`）；最后一次通过 `run-20260924T003346Z` 的 `fb777993a093` 更早，未在本仓库历史里定位。`run-20260930T113718Z`/`113758Z`（`d753a27ed9fd`，3 次请求）与 `114423Z`/`114652Z`（同指纹）是四个不同的制品：前两者的身份项是 failed/other/3 请求（§73 的 `LoginFormMissing`），**后两者的 `report.json` 里根本没有 `identity_session` 键**（只跑了一个 case）。`121231Z`/`125551Z` 是 `8e1750875bac`：前者 3 请求（提交前就断）、后者 5 请求（本轮修的这条）。
