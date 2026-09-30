@@ -2020,12 +2020,19 @@ fn opening_tags(html: &str) -> Vec<OpeningTag> {
 
 fn find_tag_end(html: &str, start: usize) -> Option<usize> {
     let mut quote = None;
+    let mut after_equals = false;
     for (offset, character) in html[start..].char_indices() {
         match (quote, character) {
             (Some(expected), value) if value == expected => quote = None,
-            (None, '\'' | '"') => quote = Some(character),
+            // A quote opens an attribute value only directly after `=`.  A stray
+            // quote in a malformed attribute is an attribute name under HTML5,
+            // not the start of a value that swallows the rest of the page.
+            (None, '\'' | '"') if after_equals => quote = Some(character),
             (None, '>') => return Some(start + offset),
             _ => {}
+        }
+        if !character.is_ascii_whitespace() {
+            after_equals = character == '=';
         }
     }
     None

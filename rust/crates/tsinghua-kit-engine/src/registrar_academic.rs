@@ -785,12 +785,20 @@ fn tag_name_boundary(input: &str, position: usize) -> bool {
 
 fn find_tag_end(input: &str, start: usize) -> Option<usize> {
     let mut quote = None;
+    let mut after_equals = false;
     for (offset, character) in input.as_bytes()[start..].iter().copied().enumerate() {
         match (quote, character) {
             (Some(expected), value) if value == expected => quote = None,
-            (None, b'\'' | b'"') => quote = Some(character),
+            // A quote opens an attribute value only directly after `=`.  A stray
+            // quote (as in the deployed `style="color:#8b0000;""`) is an
+            // attribute name, not the start of a value that runs to the next
+            // quote in the page.
+            (None, b'\'' | b'"') if after_equals => quote = Some(character),
             (None, b'>') => return Some(start + offset + 1),
             _ => {}
+        }
+        if !character.is_ascii_whitespace() {
+            after_equals = character == b'=';
         }
     }
     None

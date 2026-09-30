@@ -2930,13 +2930,20 @@ fn tag_name_end(bytes: &[u8], mut cursor: usize) -> Option<usize> {
 
 fn find_tag_end(bytes: &[u8], start: usize) -> Option<usize> {
     let mut quote = None;
+    let mut after_equals = false;
     for (offset, byte) in bytes.iter().enumerate().skip(start + 1) {
         match quote {
             Some(expected) if *byte == expected => quote = None,
             Some(_) => {}
-            None if *byte == b'\'' || *byte == b'"' => quote = Some(*byte),
+            // A quote opens an attribute value only directly after `=`.  A stray
+            // quote in a malformed attribute is an attribute name under HTML5,
+            // not the start of a value that swallows the rest of the page.
+            None if (*byte == b'\'' || *byte == b'"') && after_equals => quote = Some(*byte),
             None if *byte == b'>' => return Some(offset),
             None => {}
+        }
+        if !byte.is_ascii_whitespace() {
+            after_equals = *byte == b'=';
         }
     }
     None

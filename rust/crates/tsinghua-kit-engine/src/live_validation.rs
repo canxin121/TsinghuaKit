@@ -517,6 +517,15 @@ pub(crate) fn error_category(error: &str) -> &'static str {
     // The service's Chinese name contains “网络”; it must not turn parser,
     // account-binding or HTTP rejection errors into transport failures.
     let diagnostic = crate::telemetry::diagnostic_reason(error);
+    if diagnostic.starts_with("identity_bootstrap_") {
+        // The bootstrap discovers the login page; it never submits a
+        // credential, so a failure here is a network or page-shape fact about
+        // the deployment rather than a statement about the account.
+        return match diagnostic {
+            "identity_bootstrap_network" => "network",
+            _ => "response",
+        };
+    }
     if diagnostic.starts_with("usereg_") {
         return match diagnostic {
             "usereg_transport" | "usereg_rate_limited" | "usereg_http_unavailable" => "network",

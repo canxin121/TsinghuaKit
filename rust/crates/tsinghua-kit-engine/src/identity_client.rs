@@ -3377,12 +3377,21 @@ fn is_webvpn_wrapper_prefix(prefix: &str) -> bool {
 
 fn find_tag_end(bytes: &[u8], mut cursor: usize) -> Option<usize> {
     let mut quote = None;
+    let mut after_equals = false;
     while cursor < bytes.len() {
-        match (quote, bytes[cursor]) {
-            (None, b'\'' | b'"') => quote = Some(bytes[cursor]),
+        let byte = bytes[cursor];
+        match (quote, byte) {
             (Some(current), byte) if byte == current => quote = None,
+            // A quote opens an attribute value only directly after `=`.  The
+            // deployed trusted-device banner contains `style="color:#8b0000;""`
+            // — a stray quote that HTML5 reads as an attribute name.  Treating
+            // it as an unterminated value would swallow the login form.
+            (None, b'\'' | b'"') if after_equals => quote = Some(byte),
             (None, b'>') => return Some(cursor),
             _ => {}
+        }
+        if !byte.is_ascii_whitespace() {
+            after_equals = byte == b'=';
         }
         cursor += 1;
     }
@@ -4256,6 +4265,76 @@ mod tests {
           </body>
         </html>
     "#;
+
+    #[test]
+    fn login_page_parse_survives_a_stray_attribute_quote_before_the_form() {
+        // Deployment shape recorded on 2026-09-30: the device-trust banner ends
+        // with `style="color:#8b0000;""`.  HTML5 reads the extra quote as an
+        // attribute name and keeps rendering the page; a scanner that lets any
+        // quote open a value never finds the form again.
+        let stray = r#"
+            <div class="form-group">
+              <span style="margin-left: 8px;">本次登录使用信任浏览器</span>
+              <span style="color:#8b0000;"">为了您的账号安全，使用完请关闭本浏览器。</span>
+            </div>
+            <form id="theform" method="post" action="/do/off/ui/auth/login/check">
+              <input type="hidden" name="_csrf" value="CSRF_TOKEN_REDACTED" />
+              <input name="i_user" value="student-redacted" />
+              <input name="i_pass" type="password" />
+            </form>
+            <div id="sm2publicKey">PUBLIC_KEY_REDACTED</div>
+        "#;
+        let parsed = parse_html(stray);
+        let names = parsed
+            .tags
+            .iter()
+            .map(|tag| tag.name.as_str())
+            .collect::<Vec<_>>();
+        assert!(names.contains(&"form"), "form missing from {names:?}");
+        assert!(
+            parsed.tags.iter().any(|tag| {
+                tag.attribute_value("id").as_deref() == Some("theform")
+                    && tag.attribute_value("action").as_deref()
+                        == Some("/do/off/ui/auth/login/check")
+            }),
+            "the login form lost its attributes"
+        );
+        assert_eq!(
+            parsed
+                .tags
+                .iter()
+                .find(|tag| tag.attribute_value("name").as_deref() == Some("i_user"))
+                .and_then(|tag| tag.attribute_value("value")),
+            Some("student-redacted".to_owned())
+        );
+        assert!(
+            parsed.visible_text.contains("为了您的账号安全"),
+            "banner text was lost: {}",
+            parsed.visible_text
+        );
+    }
+
+    #[test]
+    fn login_page_parse_keeps_a_quoted_attribute_containing_a_greater_than() {
+        let html = r#"<form method="post" action="/do/off/ui/auth/login/check" data-note="a > b">
+              <input type="hidden" name="target" value="TARGET_REDACTED" />
+            </form>"#;
+        let parsed = parse_html(html);
+        assert_eq!(
+            parsed
+                .tags
+                .iter()
+                .find(|tag| tag.name == "form")
+                .and_then(|tag| tag.attribute_value("data-note")),
+            Some("a > b".to_owned())
+        );
+        assert!(
+            parsed
+                .tags
+                .iter()
+                .any(|tag| tag.attribute_value("name").as_deref() == Some("target"))
+        );
+    }
 
     fn profile(encoding: FormEncoding) -> IdentityLoginProfile {
         IdentityLoginProfile::new(

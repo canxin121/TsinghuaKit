@@ -265,6 +265,16 @@ pub(super) const REASONS: &[&str] = &[
     "identity_login_rejected",
     "identity_session_invalid",
     "image_captcha_required",
+    // WebVPN → OAuth → identity form discovery, before any credential is
+    // submitted. Every one of these is account-independent.
+    "identity_bootstrap_config",
+    "identity_bootstrap_network",
+    "identity_bootstrap_http",
+    "identity_bootstrap_route",
+    "identity_bootstrap_page",
+    "identity_bootstrap_login_form",
+    "identity_bootstrap_app_id",
+    "identity_bootstrap_form",
     "http_status",
     "unexpected_origin",
     "login_failed",

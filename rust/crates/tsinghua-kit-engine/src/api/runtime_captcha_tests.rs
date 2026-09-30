@@ -476,3 +476,63 @@ async fn backend_repair_captcha_active_primary_challenge_stops_before_password_p
             .all(|request| request.starts_with("GET "))
     );
 }
+
+#[tokio::test]
+async fn backend_repair_bootstrap_login_form_failure_keeps_its_own_reason_code() {
+    // A form the parser cannot recognize is a deployment-shape failure.  It
+    // happens before any credential exists, so it must not be reported as, or
+    // classified like, a rejected account.
+    let identity = FixtureServer::new(vec![Reply::html(
+        "<html><body>维护中，请稍后再试</body></html>",
+    )]);
+    let oauth = FixtureServer::new(vec![Reply {
+        status: 302,
+        headers: format!(
+            "Location: {}do/off/ui/auth/login/form/fixture-app/0\r\n",
+            identity.base()
+        ),
+        body: Vec::new(),
+    }]);
+    let portal = FixtureServer::new(vec![Reply {
+        status: 302,
+        headers: format!("Location: {}thu-oauth/auth\r\n", oauth.base()),
+        body: Vec::new(),
+    }]);
+    let mut runtime = runtime();
+    runtime.webvpn_identity_config =
+        WebVpnIdentityConfig::new(portal.base(), oauth.base(), identity.base()).unwrap();
+    let error = runtime
+        .login(
+            "fixture-primary".into(),
+            "synthetic-password".into(),
+            Some(true),
+            true,
+            false,
+            false,
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error,
+        "统一认证引导未通过，请稍后重试（identity_bootstrap_login_form）"
+    );
+    assert!(!error.contains("密码错误"));
+    assert_eq!(
+        crate::telemetry::diagnostic_reason(&error),
+        "identity_bootstrap_login_form"
+    );
+    assert_eq!(crate::live_validation::error_category(&error), "response");
+    assert!(runtime.primary_password.is_none());
+    assert!(!runtime.service_session_is_proven(ServiceId::Identity));
+    // Exactly one GET per origin: the bootstrap must not retry the one-shot
+    // entry, and no credential POST may follow a failed discovery.
+    assert_eq!(identity.requests().len(), 1);
+    assert_eq!(oauth.requests().len(), 1);
+    assert_eq!(portal.requests().len(), 1);
+    assert!(
+        identity
+            .requests()
+            .iter()
+            .all(|request| request.starts_with("GET "))
+    );
+}

@@ -345,6 +345,43 @@ pub enum WebVpnIdentityError {
     ImageCaptchaRequired,
 }
 
+impl WebVpnIdentityError {
+    /// A closed, source-owned reason code for this failure.
+    ///
+    /// The bootstrap runs before any credential is submitted, so its failures
+    /// are about the deployment or the network, never about the account.  The
+    /// runtime attaches this code to the recorded message so the acceptance
+    /// report and the session diagnostics distinguish "the login page changed"
+    /// from "the network failed" instead of collapsing both into `other`.
+    /// A code names a category only; it never carries a URL, app id, key or
+    /// response byte.
+    pub fn reason(&self) -> &'static str {
+        match self {
+            Self::InvalidConfig { .. } => "identity_bootstrap_config",
+            Self::Transport(_) => "identity_bootstrap_network",
+            Self::HttpStatus { status }
+                if status.is_server_error() || matches!(status.as_u16(), 408 | 429) =>
+            {
+                "identity_bootstrap_network"
+            }
+            Self::HttpStatus { .. } => "identity_bootstrap_http",
+            Self::MissingRedirectLocation | Self::MalformedRedirect | Self::UnexpectedRedirect => {
+                "identity_bootstrap_route"
+            }
+            Self::RedirectChainTooLong => "identity_bootstrap_route",
+            Self::UnexpectedFinalPage | Self::ResponseDecode | Self::ResponseTooLarge => {
+                "identity_bootstrap_page"
+            }
+            Self::LoginFormMissing | Self::LoginFormActionInvalid => {
+                "identity_bootstrap_login_form"
+            }
+            Self::AppIdMissing | Self::AppIdMismatch => "identity_bootstrap_app_id",
+            Self::PublicKeyMissing | Self::UnsupportedFormEncoding => "identity_bootstrap_form",
+            Self::ImageCaptchaRequired => "image_captcha_required",
+        }
+    }
+}
+
 fn parse_origin(value: String, field: &'static str) -> Result<Url, WebVpnIdentityError> {
     let url = Url::parse(&value).map_err(|_| WebVpnIdentityError::InvalidConfig { field })?;
     if !matches!(url.scheme(), "http" | "https")
@@ -715,6 +752,9 @@ fn parse_attributes(input: &str) -> Vec<(String, String)> {
             cursor += 1;
         }
         if name_start == cursor {
+            // A stray `<` has no name to attach the next value to.  Skip it and
+            // keep scanning instead of stopping, so one malformed tag earlier
+            // in a page cannot hide the attributes of the tag being read.
             cursor += 1;
             continue;
         }
@@ -826,12 +866,22 @@ fn find_element_text_by_id(html: &str, wanted_id: &str) -> Option<String> {
 fn find_tag_end(html: &str, mut cursor: usize) -> Option<usize> {
     let bytes = html.as_bytes();
     let mut quote = None;
+    let mut after_equals = false;
     while cursor < bytes.len() {
-        match (quote, bytes[cursor]) {
+        let byte = bytes[cursor];
+        match (quote, byte) {
             (Some(current), byte) if byte == current => quote = None,
-            (None, b'\'' | b'"') => quote = Some(bytes[cursor]),
+            // A quote only opens an attribute value directly after `=`.  The
+            // deployed trusted-device banner contains `style="color:#8b0000;""`,
+            // i.e. a stray quote that HTML5 treats as an attribute name.  If it
+            // opened a value here, the scan would look for a partner quote and
+            // swallow every later tag, including the login form itself.
+            (None, b'\'' | b'"') if after_equals => quote = Some(byte),
             (None, b'>') => return Some(cursor),
             _ => {}
+        }
+        if !byte.is_ascii_whitespace() {
+            after_equals = byte == b'=';
         }
         cursor += 1;
     }
@@ -1004,6 +1054,93 @@ mod tests {
             ),
             Err(WebVpnIdentityError::AppIdMismatch)
         ));
+    }
+
+    #[test]
+    fn parser_survives_a_stray_quote_before_the_login_form() {
+        // The deployed trusted-device banner ends its span with
+        // `style="color:#8b0000;""` — one quotation mark too many.  HTML5 reads
+        // the second quote as an attribute name, and the login form follows it.
+        // A scanner that lets any quote open a value never finds the form and
+        // reports `LoginFormMissing` for a page that is in fact the login page.
+        let config = WebVpnIdentityConfig::new(
+            "https://webvpn.example.test/",
+            "https://oauth.example.test/",
+            "https://id.example.test/",
+        )
+        .expect("config");
+        let page = Url::parse(
+            "https://id.example.test/do/off/ui/auth/login/form/fixture-app/0?appId=fixture-app",
+        )
+        .expect("page");
+        let html = r#"
+            <div class="form-group">
+              <span style="margin-left: 8px; line-height: 1.6;">
+                本次登录使用信任浏览器访问校内其他系统时不必再输入账号密码，
+                <span style="color:#8b0000;"">为了您的账号安全，使用完请关闭本浏览器。</span>
+              </span>
+            </div>
+            <form id="theform" class="form-signin tabbox show" method="post"
+                  action="/do/off/ui/auth/login/check">
+              <input type="text" id="i_user" name="i_user">
+              <input type="hidden" id="sm2pass" name="i_pass">
+              <input type="hidden" name="SMRZAppid" value="fixture-app">
+              <input type="hidden" name="fingerPrint" value="FINGERPRINT_REDACTED">
+              <div id="c_code" class="form-group hidden">
+                <input type="text" id="i_code" name="i_captcha">
+              </div>
+            </form>
+            <div style="display: none;visibility:hidden" id="sm2publicKey">04fixture-key</div>
+        "#;
+
+        let result = parse_identity_login_page(&config, page, html, 2).expect("bootstrap");
+        assert_eq!(result.submit_path(), IDENTITY_SUBMIT_PATH);
+        assert_eq!(result.sm2_public_key(), "04fixture-key");
+        assert_eq!(
+            result
+                .hidden_fields()
+                .iter()
+                .map(|field| field.name())
+                .collect::<Vec<_>>(),
+            vec!["SMRZAppid", "fingerPrint"]
+        );
+        assert!(!format!("{result:?}").contains("FINGERPRINT_REDACTED"));
+        // The stray quote is only an attribute-name artifact: the page still
+        // declares its captcha block hidden, so no image captcha is required.
+        assert!(!has_active_identity_image_captcha(html));
+    }
+
+    #[test]
+    fn parser_keeps_quotes_that_do_open_an_attribute_value() {
+        // The relaxed delimiter rule must not stop honouring a real value: a `>`
+        // inside a quoted attribute is not the end of the tag, and the value is
+        // delivered whole.
+        let config = WebVpnIdentityConfig::new(
+            "https://webvpn.example.test/",
+            "https://oauth.example.test/",
+            "https://id.example.test/",
+        )
+        .expect("config");
+        let page = Url::parse(
+            "https://id.example.test/do/off/ui/auth/login/form/fixture-app/0?appId=fixture-app",
+        )
+        .expect("page");
+        let html = r#"
+            <form method="post" action="/do/off/ui/auth/login/check" data-note="a > b">
+              <input type="hidden" name="target" value="a > b">
+            </form>
+            <div id="sm2publicKey">fixture-public-key</div>
+        "#;
+        let result = parse_identity_login_page(&config, page, html, 1).expect("bootstrap");
+        assert_eq!(result.submit_path(), IDENTITY_SUBMIT_PATH);
+        assert_eq!(
+            result
+                .hidden_fields()
+                .iter()
+                .find(|field| field.name() == "target")
+                .map(|field| field.value()),
+            Some("a > b")
+        );
     }
 
     #[test]

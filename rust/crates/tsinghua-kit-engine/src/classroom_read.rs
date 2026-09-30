@@ -1283,12 +1283,19 @@ fn parse_html_document(html: &str) -> Result<HtmlNode, ClassroomParseError> {
 
 fn find_tag_end(value: &str) -> Option<usize> {
     let mut quote = None;
+    let mut after_equals = false;
     for (index, character) in value.char_indices() {
         match (quote, character) {
-            (None, '\'' | '"') => quote = Some(character),
             (Some(current), character) if current == character => quote = None,
+            // A quote opens an attribute value only directly after `=`.  A stray
+            // quote in a malformed attribute is an attribute name under HTML5,
+            // not the start of a value that swallows the rest of the page.
+            (None, '\'' | '"') if after_equals => quote = Some(character),
             (None, '>') => return Some(index),
             _ => {}
+        }
+        if !character.is_ascii_whitespace() {
+            after_equals = character == '=';
         }
     }
     None

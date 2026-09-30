@@ -480,6 +480,7 @@ fn find_tag_end(body: &str, start: usize) -> Option<usize> {
     let bytes = body.as_bytes();
     let mut index = start;
     let mut quote: Option<u8> = None;
+    let mut after_equals = false;
     while index < bytes.len() {
         let byte = bytes[index];
         match quote {
@@ -489,10 +490,17 @@ fn find_tag_end(body: &str, start: usize) -> Option<usize> {
                 }
             }
             None => match byte {
-                b'"' | b'\'' => quote = Some(byte),
+                // A quote opens an attribute value only directly after `=`.  The
+                // deployed identity page carries `style="color:#8b0000;""`; that
+                // second quote is an HTML5 attribute name, and treating it as an
+                // unterminated value would hide every tag after it.
+                b'"' | b'\'' if after_equals => quote = Some(byte),
                 b'>' => return Some(index),
                 _ => {}
             },
+        }
+        if !byte.is_ascii_whitespace() {
+            after_equals = byte == b'=';
         }
         index += 1;
     }
@@ -659,6 +667,49 @@ mod tests {
         assert_eq!(inner.len(), 1);
         // The outer row still has exactly one direct cell.
         assert_eq!(direct_children(&outer[0].inner(), "tr").unwrap().len(), 1);
+    }
+
+    #[test]
+    fn scan_survives_a_stray_attribute_quote_before_the_wanted_element() {
+        // The deployed identity page ends its device-trust banner with
+        // `style="color:#8b0000;""`.  Under HTML5 that second quotation mark
+        // starts another attribute name, and everything after it is ordinary
+        // markup.  A scanner that treats any quote as opening a value never
+        // reaches the next `>` again and silently loses every later element.
+        // The element that actually disappears in production is the one whose
+        // start tag comes *after* the stray quote: the scan for the surrounding
+        // container still calls `find_tag_end` before the quote, and the search
+        // then runs past the container's own `>` to the next quotation mark it
+        // can find, which belongs to a tag further down the page.
+        let body = r#"<div class="p-fbox">
+            <span style="color:#8b0000;"">为了您的账号安全</span>
+            <form id="theform" method="post" action="/do/off/ui/auth/login/check">
+                <strong class="wanted">Book</strong>
+            </form>
+        </div>"#;
+        let containers = scan(body, "div").unwrap();
+        assert_eq!(containers.len(), 1);
+        assert_eq!(containers[0].attr("class"), Some("p-fbox"));
+        let text = containers[0].text();
+        assert!(
+            text.contains("为了您的账号安全"),
+            "banner text lost: {text:?}"
+        );
+        assert!(text.contains("Book"), "form content lost: {text:?}");
+        let forms = scan_with_id(containers[0].inner(), "form", "theform").unwrap();
+        assert_eq!(forms.len(), 1, "the login form must survive the scan");
+        assert_eq!(forms[0].attr("action"), Some("/do/off/ui/auth/login/check"));
+    }
+
+    #[test]
+    fn scan_still_honours_a_quoted_attribute_containing_a_greater_than() {
+        // The relaxed delimiter rule must not shorten a real attribute value:
+        // a `>` inside quotes is not the end of the tag.
+        let body = r#"<div title="a > b"><strong class="wanted">Book</strong></div>"#;
+        let found = scan_with_class(body, "strong", "wanted").unwrap();
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].text(), "Book");
+        assert_eq!(scan(body, "div").unwrap()[0].attr("title"), Some("a > b"));
     }
 
     #[test]

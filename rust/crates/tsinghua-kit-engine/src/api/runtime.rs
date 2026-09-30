@@ -4832,7 +4832,12 @@ impl CampusRuntime {
                     let retryable = recovery_only
                         && transient
                         && bootstrap_witness.permits_probe_retry(self.identity.transport());
-                    let message = self.record_primary_auth_error(error);
+                    // The bootstrap failure category is source-owned and
+                    // account-independent, so it is safe to append to the
+                    // recorded message: without it every bootstrap failure
+                    // reaches the acceptance report as the coarse `other`.
+                    let message =
+                        self.record_primary_auth_error(format!("{error}（{}）", error.reason()));
                     if retryable {
                         self.schedule_safe_login_probe_retry();
                         return Err(reference_recovery::RETRY_NOTICE.to_owned());
@@ -21719,6 +21724,13 @@ fn public_error(error: String) -> String {
     let reason = crate::telemetry::diagnostic_reason(&error);
     if reason.starts_with("registrar_grade_") {
         return format!("教务成绩读取未通过验证，请查看诊断（{reason}）");
+    }
+    if reason.starts_with("identity_bootstrap_") {
+        // Every bootstrap failure is decided before a credential exists, so the
+        // message must not suggest the account is at fault.  The code stays in
+        // parentheses because it is the only thing that separates "the login
+        // page changed" from "the network failed" in the acceptance report.
+        return format!("统一认证引导未通过，请稍后重试（{reason}）");
     }
     if reason == "library_section_unconfirmed" || reason == "library_sample_budget_exhausted" {
         return format!("图书馆区域目录未确认，请刷新区域（{reason}）");

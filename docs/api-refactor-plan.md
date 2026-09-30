@@ -2139,3 +2139,56 @@ match (first_number(left), first_number(right)) {
 
 **同过滤器下的既有失败**：`--lib washer_read` **22 通过 / 0 失败**（新增 3 项）。`cargo fmt --manifest-path rust/Cargo.toml --all -- --check` 干净；`cargo check --workspace --all-targets` 退出 0。`docs/api-surface-baseline.json` 计数不变（改的是私有函数与测试）。`runtime.rs` 一行未动。
 
+## 73. 2026-09-30 统一认证登录页的孤立引号让表单扫描器丢掉了登录表单
+
+用户在交互终端跑 §71 的脚本，`.local/backend-check/` 下连着四次运行都是同一个形状：`[失败][identity] 统一身份认证 — other`，3 次 HTTP，约 8.4 秒；之后 74 项里除身份、洗衣、TUNET、订水共 6 项外全部 `dependency_not_passed`。身份是整条链的头，它一倒，后面每一位都拿不到结论。
+
+**现场：失败形状与最后一次通过的形状**
+
+- 失败：`run-20260930T121231Z-6cc277a6…` 的 `identity_session` 是 `failed` / `other` / 3 次请求 / `body_reads=3` / `decoded_text_bytes=18894`；同一天的 `run-20260930T113718Z`、`run-20260930T113758Z`、`run-20260930T114423Z`、`run-20260930T114652Z` 完全相同。
+- 最后一次通过：`run-20260924T003346Z-39fc4566…` 是 `passed` / `verified` / **7** 次请求 / `decoded_text_bytes=23578`。
+- 也就是说 9 月 24 日到 9 月 30 日之间，同一条只读链少走了 4 个请求、少读了约 4.7KB，卡点在第 3 个响应**之后**——不是连不上网，是读回来的东西没被认出来。传输层计数 `transport_failures=0`、`body_failures=0`、`cancellations=0` 也说明这一点。
+
+**定位**
+
+`other` 是词表兜底的"没认出来"，所以第一步是把真实错误取出来。用一个临时的、只读的引擎探针直接调 `WebVpnIdentityBootstrapper::discover()`（同一个 `CampusHttpTransport`、匿名、未登录、未提交任何凭证），拿到的是 `Err(LoginFormMissing)`——"dynamic identity login form was not found"。这个变体只可能来自 `webvpn_identity.rs` 自己的表单扫描。
+
+把当天线上登录页匿名抓一份下来对比 9 月 24 日的页面：16572 字节 → 18690 字节，新增内容里有 `style="color:#8b0000;""`——**多了一个引号**。
+
+**根因**
+
+`find_tag_end` 原本是"引号开关"：遇到 `'` / `"` 就把 `quote` 置为 `Some`，再遇到同字符置回 `None`，只有 `quote` 为 `None` 时的 `>` 才算标签结束。这是对 HTML 的一个近似，对 `style="…"` 成立，对**孤立引号**不成立：HTML5 在 `style="color:#8b0000;"` 之后的那个 `"` 是**下一个属性名的开始**（后面紧接 `>` 就收尾），它不开启一个值。开关式扫描却把它当成值的开始，于是去找配对引号，一路吞到页面第 14181 字节的那个 `"`——中间包含第 12950 字节的 `<form id="theform" … action="/do/off/ui/auth/login/check">`。表单被吞掉，`parse_identity_login_page` 只能报 `LoginFormMissing`。
+
+这不是"页面坏了"：浏览器把同一张页面正常渲染出登录框，说明 HTML5 就是这么解析的。失效的是我们解析器那个近似假设。
+
+**修复**
+
+把"任何引号都开值"改成"**只有紧跟 `=` 的引号才开值**"：扫描时维护 `after_equals`，每读一个非空白字节就把它更新为"这个字节是不是 `=`"。
+
+- `style="color:#8b0000;"` 的第一个 `"` 紧跟 `=`，照旧开值，值里的 `;`、`#` 都不是引号，走到第二个 `"` 正常收尾；
+- 孤立的第三个 `"` 前面是 `;`（不是 `=`），因此不开值，标签在随后的 `>` 正常结束。
+
+同样的 `find_tag_end` 在本仓库有 **7 份拷贝**（`webvpn_identity.rs`、`campus_html.rs`、`identity_client.rs`、`usereg_adapter.rs`、`usereg_client.rs`、`registrar_academic.rs`、`classroom_read.rs`、`learn_client.rs`，其中 `campus_html` 供多个域共用），各自的返回约定不同（`start + offset`、`start + offset + 1`、`cursor`），缺陷却是同一处。本轮 7 份全部按各自写法打上同一个条件——**只修触发的那一份，等于把缺陷留在另外六个域里**：下一次某个页面多一个引号，同样的失败会在别的域重演，而且同样以 `other` 出现。
+
+**把 `other` 变成有意义的码**
+
+`WebVpnIdentityError` 有 17 个变体，此前**全部**走同一条记录路径，最后被 `telemetry::diagnostic_reason` 归成 `other`；`other` 对使用者等于"不知道"。本轮给枚举加 `reason()`，输出闭合的、源码自有的类别码：`identity_bootstrap_config` / `_network` / `_http` / `_route` / `_page` / `_login_form` / `_app_id` / `_form`，图形验证码仍报既有的 `image_captcha_required`。码只指类别，**不含 URL、app id、公钥或响应字节**，8 个新码同时登记进 `telemetry_labels::REASONS` 词表与 `live_validation::error_category`（`_network` → `network`，其余 → `response`）。
+
+`runtime.rs` 在记录统一认证失败时把该码附进消息（`format!("{error}（{}）", error.reason())`），`public_error` 对 `identity_bootstrap_` 前缀给出面向用户的「统一认证引导未通过，请稍后重试（…）」——引导发生在**提交凭证之前**，所以这句话必须明确不是账号的问题，不能让人以为密码错了。
+
+**回归测试（新增 7 条）**
+
+- `webvpn_identity::tests::parser_survives_a_stray_quote_before_the_login_form`：fixture 保留真实的 `style="color:#8b0000;""` 与真实的 `<form id="theform" …>`，断言提交路径、公钥、隐藏字段名、`Debug` 不泄漏指纹、页面上没有图形验证码。
+- `webvpn_identity::tests::parser_keeps_quotes_that_do_open_an_attribute_value`：断言 `title="a > b"` 这种真值仍被整段读出。
+- `campus_html::tests::scan_survives_a_stray_attribute_quote_before_the_wanted_element` / `scan_still_honours_a_quoted_attribute_containing_a_greater_than`。
+- `identity_client::tests::login_page_parse_survives_a_stray_attribute_quote_before_the_form` / `login_page_parse_keeps_a_quoted_attribute_containing_a_greater_than`。
+- `api::runtime_captcha_tests::backend_repair_bootstrap_login_form_failure_keeps_its_own_reason_code`：断言失败消息是「统一认证引导未通过，请稍后重试（identity_bootstrap_login_form）」、不含"密码错误"、`diagnostic_reason` 是闭码、`error_category` 是 `response`、没有主密码证据、每个 origin 恰好一次 GET 且没有 POST。
+
+这组测试做过**反向验证**：把 7 份 `after_equals` 条件临时去掉，`parser_survives_…`、`login_page_parse_survives_…`、`scan_survives_…` 当场失败（分别是 `LoginFormMissing`、`form missing`、`banner text lost`），加回去即通过；而 `parser_keeps_quotes_…` 与 `scan_still_honours_…` 在两种状态下都通过——"过宽"和"过窄"各自被一条测试钉住，修复不可能退化成"干脆不认引号"。
+
+**没有改的东西**：传输层与会话层一行未动——没有放宽任何白名单、没有新增认证路径、没有第二套 Cookie jar、没有重登、没有自动重试。改的是**同一份 transport 之后的 HTML 解析**，属于业务逻辑，按仓库分工留在 Rust 后端。`docs/api-surface-baseline.json` 的公开条目不变（新增的是私有函数 `reason()` 的调用点与测试）。
+
+**线上验证：待办**。本轮的结论来自（a）线上登录页字节、（b）匿名只读探针对同一条链的实际结果（修复前 `ERR LoginFormMissing`，修复后 `OK hops=2 app_id_len=32 key_len=130 hidden=0 submit=/do/off/ui/auth/login/check encoding=UrlEncoded`）、（c）反向验证过的 fixture。但**`identity_session` 本身还没有在真实账号下重跑通过**，必须由用户在自己的交互终端重跑 §71 的脚本才能把这一项标成已验证；在重跑之前，身份域及其下游的线上可用性仍然是未验证，不能用上面的探针结果冒充。
+
+**同过滤器下的既有失败**（改动前把工作区备份一份、还原到未修改状态跑一遍对照确认，**不是本轮引入**）：`registrar_academic::tests::rejects_a_same_sized_non_grade_table_instead_of_returning_empty_data` 两种状态下同样失败；`api::runtime::tests::backend_repair_learn_fresh_announcement_cache_skips_live_handoff` 在基线就是栈溢出（SIGABRT）；`identity_client` 的两条与 `usereg` 的两条只在按模块名批量过滤时失败、单独跑通过（与当前工作目录及共享状态有关）。`cargo fmt --all` 干净，`cargo check --workspace --all-targets` 退出 0。
+
