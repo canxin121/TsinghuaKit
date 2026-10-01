@@ -1027,8 +1027,16 @@ pub(crate) async fn follow_invoice_handoff(
         .form(&[("ticket", ticket.as_str())])
         .build()
         .map_err(|_| InvoiceHandoffError::Route)?;
+    // The roam-auth endpoint answers the accepted ticket with a redirect to
+    // the application page.  The reference client follows that redirect as a
+    // GET without the ticket (its own redirect loop drops the body on 302),
+    // so a 302 here is the success signal rather than an HTTP failure.  The
+    // shared redirect loop is used instead of a hand-written hop: it applies
+    // the same origin and mapping confinement as every other request, it
+    // re-checks the Cookie jar per hop, and it never re-sends the POST or its
+    // one-time ticket.
     let response = transport
-        .execute_once(transport.client(), request)
+        .execute(request)
         .await
         .map_err(|_| InvoiceHandoffError::Unconfirmed)?;
     let status = response.status();

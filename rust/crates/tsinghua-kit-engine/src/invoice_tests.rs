@@ -423,6 +423,71 @@ async fn the_handoff_exchange_posts_the_ticket_back_and_stays_in_the_mapping() {
 }
 
 #[tokio::test]
+async fn the_handoff_follows_the_roam_auth_redirect_as_a_get_without_the_ticket() {
+    // The endpoint answers the accepted one-time ticket with a redirect to the
+    // application page.  The redirect is the success signal, and following it
+    // must not carry the POST, its form body, or the ticket to the next hop.
+    let page = "<html><script>(\"ticket\").value = 'AAABBBCCC111';</script></html>";
+    let application = format!("{MAPPING}/invoiceSys/getList.do");
+    let server = FixtureServer::new(vec![
+        Reply::html(page),
+        Reply {
+            status: 302,
+            headers: format!("Location: {application}\r\nContent-Type: text/html\r\n"),
+            body: Vec::new(),
+        },
+        Reply::html("<html><body>发票查询</body></html>"),
+    ]);
+    let transport =
+        CampusHttpTransport::with_timeout("THYou/test", Duration::from_secs(10)).unwrap();
+    let webvpn = Url::parse(server.base()).unwrap();
+    let target = mapped_url(&server, "/roam/index.do").to_string();
+    let final_url = follow_invoice_handoff(&transport, &webvpn, &target)
+        .await
+        .expect("a redirect after the ticket post completes the handoff");
+
+    let requests = server.requests();
+    assert_eq!(requests.len(), 3, "{requests:?}");
+    assert!(requests[2].starts_with("GET "), "{}", requests[2]);
+    assert!(requests[2].contains(&application), "{}", requests[2]);
+    assert!(
+        !requests[2].to_ascii_lowercase().contains("ticket"),
+        "the one-time ticket must not be re-sent: {}",
+        requests[2]
+    );
+    assert_eq!(final_url.path(), application);
+}
+
+#[tokio::test]
+async fn the_handoff_refuses_a_ticket_redirect_outside_the_mapping() {
+    // A redirect out of this service's mapping is never followed, so the
+    // handoff cannot complete: the shared redirect loop stops at the foreign
+    // hop and the unconsumed status is reported instead of a URL.
+    let page = "<html><script>(\"ticket\").value = 'AAABBBCCC111';</script></html>";
+    let server = FixtureServer::new(vec![
+        Reply::html(page),
+        Reply {
+            status: 302,
+            headers: "Location: /https/77726476706e69737468656265737421eaff4b8b69336153301c9aa596522b20bc86e6e559a9b290/jhBks.by_fascjgmxb_gr.do\r\nContent-Type: text/html\r\n".into(),
+            body: Vec::new(),
+        },
+    ]);
+    let transport =
+        CampusHttpTransport::with_timeout("THYou/test", Duration::from_secs(10)).unwrap();
+    let webvpn = Url::parse(server.base()).unwrap();
+    let target = mapped_url(&server, "/roam/index.do").to_string();
+    let error = follow_invoice_handoff(&transport, &webvpn, &target)
+        .await
+        .expect_err("a foreign mapping cannot complete the handoff");
+    assert_eq!(error, InvoiceHandoffError::Http);
+    assert_eq!(
+        server.requests().len(),
+        2,
+        "the foreign hop must never be dispatched"
+    );
+}
+
+#[tokio::test]
 async fn the_handoff_refuses_a_target_outside_its_own_mapping() {
     let server = FixtureServer::new(vec![]);
     let transport =

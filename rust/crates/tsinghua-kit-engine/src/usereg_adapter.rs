@@ -1384,27 +1384,30 @@ fn parse_devices(html: &str) -> Result<Vec<UseregDevice>, UseregAdapterError> {
         return Err(UseregAdapterError::DeviceDataUnavailable);
     }
     let mut devices = Vec::new();
+    // A widget can carry more than the device table.  Rows that are not a
+    // device record are skipped rather than failing the whole read, the same
+    // tolerance the reference client has, but a container that shows data rows
+    // and still yields no device record is a layout this parser does not
+    // understand and must not become an empty success.
+    let mut data_rows = 0_usize;
     for (_, body) in bodies {
         for (opening, row) in element_blocks(&body, "tr") {
             let cells = element_texts(row.as_str(), "td");
+            if !cells.iter().any(|value| !value.trim().is_empty()) {
+                continue;
+            }
+            data_rows += 1;
+            // Device ids are the portal's own numeric `data-key`; a header or
+            // unrelated row carries no usable id and is not a device.
             let Some(id) = opening
                 .attr("data-key")
                 .map(str::trim)
-                .filter(|v| !v.is_empty())
+                .filter(|v| !v.is_empty() && v.chars().all(|character| character.is_ascii_digit()))
             else {
-                // Header rows belong in <thead>. A non-empty row in the
-                // actual <tbody> without the portal's key is malformed; it
-                // must not silently become an empty device result.
-                if cells.iter().any(|value| !value.trim().is_empty()) {
-                    return Err(UseregAdapterError::DeviceDataUnavailable);
-                }
                 continue;
             };
-            if !id.chars().all(|character| character.is_ascii_digit()) {
-                return Err(UseregAdapterError::DeviceDataUnavailable);
-            }
             if cells.len() < 5 {
-                return Err(UseregAdapterError::DeviceDataUnavailable);
+                continue;
             }
             if cells[2].trim().is_empty()
                 || cells[3].trim().is_empty()
@@ -1423,6 +1426,9 @@ fn parse_devices(html: &str) -> Result<Vec<UseregDevice>, UseregAdapterError> {
                 mac: cells[4].clone(),
             });
         }
+    }
+    if devices.is_empty() && data_rows > 0 {
+        return Err(UseregAdapterError::DeviceDataUnavailable);
     }
     Ok(devices)
 }
@@ -2755,6 +2761,49 @@ mod tests {
 
         let empty = r#"<div id="w1-container"><table><tbody></tbody></table></div>"#;
         assert_eq!(parse_devices(empty).expect("valid empty table"), Vec::new());
+    }
+
+    #[test]
+    fn device_rows_that_are_not_devices_are_skipped_not_failed() {
+        // The container is not guaranteed to hold only device rows: a heading
+        // row, or a row the portal renders without its numeric key, is not a
+        // device and must not fail the whole read.  A row that does carry the
+        // key but disagrees with the address families is still a corrupted
+        // record and stays an error.
+        let heading_and_device = r#"<div id="w1-container"><table><tbody>
+          <tr><td colspan="5">当前在线设备</td></tr>
+          <tr data-key="17"><td>192.0.2.10</td><td></td><td>2026-09-11 10:00:00</td><td>campus</td><td>AA-BB-CC</td></tr>
+        </tbody></table></div>"#;
+        let devices = parse_devices(heading_and_device).expect("heading row is skipped");
+        assert_eq!(devices.len(), 1);
+        assert_eq!(devices[0].id, "17");
+
+        let keyed_row_without_columns = r#"<div id="w1-container"><table><tbody>
+          <tr data-key="17"><td>192.0.2.10</td><td></td></tr>
+          <tr data-key="18"><td>192.0.2.11</td><td></td><td>2026-09-11 10:00:00</td><td>campus</td><td>AA-BB-CC</td></tr>
+        </tbody></table></div>"#;
+        let devices = parse_devices(keyed_row_without_columns).expect("short row is skipped");
+        assert_eq!(devices.len(), 1);
+        assert_eq!(devices[0].id, "18");
+
+        // Data rows that produce no device at all are a layout this parser
+        // does not understand, never "no devices online".
+        let unrecognized_rows = r#"<div id="w1-container"><table><tbody>
+          <tr><td>one</td></tr><tr><td>two</td></tr>
+        </tbody></table></div>"#;
+        assert!(matches!(
+            parse_devices(unrecognized_rows),
+            Err(UseregAdapterError::DeviceDataUnavailable)
+        ));
+
+        // The same holds when only the key is missing from every row.
+        let no_keys = r#"<div id="w1-container"><table><tbody>
+          <tr><td>192.0.2.10</td><td></td><td>time</td><td>campus</td><td>AA-BB-CC</td></tr>
+        </tbody></table></div>"#;
+        assert!(matches!(
+            parse_devices(no_keys),
+            Err(UseregAdapterError::DeviceDataUnavailable)
+        ));
     }
 
     #[test]
