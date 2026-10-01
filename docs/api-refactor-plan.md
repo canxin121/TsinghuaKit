@@ -2248,3 +2248,35 @@ seq 46  identity_handoff   phase=primary_handoff handoff_proven=false reason=mis
 **线上验证：待办**。改动的效果是"少发一次被拒的握手"，只有真实账号重跑才能把这两个域从 failed 翻成 passed；用户需要在自己的交互终端重跑 §71 的脚本。本轮未执行真实账号请求。
 
 **顺带记录**：`LIBRARY_ROOM_MAPPING_SCHEME` / `LIBRARY_ROOM_MAPPING_TOKEN` / `RESERVES_MAPPING_SCHEME` / `RESERVES_MAPPING_TOKEN` 四条常量在删掉那两条分支后只被测试引用，`cargo check` 会报 `never used`（lib target）。这与它们记录"本模块只接受这一张映射"的用途相符，且 `LIBRARY_ROOM_MAPPING_TOKEN` 仍被两条测试断言（前缀、AES 解码出的主机名），因此保留。
+
+## 76. 2026-10-01 预约记录读在交接后直接命中登录页；INFO 目录的降级被验收判成失败
+
+`run-20261001T035220Z-4b109a187c3c4b8781509f5d967645aa` 的两个用例各自暴露一个层次不同的问题：一个是**读的顺序**，一个是**验收与引擎契约不一致**。
+
+**一、`library_reservations`：预约记录读少了参考实现里那次主页读**
+
+**现场**（`events.000001.jsonl` 序列 1515–1568）：`req 287` `/home/web/f_second` 302（`cookie_updated: true`）→ `req 288` 302 → `req 289` 200/`decoded_text_bytes: 30354`；紧接 `session transition_applied authenticated→anonymous`，`req 290` 重新建立会话（200，46485 字节，`anonymous→authenticated`），`req 291` 302 → `req 292` 302 → `req 293` 200，**同样是 30354 字节**；随后 `authenticated→anonymous`、`business_read_failure`、`case_finished outcome=failed reason=session request_count=7`。而在序列 300–360，同一个 46485 字节的页面正是通过了的 `library_session` 用例唯一那次请求。
+
+**根因**：参考库的 `getBookingRecords`（`library.ts:300-334`）在取 `LIBRARY_BOOK_RECORD_URL` 之前**先** `await getAccessToken(helper)`，而 `getAccessToken`（`library.ts:255-274`）就是一次 `LIBRARY_HOME_URL` 读——即 `/home/web/f_second`。本引擎的 `read_booking_records` 直接 `execute_read(LIBRARY_BOOKING_RECORD_PATH)`，跳过了那次主页读。刚刚完成 WebVPN 交接的映射会话里，未先访问目标站主页的预约路由被两次重定向后返回一张约 30 KiB 的页面，读取器只能把它分类成登录页——于是一份本来可读的列表变成了会话错误。返回的 30354 字节两次完全一致，说明这不是瞬时故障，而是该顺序下的稳定结果。
+
+**修复**（`library_write.rs`）：`read_booking_records` 先 `read_access_token()`（即主页读）再 `drop(token)`，然后才 `execute_read(LIBRARY_BOOKING_RECORD_PATH)`。预约路由本身不带 token，这里读主页只是为了让映射会话绑定到图书馆目标；token **不存储、不返回、不重用**，在本次调用内即被丢弃，也不进 DTO 或日志。`load_reservations`（`runtime_library_write.rs`）无需改动——home 读发生在 `read_booking_records` 内部。
+
+**回归测试**：`library_write_tests.rs` 的两条既有用例改成两次请求的形状，并断言 `requests[0]` 是 `GET /home/web/f_second`、`requests[1]` 是 `GET /user/index/book` 且**不**含 token；新增 `backend_repair_library_records_without_a_booking_token_send_no_record_read`——主页无 token 时一次就停，诊断码 `library_booking_token`，不发第二次请求（"读不到 token"绝不能看起来像"没有预约"）。
+
+**二、`info_catalog`：把引擎自己声明的降级当成了客户端失败**
+
+**现场**：`business_stage=info_catalog_sources` 200（`req 181`，11154 字节）；`info_catalog_channels` **404**（`req 183`，1443 字节）；回退的最新新闻页 200/68957 字节；`operation_finished … reason=validation_news_catalog_partial`。
+
+**根因**：`NEWS_SOURCES_PATH` / `NEWS_CHANNELS_PATH`（`info_session.rs:48-49`）与参考的 `NEWS_SOURCE_LIST_URL` / `NEWS_CHANNEL_LIST_URL` 逐字节相同，而参考的 `getNewsChannelList`（`news.ts:157`）没有 404 回退——即这条栏目路由在现行线上服务上**确实已经不存在**。引擎对此的处理是 `load_info_news_catalog` 里有意为之的降级（`runtime.rs`）：保留已证实的 live 来源，栏目只取刚从新闻页观察到的 id，`status="partial"` + `channel_error`，SDK 侧对应 `NewsCatalogCoverage::Partial`。但只读验收把这个**故意的、诚实的部分结果**映射成了硬失败。
+
+**修复**（`api/cli_validation.rs` 的 `"info_catalog"` 分支）：先守 `source == "live" && !sources.is_empty()`（来源目录是调用方真正据以筛选的那一半，缺了就是失败 `validation_news_catalog_empty`）；再对 `status == "partial" && channel_error.is_some()` 返回 `Ok(Outcome::Skipped("validation_news_catalog_partial"))`——**未验证**（退出码 3），而不是失败，也**不是**通过：既不能把有意的降级说成客户端故障，也不能声称拿到了一份完整的目录。`validation_news_catalog_partial` 早已在 `telemetry_labels::REASONS` 里，因此 `Outcome::Skipped` 审计日志与被跳过原因的词汇表测试都接受它。
+
+**回归测试**（`cli_validation_tests.rs`，新增 `prove_info_for_acceptance` 夹具）：`backend_repair_news_catalog_cli_reports_the_degraded_channel_route_as_unverified`——来源 200 / 栏目 404 / 新闻页 200 时结果必须是 `Skipped("validation_news_catalog_partial")`，共 6 次请求；`backend_repair_news_catalog_cli_still_fails_without_the_source_directory`——来源 404 时必须是失败而不是跳过。
+
+**三、顺带：三处仍在硬编码 origin 的适配器**
+
+`prepare_reserves_adapter`、`prepare_library_room_adapter`、`establish_info_and_library_fresh` 仍用 `Url::parse(<硬编码常量>)` 直接取整个 URL；同一批里其它六个 `prepare_*` 已经改成"取 INFO 适配器自己的 `config().webvpn_base_url`，只覆盖 path"。本轮把这三处补齐为同一形状（origin 必须留在 `ensure_info_session` 保持单一的那条 Cookie/交接边界上，第二个硬编码 origin 会把它劈成两半）。映射路径仍来自各模块自己的常量，账号绑定与过期分类一条都没放宽。
+
+**测试结果**：新增/受影响定向——`-- news_catalog` 11 通过 / 0 失败；`-- library_write library_read reserves library_room read_only_acceptance news_catalog service_repair_tests` 222 通过 / 7 失败，7 条全部在 `/tmp/after.txt` 的改动前基线里（其中 `backend_repair_cached_library_read_uses_existing_expiry_gate` 与另两条 `service_repair_tests` 也已用 `git stash` 在未修改状态逐一复现）。全量 `--lib` 运行推进到 2117 项时，出现的失败项按名字比对**全部落在基线集合内**；该次运行随后停在既有的 `backend_repair_runtime_electricity_history_refreshes_business_proof`（>60 s 无进展，与 §71 记录的同一条卡死一致），因此**本轮没有拿到一份完整的全量运行**，已主动终止而不是让它继续占用运行时。`cargo check --workspace --all-targets` exit 0；`cargo fmt --all -- --check` 干净；`git diff --check` 干净。
+
+**线上验证：待办**。第一项的判定依据是主证据（同一 30354 字节页面重复出现、以及通过了的 `library_session` 那次 46485 字节主页读），第二项依据是 404 状态码与引擎自己的降级契约；两者的效果只有用户在自己的交互终端重跑 §71 的脚本、且 `library_reservations` 与 `info_catalog` 在真实账号下重跑之后才能标成已验证。本轮未执行任何真实账号请求。
