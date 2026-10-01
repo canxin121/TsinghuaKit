@@ -14,9 +14,13 @@
 //! the WebVPN hop are already shared through `CampusHttpTransport`.
 //! [`RESERVES_WEBVPN_TARGET`] is therefore recorded for documentation only and
 //! is deliberately **not** registered as a roaming selector in
-//! `info_session::map_additional_roaming`.  A read whose session has expired is
-//! reported as [`ReservesAdapterError::SessionExpired`], so the existing INFO
-//! refresh path handles it exactly like the other INFO-hosted readers.
+//! `info_session::map_additional_roaming`; no INFO roam is dispatched for this
+//! read at all.  The adapter is built directly from this module's own mapping
+//! root ([`RESERVES_MAPPING_TOKEN`]), which is the same absolute mapping the
+//! reference's `RESERVES_LIB_SEARCH` URL carries.  A read whose session has
+//! expired is reported as [`ReservesAdapterError::SessionExpired`], so the
+//! existing INFO refresh path handles it exactly like the other INFO-hosted
+//! readers.
 //!
 //! Two reads are exposed:
 //!

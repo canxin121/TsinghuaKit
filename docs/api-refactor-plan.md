@@ -2224,3 +2224,27 @@ seq 46  identity_handoff   phase=primary_handoff handoff_proven=false reason=mis
 **线上验证：待办**。本轮证据是线上页面字节、失败运行的三段事件、以及两份抓取的分类前后对照；`identity_session` 仍未在真实账号下重跑通过，必须由用户在自己的交互终端重跑 §71 的脚本才能把身份域及其下游标为已验证。
 
 **运行台账更正**（供后续核对）：`.local/backend-check/` 下的构建指纹是**编译输入的 sha256**（`tools/backend_check.py::source_revision`），不是 Git commit。按此口径：`d753a27ed9fd` = `e187e5a`/`d8db976`（§71 脚本补齐那一版）；`8e1750875bac` = `cd8d09b`/`1b9db02`（洗衣修复与 §73 的解析修复，两者没改 `rust/src`）；最后一次通过 `run-20260924T003346Z` 的 `fb777993a093` 更早，未在本仓库历史里定位。`run-20260930T113718Z`/`113758Z`（`d753a27ed9fd`，3 次请求）与 `114423Z`/`114652Z`（同指纹）是四个不同的制品：前两者的身份项是 failed/other/3 请求（§73 的 `LoginFormMissing`），**后两者的 `report.json` 里根本没有 `identity_session` 键**（只跑了一个 case）。`121231Z`/`125551Z` 是 `8e1750875bac`：前者 3 请求（提交前就断）、后者 5 请求（本轮修的这条）。
+
+## 75. 2026-10-01 教参与研读间把"恢复策略"当成了常规漫游
+
+`run-20261001T035220Z-4b109a187c3c4b8781509f5d967645aa`（`graduate: true`，74 个用例）里，教参与研读间四个只读用例全部失败，失败码是 `info_handoff_result_with_object`：教参馆藏检索 62 ms / 2 请求、研读间房间目录 59 ms / 2 请求、本人研读间预约记录 54 ms / 2 请求。日志里这两次握手的响应体长度都是 **43 字节**，而 `req 231`（发票）那种真正的 INFO 漫游握手是 1197 字节、`req 7` 的 `yyfwid` 提交体是 32 字符——43 字节的 `portal_fg` 业务错误 `{"result":"error","object":null,"msg":null}` 连一个 32 字符的应用 id 都装不下。
+
+**根因**
+
+两个模块自己的文档早就写下了不变量：`reserves_read.rs` 说 `RESERVES_WEBVPN_TARGET` "is deliberately **not** registered as a roaming selector in `info_session::map_additional_roaming`"，`library_room_read.rs` 对 `LIBRARY_ROOM_WEBVPN_TARGET` 说同样的话。但 `api/runtime.rs` 的 `prepare_reserves_adapter` / `prepare_library_room_adapter` 仍然在调用 `info.additional_roaming(…)`，而 `info_session.rs` 里也确实登记着两条 `selector → (host, scheme, mapping)` 分支——文档与代码互相矛盾，代码赢了，于是每次读都先发一次注定被拒的漫游。
+
+参考实现里这两个名字**根本不是漫游选择器**，而是 `roamingWrapper` 的**过期恢复策略**：`core.ts` 的 `roam` 对 `"card" | "cab" | "cr" | "id_website" | "id"` 走的是**校园身份登录**（取 `#sm2publicKey`、把 `SM2_MAGIC_NUMBER + sm2.doEncrypt(password, publicKey)` POST 给 id 登录页）。真正取数据的两条路径是绝对 WebVPN URL：`reserves-lib.ts` 的 `RESERVES_LIB_SEARCH` / `RESERVES_LIB_DETAIL`（映射根就是本模块的 `RESERVES_MAPPING_TOKEN`），`strings.ts` 的 `LIBRARY_ROOM_BOOKING_ROOT_URL` 及其派生（映射根就是 `LIBRARY_ROOM_MAPPING_TOKEN`）。本引擎刻意不实现第二次校园登录，因此那条恢复路径**按其定义就是不可达的**，把它登记成选择器只会让"恢复"变成"每次请求都先失败一次"。
+
+**修复**
+
+- `api/runtime.rs`：两个 `prepare_*` 删掉 `info.additional_roaming(...)` 与随后的 `roaming_url` 路径收窄；改为在 `ensure_info_session` 之后校验 **INFO 会话属于同一个 user**（`snapshot_for(ServiceId::Info).user == Some(user)`）、且 `service_session_is_proven(ServiceId::Info)`，然后直接用本模块自己的固定映射常量 `RESERVES_WEBVPN_BASE_URL` / `LIBRARY_ROOM_WEBVPN_BASE_URL` 经 `try_with_transport` 构造适配器——与 `establish_library_read_at` 已有的纪律一致。账号绑定、映射收窄（仍是本模块自己的 token）、按适配器自己的过期分类**一条都没有放宽**，只是不再发那次注定失败的漫游。
+- `info_session.rs`：删掉那两条 `map_additional_roaming` 分支，只留注释说明为什么**故意不登记**——一条被回答的分支就是调用方把"身份登录应用 id"当成漫游目标的唯一入口。删掉之后 `_` 分支（同源透传 / 跨源 `UnexpectedOrigin`）直接跟上研究生收入分支。
+- `reserves_read.rs` / `library_room_read.rs`：模块文档改成与实现一致的措辞（读直接寻址自己的固定映射，不发任何 INFO 漫游），并顺手修好 `reserves_read.rs` 里一行早就粘连的注释（`…roaming selector in//! \`info_session::map_additional_roaming\``）。
+
+**回归测试**：两条旧测试是"硬编码名单"式的自证——它们抄一份 selector 列表来断言列表里有谁，所以**新增一条分支它们照样通过**。改成断言**允许名单自己的回答**：用一条**原始校园 URL**（`http://reserves.lib.tsinghua.edu.cn/Search/ResBooks?…`、`https://cab.lib.tsinghua.edu.cn/ic-web/roomDevice/roomInfos`）去问 `map_additional_roaming`，必须被拒（原始 URL 不同源，会落到 `UnexpectedOrigin`）；再正向断言本模块自己的映射根能配置出适配器。（第一版测试用了**已映射的同源 URL**，被 `_` 分支的同源透传直接放行——这正是"测试写得不对会掩盖缺陷"的实例，已改正。）
+
+**测试结果**：`cargo test -p tsinghua_kit_engine --lib -- reserves_tests library_room_tests` → **74 通过 / 0 失败**；`-- reserves library_room program_read` → 129 通过 / 4 失败，那 4 条（`backend_repair_coverage_scheduler_preserves_environment_and_login_gaps`、`backend_repair_recovery_login_reset_preserves_one_shot_context`、`backend_repair_info_network_failure_preserves_info_proof`、`backend_repair_target_login_form_preserves_restored_identity_and_learn`）在改动前的 HEAD 上**同样失败**，已用 `git stash` 逐一比对，本轮未新增失败。`cargo check --workspace --all-targets` exit 0；`cargo fmt` 干净。
+
+**线上验证：待办**。改动的效果是"少发一次被拒的握手"，只有真实账号重跑才能把这两个域从 failed 翻成 passed；用户需要在自己的交互终端重跑 §71 的脚本。本轮未执行真实账号请求。
+
+**顺带记录**：`LIBRARY_ROOM_MAPPING_SCHEME` / `LIBRARY_ROOM_MAPPING_TOKEN` / `RESERVES_MAPPING_SCHEME` / `RESERVES_MAPPING_TOKEN` 四条常量在删掉那两条分支后只被测试引用，`cargo check` 会报 `never used`（lib target）。这与它们记录"本模块只接受这一张映射"的用途相符，且 `LIBRARY_ROOM_MAPPING_TOKEN` 仍被两条测试断言（前缀、AES 解码出的主机名），因此保留。

@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use reqwest::Url;
 
+use crate::info_session::{InfoSessionAdapter, InfoWebVpnConfig};
 use crate::reference_test_support::{FixtureServer, Reply};
 use crate::reserves_read::*;
 use crate::transport::CampusHttpTransport;
@@ -497,14 +498,33 @@ async fn a_server_error_is_reported_with_its_status() {
 fn the_reference_recovery_payload_is_never_registered_as_a_roam_selector() {
     // The reference recovers this application by performing a campus identity
     // login.  This engine does not implement a second campus login, so the
-    // payload must not be a selector the roaming allow list answers.
-    let registered = [
-        "40470BB47E0849E9EF717983490BC964",
-        "287C0C6D90ABB364CD5FDF1495199962",
-        "BEABB32641DC4EC3510B048BAF42471A",
-        "B7EF0ADF9406335AD7905B30CD7B49B1",
-        "E35232808C08C8C5F199F13BF6B7F5D0",
-        "3E401364BDD7AEA7EBF1EDE3F15ED4B7",
-    ];
-    assert!(!registered.contains(&RESERVES_WEBVPN_TARGET));
+    // payload must not be a selector the roaming allow list answers.  The
+    // assertion is made against the allow list's own answer rather than a
+    // hand-written copy of it: a copy keeps passing after an arm is added.
+    let adapter = InfoSessionAdapter::new(
+        InfoWebVpnConfig::new("https://vpn.fixture.invalid/", "/target").expect("config"),
+        CampusHttpTransport::new("THYou/reserves-selector-fixture").unwrap(),
+    )
+    .unwrap();
+    // A raw campus target is exactly what a registered selector would turn
+    // into this module's mapping; refusing it is what "not registered" means.
+    let raw = crate::info::OpaqueUrl::new(
+        "http://reserves.lib.tsinghua.edu.cn/Search/ResBooks?bookName=math",
+    )
+    .unwrap();
+    assert!(
+        adapter
+            .map_additional_roaming(RESERVES_WEBVPN_TARGET, &raw)
+            .is_err(),
+        "the identity-login payload must not be an answerable roam selector"
+    );
+    // The read is addressed at this module's own mapping constant instead, and
+    // that mapping is what the adapter accepts directly.
+    let mut base = Url::parse("https://vpn.fixture.invalid/").unwrap();
+    base.set_path(&format!("{MAPPING}/"));
+    ReservesAdapter::try_with_transport(
+        base,
+        CampusHttpTransport::with_timeout("THYou/test", Duration::from_secs(10)).unwrap(),
+    )
+    .expect("the module's own mapping root configures the adapter");
 }

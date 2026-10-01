@@ -24,12 +24,16 @@
 //!
 //! This engine does not implement a second campus login, and it must not accept a
 //! response-chosen identity-login app id on a credential-submitting request.  The
-//! read therefore rides the INFO/WebVPN session the transport already holds:
+//! read therefore addresses the application's own fixed WebVPN mapping directly:
 //! [`LIBRARY_ROOM_WEBVPN_TARGET`] is recorded for documentation only and is
 //! deliberately **not** registered as a roaming selector in
-//! `info_session::map_additional_roaming`.  A read whose session has lapsed is
-//! reported as [`LibraryRoomAdapterError::SessionExpired`], so the existing INFO
-//! refresh path handles it exactly like the other INFO-hosted readers.
+//! `info_session::map_additional_roaming`; no INFO roam is dispatched for this
+//! read at all.  The adapter is built from this module's own mapping root
+//! ([`LIBRARY_ROOM_MAPPING_TOKEN`]), which is the same absolute mapping the
+//! reference's `LIBRARY_ROOM_BOOKING_*_URL` constants carry.  A read whose
+//! session has lapsed is reported as [`LibraryRoomAdapterError::SessionExpired`],
+//! so the existing INFO refresh path handles it exactly like the other
+//! INFO-hosted readers.
 //!
 //! # What is read, and what is not
 //!

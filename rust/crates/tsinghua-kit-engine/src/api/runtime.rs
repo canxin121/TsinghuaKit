@@ -16629,8 +16629,8 @@ impl CampusRuntime {
     /// Like the other INFO-hosted readers, no business read happens here: the
     /// search that follows owns its own expiry classification.  The reference
     /// recovers this application with a campus identity login, which this engine
-    /// deliberately does not implement, so the adapter rides the mapping the
-    /// INFO session already proved.
+    /// deliberately does not implement, so the adapter addresses the course
+    /// reserve application's own fixed WebVPN mapping directly.
     async fn ensure_reserves_reader_session(&mut self, user: &UserIdentity) -> Result<(), String> {
         if self.reserves_service_is_proven() {
             return Ok(());
@@ -16649,35 +16649,34 @@ impl CampusRuntime {
     async fn prepare_reserves_adapter(&mut self, user: &UserIdentity) -> Result<(), String> {
         self.invalidate_reserves_session();
         self.ensure_info_session(user).await?;
-
-        let transport = self.identity.transport().clone();
-        let handoff = match self.info_adapter.as_ref() {
-            Some(info) => {
-                info.additional_roaming(crate::reserves_read::RESERVES_WEBVPN_TARGET)
-                    .await
-            }
-            None => return Err(self.record_error("INFO 服务会话尚未建立")),
-        };
-        let roaming_url = handoff.map_err(|error| {
-            self.record_business_failure("reserves", "reserves_handoff", info_failure_code(&error))
-        })?;
-        let mut base_url = Url::parse(roaming_url.as_str())
-            .map_err(|_| self.record_error("reserves roaming URL is invalid"))?;
-        let expected = Url::parse(RESERVES_WEBVPN_BASE_URL).expect("static reserves mapping");
-        if !base_url.path().starts_with(expected.path()) {
-            return Err(self.record_business_failure(
-                "reserves",
-                "reserves_handoff",
-                "reserves_mapping_rejected",
-            ));
+        if self
+            .coordinator
+            .registry()
+            .snapshot_for(ServiceId::Info)
+            .user
+            .as_ref()
+            != Some(user)
+        {
+            return self.fail("教参服务会话用户不匹配");
         }
-        // The handoff query is consumed here.  Only the proved target mapping
-        // configures the read endpoints that follow.
-        base_url.set_path(expected.path());
-        base_url.set_query(None);
-        base_url.set_fragment(None);
-        let adapter = ReservesAdapter::try_with_transport(base_url, transport)
-            .map_err(|error| self.record_error(format!("reserves adapter: {error}")))?;
+        if !self.service_session_is_proven(ServiceId::Info) {
+            return Err(self.record_error("INFO 服务会话尚未建立"));
+        }
+
+        // The course-reserve catalogue is addressed at its own fixed WebVPN
+        // mapping, exactly as the reference client does: `searchReservesLib`
+        // calls the absolute `RESERVES_LIB_SEARCH` URL, whose mapping root is
+        // this constant.  The reference's `"id"` roam policy is only its
+        // expiry-recovery path — it performs a campus identity login, which
+        // this engine deliberately does not implement — so no INFO roam is
+        // dispatched here.  The INFO session above is still the precondition
+        // and is what authenticates the mapping, and the adapter keeps its own
+        // expiry classification for a mapping that has since lapsed.
+        let base_url = Url::parse(RESERVES_WEBVPN_BASE_URL)
+            .map_err(|_| self.record_error("教参服务地址配置无效"))?;
+        let adapter =
+            ReservesAdapter::try_with_transport(base_url, self.identity.transport().clone())
+                .map_err(|error| self.record_error(format!("reserves adapter: {error}")))?;
         self.reserves_adapter = Some(adapter);
         Ok(())
     }
@@ -16835,8 +16834,8 @@ impl CampusRuntime {
     /// read that follows owns its own expiry classification.  The reference
     /// reaches this application through a campus identity login whose
     /// application id it takes from a response, which this engine deliberately
-    /// does not perform, so the adapter rides the mapping the INFO session
-    /// already proved.
+    /// does not perform, so the adapter addresses the application's own fixed
+    /// WebVPN mapping directly.
     async fn ensure_library_room_reader_session(
         &mut self,
         user: &UserIdentity,
@@ -16858,41 +16857,36 @@ impl CampusRuntime {
     async fn prepare_library_room_adapter(&mut self, user: &UserIdentity) -> Result<(), String> {
         self.invalidate_library_room_session();
         self.ensure_info_session(user).await?;
-
-        let transport = self.identity.transport().clone();
-        let handoff = match self.info_adapter.as_ref() {
-            Some(info) => {
-                info.additional_roaming(crate::library_room_read::LIBRARY_ROOM_WEBVPN_TARGET)
-                    .await
-            }
-            None => return Err(self.record_error("INFO 服务会话尚未建立")),
-        };
-        let roaming_url = handoff.map_err(|error| {
-            self.record_business_failure(
-                "library_room",
-                "library_room_handoff",
-                info_failure_code(&error),
-            )
-        })?;
-        let mut base_url = Url::parse(roaming_url.as_str())
-            .map_err(|_| self.record_error("library_room roaming URL is invalid"))?;
-        let expected =
-            Url::parse(LIBRARY_ROOM_WEBVPN_BASE_URL).expect("static library room mapping");
-        if !base_url.path().starts_with(expected.path()) {
-            return Err(self.record_business_failure(
-                "library_room",
-                "library_room_handoff",
-                "library_room_mapping_rejected",
-            ));
+        if self
+            .coordinator
+            .registry()
+            .snapshot_for(ServiceId::Info)
+            .user
+            .as_ref()
+            != Some(user)
+        {
+            return self.fail("研读间服务会话用户不匹配");
         }
-        // The handoff query is consumed here.  Only the proved target mapping
-        // configures the read endpoints that follow, so a handoff that carried
-        // a deeper path cannot widen what this adapter addresses.
-        base_url.set_path(expected.path());
-        base_url.set_query(None);
-        base_url.set_fragment(None);
-        let adapter = LibraryRoomAdapter::try_with_transport(base_url, transport)
-            .map_err(|error| self.record_error(format!("library_room adapter: {error}")))?;
+        if !self.service_session_is_proven(ServiceId::Info) {
+            return Err(self.record_error("INFO 服务会话尚未建立"));
+        }
+
+        // The CAB study-room application is addressed at its own fixed WebVPN
+        // mapping, exactly as the reference client does: every
+        // `LIBRARY_ROOM_BOOKING_*_URL` is built from the absolute
+        // `LIBRARY_ROOM_BOOKING_ROOT_URL`, whose mapping root is this
+        // constant.  The reference's `"cab"` roam policy is only its
+        // expiry-recovery path — it performs a campus identity login whose
+        // application id it reads out of a response, which this engine
+        // deliberately does not implement — so no INFO roam is dispatched
+        // here.  The INFO session above is still the precondition and is what
+        // authenticates the mapping, and the adapter keeps its own expiry
+        // classification for a mapping that has since lapsed.
+        let base_url = Url::parse(LIBRARY_ROOM_WEBVPN_BASE_URL)
+            .map_err(|_| self.record_error("研读间服务地址配置无效"))?;
+        let adapter =
+            LibraryRoomAdapter::try_with_transport(base_url, self.identity.transport().clone())
+                .map_err(|error| self.record_error(format!("library_room adapter: {error}")))?;
         self.library_room_adapter = Some(adapter);
         Ok(())
     }
