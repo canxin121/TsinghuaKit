@@ -497,6 +497,23 @@ impl LibraryAdapterError {
                     _ => "library_segment_record",
                 },
                 LibraryReadParseError::ConflictingIdentifier { .. } => "library_conflicting_ids",
+                // An invalid area record names the field that failed, the same
+                // way a day segment already does.  Without this, every one of
+                // the ten optional and required area fields, plus the record
+                // wrapper itself, collapsed into one code and an acceptance
+                // run could only report "some area record was rejected" — the
+                // reader then had to guess which field the service changed.
+                LibraryReadParseError::InvalidRecord {
+                    collection: LibraryRecordKind::Area,
+                    field,
+                    ..
+                } => match field.as_str() {
+                    "id" => "library_record_id",
+                    "name" => "library_record_name",
+                    "childArea" => "library_record_children",
+                    "TotalCount" | "UnavailableSpace" => "library_record_counts",
+                    _ => "library_record",
+                },
                 LibraryReadParseError::InvalidRecord { .. } => "library_record",
                 _ => "library_parse",
             },
@@ -1820,16 +1837,21 @@ fn parse_area(value: &Value, index: usize) -> Result<LibraryArea, LibraryReadPar
     let point_x = optional_f64(object, "point_x2", LibraryRecordKind::Area, index)?;
     let point_y = optional_f64(object, "point_y2", LibraryRecordKind::Area, index)?;
 
+    // The reference subtracts the two published counts blindly, so a section
+    // the service reports with more unavailable seats than seats in total
+    // still reaches its callers (as a negative number that its own floor
+    // aggregation then adds up).  That combination is observed live, and it is
+    // not a failure of the envelope: the list is well formed and this node is
+    // one record inside it.  Refusing the whole directory here turned a
+    // readable section list into a hard `library_record` failure.
+    //
+    // This engine does not repeat the subtraction into an unsigned field, and
+    // it does not invent a zero either: "the two counts contradict each other"
+    // leaves the number of free seats genuinely unknown, which is the same
+    // state an absent count already uses.  A caller that needs a number must
+    // read `total_count` and `unavailable_space` themselves.
     let available_count = match (total_count, unavailable_space) {
-        (Some(total), Some(unavailable)) if unavailable <= total => Some(total - unavailable),
-        (Some(_), Some(_)) => {
-            return Err(invalid_record(
-                LibraryRecordKind::Area,
-                index,
-                "UnavailableSpace",
-                LibraryRecordIssue::InvalidValue,
-            ));
-        }
+        (Some(total), Some(unavailable)) => total.checked_sub(unavailable),
         _ => None,
     };
 
@@ -2878,6 +2900,89 @@ mod tests {
                 ..
             }) if field == "endTime"
         ));
+    }
+
+    #[test]
+    fn a_contradictory_seat_count_leaves_the_free_count_unknown_not_zero() {
+        // Observed live: a section whose `UnavailableSpace` exceeds its
+        // `TotalCount`.  The reference subtracts blindly and renders the
+        // result; refusing the record here made the whole real directory
+        // unreadable, which is what turned a readable section list into a
+        // hard `library_record` failure.
+        let body =
+            r#"{"data":{"list":[{"id":35,"name":"北馆","TotalCount":3,"UnavailableSpace":4}]}}"#;
+        let tree =
+            parse_area_tree(body).expect("a live count contradiction is not a parse failure");
+        assert_eq!(tree.areas[0].total_count, Some(3));
+        assert_eq!(tree.areas[0].unavailable_space, Some(4));
+        assert_eq!(
+            tree.areas[0].available_count, None,
+            "an unknown free count must not be reported as zero"
+        );
+
+        // A usable pair still subtracts, and one missing side is still unknown.
+        let usable =
+            r#"{"data":{"list":[{"id":35,"name":"北馆","TotalCount":10,"UnavailableSpace":4}]}}"#;
+        assert_eq!(
+            parse_area_tree(usable).expect("usable pair parses").areas[0].available_count,
+            Some(6)
+        );
+        let partial = r#"{"data":{"list":[{"id":35,"name":"北馆","TotalCount":10}]}}"#;
+        assert_eq!(
+            parse_area_tree(partial).expect("partial pair parses").areas[0].available_count,
+            None
+        );
+    }
+
+    #[test]
+    fn an_invalid_area_record_names_the_field_that_failed() {
+        // A bare `library_record` code forced a reader to guess which of the
+        // area fields the service had changed.  Each rejection now names its
+        // own field, and every code must stay inside the closed set of reasons
+        // the telemetry boundary accepts.
+        let cases = [
+            (
+                r#"{"data":{"list":[{"name":"北馆"}]}}"#,
+                "library_record_id",
+            ),
+            (
+                r#"{"data":{"list":[{"id":35,"name":"   "}]}}"#,
+                "library_record_name",
+            ),
+            (
+                r#"{"data":{"list":[{"id":35,"name":"北馆","childArea":{}}]}}"#,
+                "library_record_children",
+            ),
+            (
+                r#"{"data":{"list":[{"id":0,"name":"北馆"}]}}"#,
+                "library_record_id",
+            ),
+        ];
+        for (body, expected) in cases {
+            let error = parse_area_tree(body).unwrap_err();
+            assert!(
+                matches!(
+                    error,
+                    LibraryReadParseError::InvalidRecord {
+                        collection: LibraryRecordKind::Area,
+                        ..
+                    }
+                ),
+                "{body} should be an invalid area record"
+            );
+            let code = LibraryAdapterError::Parse(error).diagnostic_code();
+            assert_eq!(code, expected, "unexpected code for {body}");
+            assert!(
+                crate::telemetry::reason_is_loggable(code),
+                "{code} must be an accepted telemetry reason"
+            );
+        }
+        // A record that is not an object at all keeps the generic code.
+        let error = parse_area_tree(r#"{"data":{"list":["north"]}}"#).unwrap_err();
+        assert_eq!(
+            LibraryAdapterError::Parse(error).diagnostic_code(),
+            "library_record"
+        );
     }
 
     #[test]

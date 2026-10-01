@@ -378,11 +378,22 @@ fn backend_repair_api_audit_library_php_datetime_and_count_consistency() {
     let data = crate::library_read::parse_day_segments(&body).unwrap();
     assert_eq!(data.segments[0].start_time, "08:00");
     assert_eq!(data.segments[0].end_time, "21:30");
+    // Two contradictory published counts are a live service state, not a
+    // broken envelope: the reference subtracts them blindly and renders the
+    // result, and refusing the record here made the whole real directory
+    // unreadable.  The number of free seats is then unknown, which must not be
+    // rounded to zero, and the two published counts stay readable.
+    let tree = crate::library_read::parse_area_tree(
+        r#"{"data":{"list":[{"id":1,"name":"fixture","TotalCount":3,"UnavailableSpace":4}]}}"#,
+    )
+    .expect("a live contradictory count must not fail the directory");
+    assert_eq!(tree.areas[0].total_count, Some(3));
+    assert_eq!(tree.areas[0].unavailable_space, Some(4));
+    assert_eq!(tree.areas[0].available_count, None);
+
+    // The envelope-level failures still fail.
     assert!(
-        crate::library_read::parse_area_tree(
-            r#"{"data":{"list":[{"id":1,"name":"fixture","TotalCount":3,"UnavailableSpace":4}]}}"#
-        )
-        .is_err()
+        crate::library_read::parse_area_tree(r#"{"success":false,"data":{"list":[]}}"#).is_err()
     );
 }
 
