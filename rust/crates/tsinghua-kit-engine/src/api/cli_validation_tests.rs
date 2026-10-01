@@ -639,6 +639,116 @@ fn backend_repair_news_catalog_cli_selects_only_info_session_chain() {
     assert!(!selected.contains("info_detail"));
 }
 
+/// Proves Identity and INFO against the fixture and installs an INFO adapter
+/// on the fixture origin, so a catalogue read dispatches only the catalogue
+/// requests themselves.
+fn prove_info_for_acceptance(r: &mut CampusRuntime, server: &FixtureServer) {
+    for service in [ServiceId::Identity, ServiceId::Info] {
+        r.coordinator.begin_authentication(service).unwrap();
+        let csrf = (service == ServiceId::Info).then(|| {
+            r.coordinator.registry().bind_csrf(
+                service,
+                crate::protocol::CsrfToken::new("fixture-info-csrf").unwrap(),
+            )
+        });
+        r.coordinator
+            .mark_authenticated(
+                service,
+                UserIdentity {
+                    username: "fixture-user".into(),
+                    display_name: None,
+                },
+                None,
+                csrf,
+                None,
+            )
+            .unwrap();
+    }
+    r.portal_bootstrapped = true;
+    r.info_adapter = Some(
+        InfoSessionAdapter::new(
+            InfoWebVpnConfig::new(server.base(), "/info").unwrap(),
+            r.identity.transport().clone(),
+        )
+        .unwrap(),
+    );
+    r.info_roaming_url =
+        Some(crate::info::OpaqueUrl::new(format!("{}info/home", server.base())).unwrap());
+}
+
+#[tokio::test]
+async fn backend_repair_news_catalog_cli_reports_the_degraded_channel_route_as_unverified() {
+    // The pinned channel directory route answers 404 on the live deployment
+    // while the source directory is still served from a freshly proved
+    // session.  The engine keeps the live sources, fills the channels only
+    // from a news page it just read, and marks the result `partial`.  The
+    // acceptance case must report that as unverified rather than as a client
+    // failure, and it must not report it as a complete catalogue either.
+    let root = directory();
+    let missing = || Reply {
+        status: 404,
+        headers: "Content-Type: application/json\r\n".into(),
+        body: "{}".into(),
+    };
+    let server = FixtureServer::new(vec![
+        Reply::html("XSRF-TOKEN=fixture-info-csrf;"),
+        Reply::json(r#"{"object":[{"id":"unit_1","text":"Fixture unit"}]}"#),
+        Reply::html("XSRF-TOKEN=fixture-info-csrf;"),
+        missing(),
+        Reply::html("XSRF-TOKEN=fixture-info-csrf;"),
+        Reply::json(
+            r#"{"object":{"dataList":[{"bt":"Fixture news","url":"/article","xxid":"fixture-id","time":"2026-09-24 10:00:00","dwmc_show":"Fixture source","yxzd":"0","lmid":"LM_JWGG","sfsc":false}]}}"#,
+        ),
+    ]);
+    let mut r = fixture_runtime(&server, &root);
+    prove_info_for_acceptance(&mut r, &server);
+    let mut prompt = Prompt::default();
+    let mut evidence = Evidence::default();
+    let outcome = execute_case(&mut r, &mut prompt, &mut evidence, "info_catalog", false)
+        .await
+        .unwrap();
+    match outcome {
+        Outcome::Skipped(reason) => assert_eq!(reason, "validation_news_catalog_partial"),
+        Outcome::Passed(_) => panic!("a degraded catalogue must not be reported as complete"),
+        Outcome::ObservedNetwork(reason) => {
+            panic!("a degraded catalogue is not a network observation: {reason}")
+        }
+    }
+    assert_eq!(server.requests().len(), 6);
+    drop(r);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[tokio::test]
+async fn backend_repair_news_catalog_cli_still_fails_without_the_source_directory() {
+    // The source directory is the part of the catalogue the caller filters by.
+    // A deployment that does not serve it has nothing the acceptance read could
+    // have verified, so the case must fail rather than skip.
+    let root = directory();
+    let server = FixtureServer::new(vec![
+        Reply::html("XSRF-TOKEN=fixture-info-csrf;"),
+        Reply {
+            status: 404,
+            headers: "Content-Type: application/json\r\n".into(),
+            body: "{}".into(),
+        },
+    ]);
+    let mut r = fixture_runtime(&server, &root);
+    prove_info_for_acceptance(&mut r, &server);
+    let mut prompt = Prompt::default();
+    let mut evidence = Evidence::default();
+    match execute_case(&mut r, &mut prompt, &mut evidence, "info_catalog", false).await {
+        Err(error) => assert!(
+            !error.is_empty(),
+            "a missing source directory is a failure, not an empty success"
+        ),
+        Ok(_) => panic!("a catalogue with no source directory must not be a passing read"),
+    }
+    assert_eq!(server.requests().len(), 2);
+    drop(r);
+    fs::remove_dir_all(root).unwrap();
+}
+
 #[test]
 fn backend_repair_terminal_report_is_immutable_and_checkpointed_before_attempt() {
     let root = directory();

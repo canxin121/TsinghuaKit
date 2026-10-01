@@ -842,7 +842,20 @@ impl LibraryWriteAdapter {
     }
 
     /// Reads the account's own reservation list.
+    ///
+    /// The library home page is read first, and its booking token is dropped
+    /// unused: the reservation route carries no token, but reading the home page
+    /// is what binds a freshly handed-off WebVPN mapping session to the library
+    /// target.  The reference does the same — `getBookingRecords` opens with
+    /// `await getAccessToken(helper)` and only then fetches
+    /// `LIBRARY_BOOK_RECORD_URL` — and the live deployment shows why: a record
+    /// read dispatched straight after a handoff was answered by two redirects
+    /// and a 30 KiB page the reader had to classify as a login page, so a
+    /// readable list became a session error.  The token is not stored, not
+    /// returned and not reused; it is dropped inside this call.
     pub async fn read_booking_records(&self) -> Result<LibraryBookingRecords, LibraryAdapterError> {
+        let token = self.read_access_token().await?;
+        drop(token);
         let response = self.execute_read(LIBRARY_BOOKING_RECORD_PATH).await?;
         parse_booking_records(&response.body).map_err(LibraryAdapterError::WriteParse)
     }

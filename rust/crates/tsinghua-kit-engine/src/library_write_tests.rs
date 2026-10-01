@@ -54,12 +54,15 @@ fn home_page() -> Reply {
 
 #[tokio::test]
 async fn backend_repair_library_booking_records_dispatch_one_read() {
-    let server = FixtureServer::new(vec![Reply::html(&booking_page_row(
-        "文科图书馆-四层-C区:F4C083",
-        "2020-09-11 12:15:52",
-        "已使用",
-        "<a onclick=\"menuDel('202009111837')\">取消预约</a>",
-    ))]);
+    let server = FixtureServer::new(vec![
+        home_page(),
+        Reply::html(&booking_page_row(
+            "文科图书馆-四层-C区:F4C083",
+            "2020-09-11 12:15:52",
+            "已使用",
+            "<a onclick=\"menuDel('202009111837')\">取消预约</a>",
+        )),
+    ]);
     let records = adapter(&server).read_booking_records().await.unwrap();
     assert_eq!(records.records.len(), 1);
     assert_eq!(records.records[0].position, "文科图书馆-四层-C区:F4C083");
@@ -70,8 +73,15 @@ async fn backend_repair_library_booking_records_dispatch_one_read() {
         Some("202009111837")
     );
     let requests = server.requests();
-    assert_eq!(requests.len(), 1);
-    assert!(requests[0].starts_with("GET /user/index/book HTTP/1.1"));
+    // The home page is read first and its token is dropped unused: the
+    // reservation route carries no token, but the home read is what binds the
+    // freshly handed-off mapping session to the library target.  The reference
+    // does the same, and a live run that skipped it had the record read
+    // answered by a login page.
+    assert_eq!(requests.len(), 2);
+    assert!(requests[0].starts_with("GET /home/web/f_second HTTP/1.1"));
+    assert!(requests[1].starts_with("GET /user/index/book HTTP/1.1"));
+    assert!(!requests[1].contains("fa-9b7c"));
     // The DTO carries the four display fields and a flag; the identifier the
     // cancellation route needs stays in the engine.
     let rendered = format!("{records:?}");
@@ -80,10 +90,31 @@ async fn backend_repair_library_booking_records_dispatch_one_read() {
 }
 
 #[tokio::test]
-async fn backend_repair_library_records_keep_empty_distinct_from_missing() {
-    let empty = FixtureServer::new(vec![Reply::html(
-        "<!DOCTYPE html><html><body><table><tbody></tbody></table></body></html>",
+async fn backend_repair_library_records_without_a_booking_token_send_no_record_read() {
+    // The home page is the only place the token is published, and the reference
+    // treats its absence as a failure of the whole read.  A page that carries no
+    // token must therefore stop the read before the record route is asked, so a
+    // session that cannot produce a token never looks like "no reservations".
+    let server = FixtureServer::new(vec![Reply::html(
+        "<html><body><p>session ended</p></body></html>",
     )]);
+    let error = adapter(&server).read_booking_records().await.unwrap_err();
+    assert!(matches!(
+        error,
+        LibraryAdapterError::WriteParse(LibraryWriteParseError::MissingAccessToken)
+    ));
+    assert_eq!(error.diagnostic_code(), "library_booking_token");
+    let requests = server.requests();
+    assert_eq!(requests.len(), 1);
+    assert!(requests[0].starts_with("GET /home/web/f_second HTTP/1.1"));
+}
+
+#[tokio::test]
+async fn backend_repair_library_records_keep_empty_distinct_from_missing() {
+    let empty = FixtureServer::new(vec![
+        home_page(),
+        Reply::html("<!DOCTYPE html><html><body><table><tbody></tbody></table></body></html>"),
+    ]);
     assert!(
         adapter(&empty)
             .read_booking_records()
@@ -93,16 +124,17 @@ async fn backend_repair_library_records_keep_empty_distinct_from_missing() {
             .is_empty()
     );
 
-    let replaced = FixtureServer::new(vec![Reply::html(
-        "<!DOCTYPE html><html><body><p>session ended</p></body></html>",
-    )]);
+    let replaced = FixtureServer::new(vec![
+        home_page(),
+        Reply::html("<!DOCTYPE html><html><body><p>session ended</p></body></html>"),
+    ]);
     let error = adapter(&replaced).read_booking_records().await.unwrap_err();
     assert!(matches!(
         error,
         LibraryAdapterError::WriteParse(LibraryWriteParseError::MissingTable)
     ));
     assert_eq!(error.diagnostic_code(), "library_booking_records");
-    assert_eq!(replaced.requests().len(), 1);
+    assert_eq!(replaced.requests().len(), 2);
 }
 
 #[tokio::test]
