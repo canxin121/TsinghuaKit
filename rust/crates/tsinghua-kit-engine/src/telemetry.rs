@@ -54,6 +54,19 @@ pub(crate) fn next_id() -> u64 {
     IDS.fetch_add(1, Ordering::Relaxed)
 }
 
+/// Reports whether a fixed diagnostic code is one the log boundary accepts as
+/// a `reason`.
+///
+/// A module that adds a code must not also have to remember that the code has
+/// to be registered: before this, an unregistered code was silently dropped
+/// from the log and the failure appeared as a bare event with no reason. Test
+/// code asserts against this instead of a hand-written copy of the list, so
+/// adding a code without registering it fails the test that uses it.
+#[cfg(test)]
+pub(crate) fn reason_is_loggable(value: &str) -> bool {
+    labels::allowed("reason", value)
+}
+
 fn write_json_buffered(writer: &mut impl Write, value: &impl serde::Serialize) -> io::Result<()> {
     let mut buffered = BufWriter::with_capacity(64 * 1024, writer);
     serde_json::to_writer_pretty(&mut buffered, value)?;
@@ -72,7 +85,12 @@ pub(crate) fn diagnostic_reason(error: &str) -> &'static str {
         && let Some(end) = error[start + '（'.len_utf8()..].find('）')
     {
         let code = &error[start + '（'.len_utf8()..start + '（'.len_utf8() + end];
-        if let Some(known) = labels::REASONS.iter().copied().find(|known| *known == code) {
+        if let Some(known) = labels::REASONS
+            .iter()
+            .chain(labels::DIAGNOSTIC_REASONS.iter())
+            .copied()
+            .find(|known| *known == code)
+        {
             return known;
         }
     }
@@ -96,6 +114,7 @@ pub(crate) fn diagnostic_reason(error: &str) -> &'static str {
     }
     labels::REASONS
         .iter()
+        .chain(labels::DIAGNOSTIC_REASONS.iter())
         .copied()
         .find(|reason| *reason == error)
         .unwrap_or_else(|| crate::live_validation::error_reason(error))

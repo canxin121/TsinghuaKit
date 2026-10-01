@@ -657,6 +657,10 @@ pub(super) const REASONS: &[&str] = &[
     "library_parse",
     "library_path",
     "library_record",
+    "library_record_children",
+    "library_record_counts",
+    "library_record_id",
+    "library_record_name",
     "library_request",
     "library_segment_record",
     "classroom_handoff",
@@ -712,6 +716,269 @@ pub(super) const REASONS: &[&str] = &[
     "no_phase_selector",
     "no_subscription_selector",
     "water_delivery_number_unavailable",
+];
+
+/// Fixed `reason` codes produced by a domain's own `diagnostic_code()` or by a
+/// `record_business_failure` call site.  They are kept apart from `REASONS`,
+/// which is the shared cross-domain vocabulary, purely so each list stays
+/// readable; the log boundary treats them identically.
+pub(super) const DIAGNOSTIC_REASONS: &[&str] = &[
+    // assessment
+    "assessment_auth_required",
+    "assessment_body_empty",
+    "assessment_config",
+    "assessment_content_type",
+    "assessment_form_empty",
+    "assessment_form_field",
+    "assessment_form_foreign",
+    "assessment_form_missing",
+    "assessment_form_score",
+    "assessment_form_stale",
+    "assessment_form_unknown",
+    "assessment_http",
+    "assessment_input_comment",
+    "assessment_input_question",
+    "assessment_input_score",
+    "assessment_input_value",
+    "assessment_list_empty",
+    "assessment_mapping_rejected",
+    "assessment_network",
+    "assessment_not_open",
+    "assessment_origin",
+    "assessment_path",
+    "assessment_row_action",
+    "assessment_row_name",
+    "assessment_row_route",
+    "assessment_row_shape",
+    "assessment_size",
+    "assessment_submit_replayed",
+    "assessment_submit_size",
+    "assessment_submit_unconfirmed",
+    "assessment_table_missing",
+    "assessment_template",
+    // bank
+    "bank_amount",
+    "bank_auth_required",
+    "bank_body_empty",
+    "bank_config",
+    "bank_content_type",
+    "bank_header_changed",
+    "bank_header_missing",
+    "bank_http",
+    "bank_mapping_rejected",
+    "bank_months_empty",
+    "bank_network",
+    "bank_origin",
+    "bank_path",
+    "bank_row_shape",
+    "bank_section_mismatch",
+    "bank_size",
+    "bank_template",
+    "bank_years_empty",
+    "bank_years_too_many",
+    // campus card write
+    "card_write_refused",
+    "card_write_request",
+    "card_write_session_expired",
+    "card_write_unconfirmed",
+    // dorm electricity / dorm password write
+    "dorm_config",
+    "dorm_content_type",
+    "dorm_http",
+    "dorm_network",
+    "dorm_origin",
+    "dorm_path",
+    "dorm_write_form_missing",
+    "dorm_write_form_unreadable",
+    "dorm_write_request",
+    "dorm_write_session_expired",
+    "dorm_write_template",
+    "dorm_write_unconfirmed",
+    // graduate income
+    "graduate_income_amount",
+    "graduate_income_auth_required",
+    "graduate_income_body_empty",
+    "graduate_income_config",
+    "graduate_income_content_type",
+    "graduate_income_http",
+    "graduate_income_mapping_rejected",
+    "graduate_income_network",
+    "graduate_income_not_json",
+    "graduate_income_origin",
+    "graduate_income_path",
+    "graduate_income_range",
+    "graduate_income_row",
+    "graduate_income_rows_missing",
+    "graduate_income_size",
+    "graduate_income_template",
+    // info news write
+    "info_news_account_changed",
+    "info_news_cache_miss",
+    "info_news_link_limit",
+    "info_news_write_replayed",
+    "info_news_write_unconfirmed",
+    // invoice
+    "invoice_auth_required",
+    "invoice_body_empty",
+    "invoice_config",
+    "invoice_content_type",
+    "invoice_count_missing",
+    "invoice_data_missing",
+    "invoice_handoff_ticket",
+    "invoice_http",
+    "invoice_mapping_rejected",
+    "invoice_network",
+    "invoice_not_json",
+    "invoice_origin",
+    "invoice_path",
+    "invoice_reference",
+    "invoice_row_amount",
+    "invoice_row_document",
+    "invoice_row_key",
+    "invoice_row_shape",
+    "invoice_size",
+    "invoice_template",
+    // laundry
+    "laundry_provider",
+    // library / library room
+    "library_account_changed",
+    "library_booking_records",
+    "library_booking_records_limit",
+    "library_booking_token",
+    "library_room_auth_required",
+    "library_room_body_empty",
+    "library_room_config",
+    "library_room_content_type",
+    "library_room_data",
+    "library_room_deployment",
+    "library_room_envelope",
+    "library_room_field",
+    "library_room_http",
+    "library_room_malformed",
+    "library_room_network",
+    "library_room_origin",
+    "library_room_path",
+    "library_room_rejected",
+    "library_room_size",
+    "library_room_value",
+    "library_room_window",
+    "library_seat_unavailable",
+    "library_seat_unconfirmed",
+    "library_segment_unconfirmed",
+    "library_session_expired",
+    "library_write_request",
+    "library_write_unconfirmed",
+    // physical exam
+    "physical_exam_auth_required",
+    "physical_exam_body_empty",
+    "physical_exam_config",
+    "physical_exam_content_type",
+    "physical_exam_envelope",
+    "physical_exam_field_invalid",
+    "physical_exam_http",
+    "physical_exam_mapping_rejected",
+    "physical_exam_network",
+    "physical_exam_not_json",
+    "physical_exam_not_object",
+    "physical_exam_origin",
+    "physical_exam_path",
+    "physical_exam_template",
+    // program
+    "program_auth_required",
+    "program_body_empty",
+    "program_config",
+    "program_container_ambiguous",
+    "program_content_type",
+    "program_field_invalid",
+    "program_header_missing",
+    "program_http",
+    "program_mapping_rejected",
+    "program_marker_duplicate",
+    "program_marker_missing",
+    "program_network",
+    "program_origin",
+    "program_path",
+    "program_plan",
+    "program_plan_id_missing",
+    "program_row_field_invalid",
+    "program_row_field_missing",
+    "program_row_shape",
+    "program_set_kind",
+    "program_size",
+    "program_table_empty",
+    "program_table_missing",
+    "program_template",
+    // reserves
+    "reserves_auth_required",
+    "reserves_body_empty",
+    "reserves_config",
+    "reserves_content_type",
+    "reserves_count_missing",
+    "reserves_deployment",
+    "reserves_http",
+    "reserves_input",
+    "reserves_malformed",
+    "reserves_network",
+    "reserves_origin",
+    "reserves_path",
+    "reserves_reference",
+    "reserves_results_missing",
+    "reserves_row_field",
+    "reserves_row_key",
+    "reserves_row_link",
+    "reserves_row_title",
+    "reserves_size",
+    // school calendar
+    "school_calendar_config",
+    "school_calendar_format",
+    "school_calendar_http",
+    "school_calendar_limit",
+    "school_calendar_network",
+    "school_calendar_route",
+    "school_calendar_selection",
+    "school_calendar_unavailable",
+    // sports
+    "sports_auth_required",
+    "sports_body_empty",
+    "sports_config",
+    "sports_http",
+    "sports_input",
+    "sports_limit_missing",
+    "sports_mapping_rejected",
+    "sports_network",
+    "sports_origin",
+    "sports_path",
+    "sports_phone",
+    "sports_row_unrecognized",
+    "sports_slot_unrecognized",
+    "sports_table_missing",
+    "sports_template",
+    "sports_too_large",
+    "sports_write_content_type",
+    "sports_write_http",
+    "sports_write_network",
+    "sports_write_refused",
+    "sports_write_request",
+    "sports_write_session_expired",
+    "sports_write_template",
+    "sports_write_unconfirmed",
+    // washer
+    "washer_building_id",
+    "washer_business",
+    "washer_config",
+    "washer_http",
+    "washer_network",
+    "washer_not_json",
+    "washer_origin",
+    "washer_template",
+    // water
+    "water_config",
+    "water_delivery_id",
+    "water_http",
+    "water_network",
+    "water_not_json",
+    "water_origin",
+    "water_template",
 ];
 
 pub(super) fn allowed(field: &str, value: &str) -> bool {
@@ -1091,7 +1358,9 @@ pub(super) fn allowed(field: &str, value: &str) -> bool {
             "network" | "session" | "response" | "unsupported" | "other" | "dependency"
         ),
         "reason" => {
-            REASONS.contains(&value) || crate::live_validation::error_reason(value) == value
+            REASONS.contains(&value)
+                || DIAGNOSTIC_REASONS.contains(&value)
+                || crate::live_validation::error_reason(value) == value
         }
         _ => false,
     }
@@ -1113,5 +1382,229 @@ mod coverage_tests {
         assert!(super::allowed("business_stage", "info_catalog_sources"));
         assert!(super::allowed("business_stage", "info_catalog_channels"));
         assert!(!super::allowed("business_stage", "https://foreign.invalid"));
+    }
+}
+
+/// Every source file that can put a fixed failure code into a log `reason`
+/// field: the modules that own a `fn diagnostic_code` and the runtime modules
+/// that pass a literal to `record_business_failure`.  Both are scanned at
+/// compile time so a new domain cannot introduce a code this vocabulary does
+/// not register.
+#[cfg(test)]
+mod vocabulary_tests {
+    use std::collections::BTreeSet;
+
+    const DIAGNOSTIC_CODE_SOURCES: &[&str] = &[
+        include_str!("dorm_password_write.rs"),
+        include_str!("usereg_adapter.rs"),
+        include_str!("laundry_api.rs"),
+        include_str!("library_room_read.rs"),
+        include_str!("assessment_read.rs"),
+        include_str!("registrar_session.rs"),
+        include_str!("library_read.rs"),
+        include_str!("physical_exam_read.rs"),
+        include_str!("classroom_read.rs"),
+        include_str!("water_read.rs"),
+        include_str!("sports_write.rs"),
+        include_str!("invoice_read.rs"),
+        include_str!("school_calendar.rs"),
+        include_str!("sports_read.rs"),
+        include_str!("dorm_electricity_read.rs"),
+        include_str!("program_read.rs"),
+        include_str!("washer_read.rs"),
+        include_str!("reserves_read.rs"),
+        include_str!("bank_read.rs"),
+        include_str!("campus_card_adapter.rs"),
+    ];
+
+    const BUSINESS_FAILURE_CALL_SITES: &[&str] = &[
+        include_str!("api/runtime.rs"),
+        include_str!("api/runtime_business_tests.rs"),
+        include_str!("api/runtime_campus_card_write.rs"),
+        include_str!("api/runtime_dorm_password_write.rs"),
+        include_str!("api/runtime_electricity_auth.rs"),
+        include_str!("api/runtime_lastmile_tests.rs"),
+        include_str!("api/runtime_learn_calendar.rs"),
+        include_str!("api/runtime_library_write.rs"),
+        include_str!("api/runtime_news_write.rs"),
+        include_str!("api/runtime_registrar_auth.rs"),
+        include_str!("api/runtime_school_calendar.rs"),
+        include_str!("api/runtime_sports_write.rs"),
+        include_str!("api/runtime_thos.rs"),
+    ];
+
+    /// The body of a braced item starting at `open`, excluding the braces.
+    fn braced(source: &str, open: usize) -> &str {
+        let bytes = source.as_bytes();
+        let mut depth = 0usize;
+        let mut index = open;
+        while index < bytes.len() {
+            match bytes[index] {
+                b'{' => depth += 1,
+                b'}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return &source[open + 1..index];
+                    }
+                }
+                _ => {}
+            }
+            index += 1;
+        }
+        &source[open + 1..]
+    }
+
+    /// The first double-quoted string on `text`, if any.
+    fn first_string(text: &str) -> Option<&str> {
+        let start = text.find('"')?;
+        let end = text[start + 1..].find('"')? + start + 1;
+        Some(&text[start + 1..end])
+    }
+
+    fn is_code(candidate: &str) -> bool {
+        !candidate.is_empty()
+            && candidate.contains('_')
+            && candidate
+                .bytes()
+                .next()
+                .is_some_and(|b| b.is_ascii_lowercase())
+            && candidate
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
+    }
+
+    /// Codes returned from a `fn diagnostic_code` body: a `"code"` literal
+    /// directly after `=>`, a `"code"` literal that opens the line of a
+    /// multi-line arm body, or a `return "code";`.  Producing the same match
+    /// through a binding (a local `let code = ...; code` tail) is not a fixed
+    /// literal and is not covered here.
+    fn diagnostic_codes(source: &str) -> BTreeSet<&str> {
+        let mut codes = BTreeSet::new();
+        for at in source.match_indices("fn diagnostic_code") {
+            let Some(brace) = source[at.0..].find('{').map(|o| o + at.0) else {
+                continue;
+            };
+            let body = braced(source, brace);
+            let mut pending_arm = false;
+            for line in body.lines() {
+                if pending_arm {
+                    let trimmed = line.trim();
+                    if let Some(literal) = first_string(trimmed)
+                        && is_code(literal)
+                    {
+                        codes.insert(literal);
+                        pending_arm = false;
+                        continue;
+                    }
+                    if trimmed.starts_with('}') || !trimmed.is_empty() {
+                        pending_arm = false;
+                    }
+                    continue;
+                }
+                if let Some(arm) = line.find("=>") {
+                    let after = &line[arm + 2..];
+                    if let Some(literal) = first_string(after)
+                        && is_code(literal)
+                    {
+                        codes.insert(literal);
+                    } else if after.trim_end().ends_with('{')
+                        || after.trim().ends_with("=>")
+                        || after.trim().is_empty()
+                    {
+                        // The arm body opens on this line and the literal
+                        // arrives on the next one, whatever follows the `=>`.
+                        pending_arm = true;
+                    }
+                    continue;
+                }
+                if let Some(at) = line.find("return")
+                    && let Some(literal) = first_string(&line[at..])
+                    && is_code(literal)
+                {
+                    codes.insert(literal);
+                }
+            }
+        }
+        codes
+    }
+
+    /// The literal third argument of a `record_business_failure(service, stage,
+    /// "code")` call.  A computed third argument (`error.diagnostic_code()`,
+    /// `info_failure_code(&error)`) is deliberately skipped: its own producer
+    /// is covered by `diagnostic_codes` or by the vocabulary lists.
+    fn business_failure_codes(source: &str) -> BTreeSet<&str> {
+        let mut codes = BTreeSet::new();
+        for at in source.match_indices("record_business_failure(") {
+            let open = at.0 + "record_business_failure".len();
+            let bytes = source.as_bytes();
+            let mut depth = 0usize;
+            let mut commas = 0usize;
+            let mut start = open + 1;
+            let mut third = None;
+            let mut index = open;
+            while index < bytes.len() {
+                match bytes[index] {
+                    b'(' | b'[' | b'{' => depth += 1,
+                    b')' | b']' | b'}' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            if commas >= 2 && third.is_none() {
+                                third = Some(&source[start..index]);
+                            }
+                            break;
+                        }
+                    }
+                    b',' if depth == 1 => {
+                        if commas == 2 {
+                            third = Some(&source[start..index]);
+                        }
+                        commas += 1;
+                        start = index + 1;
+                    }
+                    _ => {}
+                }
+                index += 1;
+            }
+            if let Some(argument) = third {
+                let argument = argument.trim();
+                if argument.starts_with('"')
+                    && argument.ends_with('"')
+                    && let Some(literal) = first_string(argument)
+                    && is_code(literal)
+                    && argument.len() == literal.len() + 2
+                {
+                    codes.insert(literal);
+                }
+            }
+        }
+        codes
+    }
+
+    #[test]
+    fn backend_repair_every_produced_failure_code_is_registered() {
+        // The two test-only runtime modules in the scan set carry their
+        // literal call sites too; registering a code a test writes is
+        // harmless as long as the literal really is a code.
+        let mut codes = BTreeSet::new();
+        for source in DIAGNOSTIC_CODE_SOURCES {
+            codes.extend(diagnostic_codes(source));
+        }
+        for source in BUSINESS_FAILURE_CALL_SITES {
+            codes.extend(business_failure_codes(source));
+        }
+        assert!(
+            codes.len() > 300,
+            "the source scan found only {} codes; it stopped matching and the guard is vacuous",
+            codes.len()
+        );
+        for code in &codes {
+            // `diagnostic_reason` answers with its input only when the input is
+            // registered in `REASONS` or `DIAGNOSTIC_REASONS`.
+            assert_eq!(
+                crate::telemetry::diagnostic_reason(code),
+                *code,
+                "{code} is produced as a failure reason but is not registered; add it to REASONS or DIAGNOSTIC_REASONS"
+            );
+        }
     }
 }
