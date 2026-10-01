@@ -3039,13 +3039,59 @@ fn element_is_hidden(tag: &HtmlTag) -> bool {
     })
 }
 
-/// Structural classification for an already allowlisted service resource.
-/// Inert script strings, help links and hidden form templates are not a
-/// server rejection. This returns no page text or credential material.
-pub(crate) fn service_resource_document_requires_login(html: &str) -> bool {
-    let parsed = parse_html(html);
-    let visible: Vec<HtmlTag> = parsed
-        .tags
+/// Structural login evidence taken only from what a reader of an allowlisted
+/// campus document would actually see.
+///
+/// The mapped campus applications inline their own templates, route tables and
+/// help links.  A substring search over the whole document therefore reads the
+/// application's own script text as a login page, which is why every signal
+/// here is taken from parsed, visible content only.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct DocumentLoginEvidence {
+    /// A visible form posts to a login route, or carries a visible identity
+    /// credential pair.
+    pub login_form: bool,
+    /// The document's whole visible text is one of the session notices.
+    pub notice: bool,
+    /// The document carries the identity application's own title.
+    pub identity_title: bool,
+}
+
+impl DocumentLoginEvidence {
+    pub(crate) fn requires_login(self) -> bool {
+        self.login_form || self.notice || self.identity_title
+    }
+}
+
+/// The identity application's own document titles.  A mapped business
+/// application only carries one of these when it really is the login
+/// interstitial, so this is decisive on its own — unlike the WebVPN gateway's
+/// banner, which the gateway injects into every mapped page and therefore
+/// proves nothing about the page behind it.
+const IDENTITY_DOCUMENT_TITLES: &[&str] = &["统一身份认证", "统一认证"];
+
+/// The session notices a service may answer a whole visible page with.
+const DOCUMENT_LOGIN_NOTICES: &[&str] = &[
+    "请登录",
+    "请先登录",
+    "未登录",
+    "登录失效",
+    "会话已过期",
+    "login required",
+    "please login",
+    "please log in",
+    "session expired",
+    "not logged in",
+    "authentication required",
+    "unauthorized",
+];
+
+/// Extracts the visible-only login evidence from one HTML document.
+pub(crate) fn document_login_evidence(html: &str) -> DocumentLoginEvidence {
+    let ParsedHtml {
+        tags, visible_text, ..
+    } = parse_html(html);
+    let visible: Vec<HtmlTag> = tags
         .into_iter()
         .filter(|tag| {
             !tag.hidden
@@ -3055,60 +3101,61 @@ pub(crate) fn service_resource_document_requires_login(html: &str) -> bool {
                         .is_some_and(|kind| kind.eq_ignore_ascii_case("hidden")))
         })
         .collect();
-    if has_login_form(
+    let login_form = has_login_form(
         &visible,
         &LoginFormFields::common(),
         "/do/off/ui/auth/login/check",
-    ) {
-        return true;
-    }
-    let login_action = visible.iter().any(|tag| {
-        if tag.name != "form" {
-            return false;
-        }
-        let Some(action) = tag.attribute_value("action") else {
-            return false;
-        };
-        let path = Url::parse(&action)
-            .ok()
-            .map(|url| url.path().to_owned())
-            .unwrap_or_else(|| {
-                action
-                    .split(['?', '#'])
-                    .next()
-                    .unwrap_or_default()
-                    .to_owned()
-            });
-        matches!(
-            path.trim_end_matches('/'),
-            "/login" | "/f/login" | "/security_check"
-        ) || path.ends_with("/do/off/ui/auth/login/check")
-            || path.ends_with("/do/off/ui/auth/login/checkSingle")
+    ) || visible.iter().any(|tag| {
+        tag.name == "form"
+            && tag
+                .attribute_value("action")
+                .is_some_and(|action| form_action_is_login_route(&action))
     });
-    if login_action {
-        return true;
+    let notice = {
+        let whole = visible_text
+            .trim()
+            .trim_matches(['.', '!', '。', '！'])
+            .trim()
+            .to_ascii_lowercase();
+        DOCUMENT_LOGIN_NOTICES.iter().any(|text| whole == *text)
+    };
+    let lower_visible_text = visible_text.to_ascii_lowercase();
+    let identity_title = IDENTITY_DOCUMENT_TITLES
+        .iter()
+        .any(|title| lower_visible_text.contains(title));
+    DocumentLoginEvidence {
+        login_form,
+        notice,
+        identity_title,
     }
-    let notice = parsed
-        .visible_text
-        .trim()
-        .trim_matches(['.', '!', '。', '！'])
-        .trim()
-        .to_ascii_lowercase();
+}
+
+/// Whether a form's `action` addresses a login route rather than business
+/// submission.
+fn form_action_is_login_route(action: &str) -> bool {
+    let path = Url::parse(action)
+        .ok()
+        .map(|url| url.path().to_owned())
+        .unwrap_or_else(|| {
+            action
+                .split(['?', '#'])
+                .next()
+                .unwrap_or_default()
+                .to_owned()
+        });
     matches!(
-        notice.as_str(),
-        "请登录"
-            | "请先登录"
-            | "未登录"
-            | "登录失效"
-            | "会话已过期"
-            | "login required"
-            | "please login"
-            | "please log in"
-            | "session expired"
-            | "not logged in"
-            | "authentication required"
-            | "unauthorized"
-    )
+        path.trim_end_matches('/'),
+        "/login" | "/f/login" | "/security_check"
+    ) || path.ends_with("/do/off/ui/auth/login/check")
+        || path.ends_with("/do/off/ui/auth/login/checkSingle")
+}
+
+/// Structural classification for an already allowlisted service resource.
+/// Inert script strings, help links and hidden form templates are not a
+/// server rejection. This returns no page text or credential material.
+pub(crate) fn service_resource_document_requires_login(html: &str) -> bool {
+    let evidence = document_login_evidence(html);
+    evidence.login_form || evidence.notice
 }
 
 fn parse_html(html: &str) -> ParsedHtml {

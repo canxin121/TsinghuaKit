@@ -59,24 +59,6 @@ enum PersonalNewsRequest<'a> {
 // Pinned to THUInfo's SYSC_PDF_NEWS_PREFIX; not an inferred host mapping.
 const SYSTEM_PUBLICATION_MAPPING_ID: &str =
     "77726476706e69737468656265737421e3f5468534367f1e6d119aafd641303ceb8f9190006d6afc78336870";
-const LOGIN_MARKERS: &[&str] = &[
-    "name=\"i_user\"",
-    "name='i_user'",
-    "name=\"i_pass\"",
-    "name='i_pass'",
-    "/do/off/ui/auth/login",
-    "登录失效",
-    "会话已过期",
-    "请先登录",
-    "请登录",
-    "未登录",
-    "session expired",
-    "not logged in",
-    "login required",
-    "authentication required",
-    "unauthorized",
-];
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InfoWebVpnConfig {
     pub webvpn_base_url: Url,
@@ -2877,28 +2859,33 @@ fn looks_like_html_document(content_type: Option<&str>, body: &str) -> bool {
         || body.contains("<html")
 }
 
+/// Classifies one INFO/WebVPN response as the identity login boundary.
+///
+/// Every signal is a property of the *document*, not of the surrounding URL or
+/// of the HTTP headers:
+///
+/// * the request ended on an identity login route that the shared transport
+///   deliberately refuses to follow; or
+/// * the document itself is login evidence — a visible identity credential
+///   pair, a visible form posting to a login route, a whole visible page that
+///   is only a session notice, or the identity application's own title.
+///
+/// A bare `text/html` content type, a `<form>`/`<input>` in the markup, and a
+/// login notice that appears only inside an inline script are deliberately
+/// **not** evidence: the mapped campus applications inline their own templates
+/// and help links, so each of those would classify an ordinary business page as
+/// a login page and turn a successful read into a session failure.
+///
+/// `body` may be given already lowercased: every signal below is matched
+/// case-insensitively, and the URL and header checks do not read the body.
 fn is_login_page(url: &Url, content_type: Option<&str>, body: &str) -> bool {
-    let url_signal = url.path().to_ascii_lowercase().contains("/login");
-    let lower_body = body
-        .strip_prefix('\u{feff}')
-        .unwrap_or(body)
-        .trim_start()
-        .to_ascii_lowercase();
-    let html_signal = content_type.is_some_and(|value| {
-        let value = value.to_ascii_lowercase();
-        value.starts_with("text/html") || value.starts_with("application/xhtml+xml")
-    }) || lower_body.starts_with("<!doctype html")
-        || lower_body.starts_with("<html")
-        || lower_body.contains("<form")
-        || lower_body.contains("<input");
-    let identity_form = (lower_body.contains("name=\"i_user\"")
-        || lower_body.contains("name='i_user'"))
-        && (lower_body.contains("name=\"i_pass\"") || lower_body.contains("name='i_pass'"));
-    let marker = LOGIN_MARKERS
-        .iter()
-        .any(|marker| lower_body.contains(&marker.to_ascii_lowercase()));
-    (html_signal && (url_signal || identity_form || marker))
-        || (url_signal && (identity_form || marker))
+    if is_identity_login_target(url) {
+        return true;
+    }
+    if !looks_like_html_document(content_type, body) {
+        return false;
+    }
+    crate::identity_client::document_login_evidence(body).requires_login()
 }
 
 /// Maps all detail-document parser failures through the INFO session boundary.
@@ -3789,6 +3776,84 @@ mod tests {
         assert!(!looks_like_html_document(
             Some("text/html; charset=utf-8"),
             "  {\"object\":{}}"
+        ));
+    }
+
+    /// `is_login_page` must decide from the document's visible content alone.
+    /// The mapped campus applications inline their own templates and help
+    /// links, so a login word inside an inline script, a `<form>` that is
+    /// ordinary business markup, or a `text/html` header must not turn a
+    /// successfully served business page into a session failure.
+    #[test]
+    fn login_page_detection_needs_visible_evidence_not_markup_or_scripts() {
+        let service = Url::parse("https://webvpn.example.test/http/77ab/gymbook/gymBookAction.do")
+            .expect("service url");
+        let html = Some("text/html; charset=utf-8");
+
+        // A business page whose own inline script mentions the login route and
+        // whose markup contains a form must stay a business page.
+        let scripted = "<!doctype html><html><body>\
+             <script>const help='/do/off/ui/auth/login/form/x';const t='请登录';</script>\
+             <form method='post' action='/gymbook/gymBookAction.do?ms=saveGymBook'>\
+             <input name='gymId'><input name='itemId'><input type='hidden' name='ms' value='save'>\
+             </form><table id='res'><tr><td>08:00</td></tr></table></body></html>";
+        assert!(!is_login_page(&service, html, scripted));
+
+        // A hidden identity template is a template, not a login page.
+        let hidden_form = "<html><body><div hidden>\
+             <form action='/do/off/ui/auth/login/check'>\
+             <input name='i_user'><input name='i_pass' type='password'></form></div>\
+             <main>venue directory</main></body></html>";
+        assert!(!is_login_page(&service, html, hidden_form));
+
+        // A visible identity credential pair is decisive.
+        let visible_form = "<html><body>\
+             <form action='/do/off/ui/auth/login/check' method='post'>\
+             <input name='i_user'><input name='i_pass' type='password'></form></body></html>";
+        assert!(is_login_page(&service, html, visible_form));
+
+        // So is a whole visible page that says nothing but the session notice.
+        assert!(is_login_page(
+            &service,
+            html,
+            "<html><body><div>会话已过期。</div></body></html>"
+        ));
+        // ... but not the same notice used inside an ordinary sentence.
+        assert!(!is_login_page(
+            &service,
+            html,
+            "<html><body><article>请登录教学平台后查询通知。</article>\
+             <table id='res'><tr><td>08:00</td></tr></table></body></html>"
+        ));
+
+        // The identity application's own title is decisive on its own.
+        assert!(is_login_page(
+            &service,
+            html,
+            "<html><head><title>统一身份认证</title></head><body>请登录 id.tsinghua.edu.cn</body></html>"
+        ));
+        // The gateway banner is injected into every mapped page, so it proves
+        // nothing about the page behind it and must not decide this.
+        assert!(!is_login_page(
+            &service,
+            html,
+            "<html><head><title>WebVPN</title></head><body>\
+             <table id='res'><tr><td>08:00</td></tr></table></body></html>"
+        ));
+
+        // The shared transport refuses to follow the identity login route, so
+        // a request that ended there is a session boundary regardless of what
+        // the intermediate document said.
+        let login_route =
+            Url::parse("https://id.tsinghua.edu.cn/do/off/ui/auth/login/form/fixture")
+                .expect("login url");
+        assert!(is_login_page(&login_route, None, ""));
+
+        // A JSON business envelope is never a login page, whatever it says.
+        assert!(!is_login_page(
+            &service,
+            Some("application/json"),
+            "{\"result\":\"error\",\"object\":null,\"msg\":\"请登录\"}"
         ));
     }
 
