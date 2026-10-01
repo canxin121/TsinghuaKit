@@ -1,9 +1,9 @@
 //! Runtime-level fixtures for the e-invoice read slice.
 //!
 //! These use only loopback responses.  They verify that the list and document
-//! reads happen inside the existing INFO/WebVPN session, that the one-time
-//! handoff ticket never becomes the adapter's base URL or a caller-visible
-//! value, that a page beyond the adapter's bound is refused before any
+//! reads happen inside the existing INFO/WebVPN session, that the read
+//! addresses the invoice host's own fixed mapping rather than any handoff
+//! query, that a page beyond the adapter's bound is refused before any
 //! request, and that a superseded list leaves no resolvable document
 //! reference behind.
 
@@ -83,24 +83,17 @@ fn list_body() -> String {
     )
 }
 
-/// The invoice handoff: the portal answers with the target host's own portal
-/// entry point, the roam page carries a one-time ticket, and the exchange
-/// answers with the application page.
-fn invoice_handoff_replies(page: &str) -> Vec<Reply> {
-    vec![
-        Reply::html("XSRF-TOKEN=fixture-invoice-csrf;"),
-        Reply::json(
-            r#"{"object":{"roamingurl":"https://dzpj.tsinghua.edu.cn/roam/index.do?yyfwid=FIXTURE"}}"#,
-        ),
-        Reply::html("<html><script>(\"ticket\").value = 'AAABBBCCC111';</script></html>"),
-        Reply::html("<html><body>发票查询</body></html>"),
-        Reply::json(page),
-    ]
+/// The reference reads the invoice list at its own absolute mapped URL, with
+/// the proven INFO session as the precondition rather than as a request in
+/// front of the read.  The list body is therefore the first and only request
+/// of a list read, and no portal handoff is dispatched to reach it.
+fn invoice_list_replies(page: &str) -> Vec<Reply> {
+    vec![Reply::json(page)]
 }
 
 #[tokio::test]
 async fn backend_repair_invoice_list_reads_inside_the_proven_info_session() {
-    let server = FixtureServer::new(invoice_handoff_replies(&list_body()));
+    let server = FixtureServer::new(invoice_list_replies(&list_body()));
     let mut runtime = invoice_runtime(&server);
 
     let result = runtime
@@ -124,19 +117,18 @@ async fn backend_repair_invoice_list_reads_inside_the_proven_info_session() {
     assert!(runtime.invoice_service_is_proven());
     assert!(runtime.service_session_is_proven(ServiceId::Info));
 
-    // The handoff's one-time ticket must never become the adapter's base URL:
-    // the last request carries only the mapping root and the list's own path.
+    // The read addresses the mapping root and the list's own path, and it is
+    // the only request a list read dispatches: the proven INFO session is the
+    // precondition, not a portal handoff in front of the read.
     let requests = server.requests();
-    assert_eq!(requests.len(), 5);
-    let read = &requests[4];
+    assert_eq!(requests.len(), 1);
+    let read = &requests[0];
     assert!(
         read.starts_with(&format!(
             "POST /https/{INVOICE_MAPPING}{INVOICE_LIST_PATH} "
         )),
         "unexpected read request: {read}"
     );
-    assert!(!read.contains("AAABBBCCC111"));
-    assert!(!read.contains("FIXTURE"));
     assert!(read.ends_with("page=1&limit=20&columnName=inv_date&sort=desc"));
 }
 
@@ -145,7 +137,7 @@ async fn backend_repair_invoice_page_beyond_the_bound_is_refused_before_any_list
     // The reader session is established first, as it is for every INFO-hosted
     // read; what the bound forbids is the list request itself.  No page outside
     // the adapter's range may reach the service.
-    let server = FixtureServer::new(invoice_handoff_replies(&list_body()));
+    let server = FixtureServer::new(invoice_list_replies(&list_body()));
     let mut runtime = invoice_runtime(&server);
 
     for page in [0, MAX_INVOICE_PAGE + 1] {
@@ -167,7 +159,7 @@ async fn backend_repair_invoice_page_beyond_the_bound_is_refused_before_any_list
 #[tokio::test]
 async fn backend_repair_invoice_document_read_stays_bounded_and_referenced() {
     let pdf = "%PDF-1.4\nfixture invoice document\n%%EOF";
-    let mut replies = invoice_handoff_replies(&list_body());
+    let mut replies = invoice_list_replies(&list_body());
     replies.push(Reply {
         status: 200,
         headers: "Content-Type: application/pdf\r\n".into(),
@@ -188,7 +180,7 @@ async fn backend_repair_invoice_document_read_stays_bounded_and_referenced() {
     assert_eq!(document.source, "live");
 
     let requests = server.requests();
-    let read = &requests[5];
+    let read = &requests[1];
     assert!(
         read.starts_with(&format!(
             "GET /https/{INVOICE_MAPPING}/invoice/showInvPdf.do?uuid=u-002 "
@@ -199,7 +191,7 @@ async fn backend_repair_invoice_document_read_stays_bounded_and_referenced() {
 
 #[tokio::test]
 async fn backend_repair_invoice_document_answer_that_is_not_the_document_fails() {
-    let mut replies = invoice_handoff_replies(&list_body());
+    let mut replies = invoice_list_replies(&list_body());
     replies.push(Reply {
         status: 200,
         headers: "Content-Type: application/pdf\r\n".into(),
@@ -230,7 +222,7 @@ async fn backend_repair_invoice_document_answer_that_is_not_the_document_fails()
 async fn backend_repair_invoice_parse_failure_is_not_an_empty_page() {
     // The service answers 200 with a JSON document that has no `data` array.
     // The caller must see a failure, not a validated empty page.
-    let server = FixtureServer::new(invoice_handoff_replies(r#"{"unexpected":true}"#));
+    let server = FixtureServer::new(invoice_list_replies(r#"{"unexpected":true}"#));
     let mut runtime = invoice_runtime(&server);
 
     let error = runtime
@@ -247,10 +239,10 @@ async fn backend_repair_invoice_parse_failure_is_not_an_empty_page() {
 
 #[tokio::test]
 async fn backend_repair_invoice_expiry_page_is_a_session_failure() {
-    // The handoff succeeds but the list itself is an expiry page.  The session
-    // is dropped rather than replayed, and a list from an earlier read must
-    // not be presented as the current one.
-    let server = FixtureServer::new(invoice_handoff_replies(
+    // The INFO session is proven but the list itself is an expiry page.  The
+    // session is dropped rather than replayed, and a list from an earlier read
+    // must not be presented as the current one.
+    let server = FixtureServer::new(invoice_list_replies(
         "time out用户登陆超时或访问内容不存在。请重试",
     ));
     let mut runtime = invoice_runtime(&server);
@@ -279,7 +271,7 @@ async fn backend_repair_invoice_requires_a_proven_account() {
 
 #[tokio::test]
 async fn backend_repair_invoice_reference_does_not_survive_the_session() {
-    let server = FixtureServer::new(invoice_handoff_replies(&list_body()));
+    let server = FixtureServer::new(invoice_list_replies(&list_body()));
     let mut runtime = invoice_runtime(&server);
 
     let list = runtime

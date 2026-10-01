@@ -94,25 +94,12 @@ fn receipts_body() -> String {
     )
 }
 
-/// The plain INFO handoff the payroll host uses: the portal answers with the
-/// target's own campus URL, and the mapped page answers.
-///
-/// The reference client's payroll selectors live in one mapping served by one
-/// host, so the same three handoff replies precede either ledger's read.
-fn bank_handoff_replies() -> Vec<Reply> {
-    vec![
-        Reply::html("XSRF-TOKEN=fixture-bank-csrf;"),
-        Reply::json(r#"{"object":{"roamingurl":"http://yhdf.tsinghua.edu.cn/yhdfcx/search.do"}}"#),
-        Reply::html("<html><body>银行代发</body></html>"),
-    ]
-}
-
 #[tokio::test]
 async fn backend_repair_bank_payroll_reads_inside_the_proven_info_session() {
-    let mut replies = bank_handoff_replies();
-    replies.push(Reply::html(&years_body()));
-    replies.push(Reply::html(&receipts_body()));
-    let server = FixtureServer::new(replies);
+    let server = FixtureServer::new(vec![
+        Reply::html(&years_body()),
+        Reply::html(&receipts_body()),
+    ]);
     let mut runtime = bank_runtime(&server);
 
     let result = runtime
@@ -134,15 +121,17 @@ async fn backend_repair_bank_payroll_reads_inside_the_proven_info_session() {
     assert!(runtime.bank_payment_service_is_proven());
 
     // The year and receipt reads both land inside this host's mapping, and the
-    // batch names the year set the service itself offered.
+    // batch names the year set the service itself offered.  They are the only
+    // two requests of a ledger read: the proven INFO session is the
+    // precondition, not a portal handoff in front of the read.
     let requests = server.requests();
-    assert_eq!(requests.len(), 5);
-    let year_request = &requests[3];
+    assert_eq!(requests.len(), 2);
+    let year_request = &requests[0];
     assert!(
         year_request.starts_with(&format!("GET /http/{BANK_MAPPING}{BANK_SEARCH_PATH} ")),
         "unexpected year request: {year_request}"
     );
-    let receipt_request = &requests[4];
+    let receipt_request = &requests[1];
     assert!(
         receipt_request.starts_with(&format!("POST /http/{BANK_MAPPING}{BANK_SEARCH_PATH} ")),
         "unexpected receipt request: {receipt_request}"
@@ -152,10 +141,10 @@ async fn backend_repair_bank_payroll_reads_inside_the_proven_info_session() {
 
 #[tokio::test]
 async fn backend_repair_bank_foundation_ledger_is_a_separate_path_on_the_same_mapping() {
-    let mut replies = bank_handoff_replies();
-    replies.push(Reply::html(&years_body()));
-    replies.push(Reply::html(&receipts_body()));
-    let server = FixtureServer::new(replies);
+    let server = FixtureServer::new(vec![
+        Reply::html(&years_body()),
+        Reply::html(&receipts_body()),
+    ]);
     let mut runtime = bank_runtime(&server);
 
     runtime
@@ -165,33 +154,31 @@ async fn backend_repair_bank_foundation_ledger_is_a_separate_path_on_the_same_ma
 
     let requests = server.requests();
     assert!(
-        requests[3].starts_with(&format!(
+        requests[0].starts_with(&format!(
             "GET /http/{BANK_MAPPING}{FOUNDATION_BANK_SEARCH_PATH} "
         )),
         "unexpected foundation year request: {}",
-        requests[3]
+        requests[0]
     );
     assert!(
-        requests[4].starts_with(&format!(
+        requests[1].starts_with(&format!(
             "POST /http/{BANK_MAPPING}{FOUNDATION_BANK_SEARCH_PATH} "
         )),
         "unexpected foundation receipt request: {}",
-        requests[4]
+        requests[1]
     );
 }
 
 #[tokio::test]
 async fn backend_repair_bank_ledger_switch_reproves_before_reading_the_other_ledger() {
     // One adapter serves one ledger.  Asking for the other ledger must prepare
-    // that ledger's own adapter rather than reuse the first one's proof, and it
-    // must re-enter the handoff to do so.
-    let mut replies = bank_handoff_replies();
-    replies.push(Reply::html(&years_body()));
-    replies.push(Reply::html(&receipts_body()));
-    replies.extend(bank_handoff_replies());
-    replies.push(Reply::html(&years_body()));
-    replies.push(Reply::html(&receipts_body()));
-    let server = FixtureServer::new(replies);
+    // that ledger's own adapter rather than reuse the first one's proof.
+    let server = FixtureServer::new(vec![
+        Reply::html(&years_body()),
+        Reply::html(&receipts_body()),
+        Reply::html(&years_body()),
+        Reply::html(&receipts_body()),
+    ]);
     let mut runtime = bank_runtime(&server);
 
     runtime
@@ -204,11 +191,11 @@ async fn backend_repair_bank_ledger_switch_reproves_before_reading_the_other_led
         .expect("foundation ledger reads");
 
     let requests = server.requests();
-    assert_eq!(requests.len(), 10);
+    assert_eq!(requests.len(), 4);
     assert!(
-        requests[8].contains(FOUNDATION_BANK_SEARCH_PATH),
+        requests[2].contains(FOUNDATION_BANK_SEARCH_PATH),
         "the second ledger must address its own path: {}",
-        requests[8]
+        requests[2]
     );
 }
 
@@ -216,11 +203,9 @@ async fn backend_repair_bank_ledger_switch_reproves_before_reading_the_other_led
 async fn backend_repair_bank_parse_failure_is_not_an_empty_statement() {
     // The service answers 200 with a year form carrying no options.  The caller
     // must see a failure, not a validated empty ledger.
-    let mut replies = bank_handoff_replies();
-    replies.push(Reply::html(
+    let server = FixtureServer::new(vec![Reply::html(
         "<html><body><form><select name=\"year\"></select></form></body></html>",
-    ));
-    let server = FixtureServer::new(replies);
+    )]);
     let mut runtime = bank_runtime(&server);
 
     runtime
@@ -233,14 +218,14 @@ async fn backend_repair_bank_parse_failure_is_not_an_empty_statement() {
     );
     assert!(!runtime.bank_payment_service_is_proven());
     // No receipt request may follow a year form that offered nothing.
-    assert_eq!(server.requests().len(), 4);
+    assert_eq!(server.requests().len(), 1);
 }
 
 #[tokio::test]
 async fn backend_repair_bank_expiry_page_is_a_session_failure() {
-    let mut replies = bank_handoff_replies();
-    replies.push(Reply::html("time out用户登陆超时或访问内容不存在。请重试"));
-    let server = FixtureServer::new(replies);
+    let server = FixtureServer::new(vec![Reply::html(
+        "time out用户登陆超时或访问内容不存在。请重试",
+    )]);
     let mut runtime = bank_runtime(&server);
 
     runtime

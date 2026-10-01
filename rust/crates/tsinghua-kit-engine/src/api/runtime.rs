@@ -15518,35 +15518,49 @@ impl CampusRuntime {
     async fn prepare_program_adapter(&mut self, user: &UserIdentity) -> Result<(), String> {
         self.invalidate_program_session();
         self.ensure_info_session(user).await?;
-
-        let transport = self.identity.transport().clone();
-        let handoff = match self.info_adapter.as_ref() {
-            Some(info) => {
-                info.additional_roaming(crate::program_read::PROGRAM_WEBVPN_TARGET)
-                    .await
-            }
-            None => return Err(self.record_error("INFO 服务会话尚未建立")),
-        };
-        let roaming_url = handoff.map_err(|error| {
-            self.record_business_failure("program", "program_handoff", info_failure_code(&error))
-        })?;
-        let mut base_url = Url::parse(roaming_url.as_str())
-            .map_err(|_| self.record_error("program roaming URL is invalid"))?;
-        let expected = Url::parse(REGISTRAR_WEBVPN_BASE_URL).expect("static registrar mapping");
-        if !base_url.path().starts_with(expected.path()) {
-            return Err(self.record_business_failure(
-                "program",
-                "program_handoff",
-                "program_mapping_rejected",
-            ));
+        if self
+            .coordinator
+            .registry()
+            .snapshot_for(ServiceId::Info)
+            .user
+            .as_ref()
+            != Some(user)
+        {
+            return self.fail("培养方案服务会话用户不匹配");
         }
-        // The handoff query is consumed here. Only the proved target mapping
-        // configures the read endpoints that follow.
-        base_url.set_path(expected.path());
+        if !self.service_session_is_proven(ServiceId::Info) {
+            return Err(self.record_error("INFO 服务会话尚未建立"));
+        }
+
+        // The completion report is addressed at its own fixed WebVPN mapping,
+        // exactly as the reference client does: `getDegreeProgramCompletion`
+        // calls the absolute `PROGRAM_URL` as `() => uFetch(PROGRAM_URL)`, so
+        // the roam body is a parameter the operation never reads.  The
+        // reference's `"default"` payload is therefore only its
+        // expiry-recovery path, and `roamingWrapper` reaches it by calling the
+        // operation first and roaming only when that call threw.  Roaming
+        // first — as this engine used to — spends a portal request on every
+        // read and makes the whole domain depend on an envelope the portal
+        // answers with a business error for this selector.  The INFO session
+        // above is still the precondition and is what authenticates the
+        // mapping, and the adapter keeps its own expiry classification for a
+        // mapping that has since lapsed.
+        // The mapping path is this constant's, but the origin must stay the
+        // INFO session's own WebVPN origin: a second, hard-coded origin would
+        // split the Cookie and handoff boundary that `ensure_info_session`
+        // deliberately keeps single.
+        let mut base_url = self
+            .info_adapter
+            .as_ref()
+            .map(|info| info.config().webvpn_base_url.clone())
+            .ok_or_else(|| self.record_error("INFO 服务会话尚未建立"))?;
+        let mapping = Url::parse(REGISTRAR_WEBVPN_BASE_URL).expect("static program mapping");
+        base_url.set_path(mapping.path());
         base_url.set_query(None);
         base_url.set_fragment(None);
-        let adapter = ProgramAdapter::try_with_transport(base_url, transport)
-            .map_err(|error| self.record_error(format!("program adapter: {error}")))?;
+        let adapter =
+            ProgramAdapter::try_with_transport(base_url, self.identity.transport().clone())
+                .map_err(|error| self.record_error(format!("program adapter: {error}")))?;
         self.program_adapter = Some(adapter);
         Ok(())
     }
@@ -15640,39 +15654,46 @@ impl CampusRuntime {
     async fn prepare_assessment_adapter(&mut self, user: &UserIdentity) -> Result<(), String> {
         self.invalidate_assessment_session();
         self.ensure_info_session(user).await?;
-
-        let transport = self.identity.transport().clone();
-        let handoff = match self.info_adapter.as_ref() {
-            Some(info) => {
-                info.additional_roaming(crate::assessment_read::ASSESSMENT_WEBVPN_TARGET)
-                    .await
-            }
-            None => return Err(self.record_error("INFO 服务会话尚未建立")),
-        };
-        let roaming_url = handoff.map_err(|error| {
-            self.record_business_failure(
-                "assessment",
-                "assessment_handoff",
-                info_failure_code(&error),
-            )
-        })?;
-        let mut base_url = Url::parse(roaming_url.as_str())
-            .map_err(|_| self.record_error("assessment roaming URL is invalid"))?;
-        let expected = Url::parse(ASSESSMENT_WEBVPN_BASE_URL).expect("static assessment mapping");
-        if !base_url.path().starts_with(expected.path()) {
-            return Err(self.record_business_failure(
-                "assessment",
-                "assessment_handoff",
-                "assessment_mapping_rejected",
-            ));
+        if self
+            .coordinator
+            .registry()
+            .snapshot_for(ServiceId::Info)
+            .user
+            .as_ref()
+            != Some(user)
+        {
+            return self.fail("教学评估服务会话用户不匹配");
         }
-        // The handoff query is consumed here. Only the proved target mapping
-        // configures the read endpoints that follow.
-        base_url.set_path(expected.path());
+        if !self.service_session_is_proven(ServiceId::Info) {
+            return Err(self.record_error("INFO 服务会话尚未建立"));
+        }
+
+        // The questionnaire list is addressed at its own fixed WebVPN mapping,
+        // exactly as the reference client does: `getAssessmentList` calls the
+        // absolute `ASSESSMENT_LIST_URL` as `() => uFetch(ASSESSMENT_LIST_URL)`,
+        // so the roam body is a parameter the operation never reads.  The
+        // reference's `"default"` payload is therefore only its
+        // expiry-recovery path, and `roamingWrapper` reaches it by calling the
+        // operation first and roaming only when that call threw.  The INFO
+        // session above is still the precondition and is what authenticates
+        // the mapping, and the adapter keeps its own expiry classification for
+        // a mapping that has since lapsed.
+        // The mapping path is this constant's, but the origin must stay the
+        // INFO session's own WebVPN origin: a second, hard-coded origin would
+        // split the Cookie and handoff boundary that `ensure_info_session`
+        // deliberately keeps single.
+        let mut base_url = self
+            .info_adapter
+            .as_ref()
+            .map(|info| info.config().webvpn_base_url.clone())
+            .ok_or_else(|| self.record_error("INFO 服务会话尚未建立"))?;
+        let mapping = Url::parse(ASSESSMENT_WEBVPN_BASE_URL).expect("static assessment mapping");
+        base_url.set_path(mapping.path());
         base_url.set_query(None);
         base_url.set_fragment(None);
-        let adapter = AssessmentAdapter::try_with_transport(base_url, transport)
-            .map_err(|error| self.record_error(format!("assessment adapter: {error}")))?;
+        let adapter =
+            AssessmentAdapter::try_with_transport(base_url, self.identity.transport().clone())
+                .map_err(|error| self.record_error(format!("assessment adapter: {error}")))?;
         self.assessment_adapter = Some(adapter);
         Ok(())
     }
@@ -15895,35 +15916,49 @@ impl CampusRuntime {
     async fn prepare_invoice_adapter(&mut self, user: &UserIdentity) -> Result<(), String> {
         self.invalidate_invoice_session();
         self.ensure_info_session(user).await?;
-
-        let transport = self.identity.transport().clone();
-        let handoff = match self.info_adapter.as_ref() {
-            Some(info) => {
-                info.additional_roaming(crate::invoice_read::INVOICE_WEBVPN_TARGET)
-                    .await
-            }
-            None => return Err(self.record_error("INFO 服务会话尚未建立")),
-        };
-        let roaming_url = handoff.map_err(|error| {
-            self.record_business_failure("invoice", "invoice_handoff", info_failure_code(&error))
-        })?;
-        let mut base_url = Url::parse(roaming_url.as_str())
-            .map_err(|_| self.record_error("invoice roaming URL is invalid"))?;
-        let expected = Url::parse(INVOICE_WEBVPN_BASE_URL).expect("static invoice mapping");
-        if !base_url.path().starts_with(expected.path()) {
-            return Err(self.record_business_failure(
-                "invoice",
-                "invoice_handoff",
-                "invoice_mapping_rejected",
-            ));
+        if self
+            .coordinator
+            .registry()
+            .snapshot_for(ServiceId::Info)
+            .user
+            .as_ref()
+            != Some(user)
+        {
+            return self.fail("发票服务会话用户不匹配");
         }
-        // The handoff query is consumed here.  Only the proved target mapping
-        // configures the read endpoints that follow.
-        base_url.set_path(expected.path());
+        if !self.service_session_is_proven(ServiceId::Info) {
+            return Err(self.record_error("INFO 服务会话尚未建立"));
+        }
+
+        // The invoice list is addressed at its own fixed WebVPN mapping,
+        // exactly as the reference client does: `getInvoiceList` calls the
+        // absolute `INVOICE_LIST_URL` as `async () =>`, so the roam body is a
+        // parameter the operation never reads.  The reference's `"default"`
+        // payload is therefore only its expiry-recovery path, and
+        // `roamingWrapper` reaches it by calling the operation first and
+        // roaming only when that call threw.  The reference's roaming branch
+        // for this host is a one-time ticket exchange (`roamAuth.do`) that the
+        // invoice module owns; this engine deliberately does not perform a
+        // second campus login, so no INFO roam is dispatched here.  The INFO
+        // session above is still the precondition and is what authenticates
+        // the mapping, and the adapter keeps its own expiry classification for
+        // a mapping that has since lapsed.
+        // The mapping path is this constant's, but the origin must stay the
+        // INFO session's own WebVPN origin: a second, hard-coded origin would
+        // split the Cookie and handoff boundary that `ensure_info_session`
+        // deliberately keeps single.
+        let mut base_url = self
+            .info_adapter
+            .as_ref()
+            .map(|info| info.config().webvpn_base_url.clone())
+            .ok_or_else(|| self.record_error("INFO 服务会话尚未建立"))?;
+        let mapping = Url::parse(INVOICE_WEBVPN_BASE_URL).expect("static invoice mapping");
+        base_url.set_path(mapping.path());
         base_url.set_query(None);
         base_url.set_fragment(None);
-        let adapter = InvoiceAdapter::try_with_transport(base_url, transport)
-            .map_err(|error| self.record_error(format!("invoice adapter: {error}")))?;
+        let adapter =
+            InvoiceAdapter::try_with_transport(base_url, self.identity.transport().clone())
+                .map_err(|error| self.record_error(format!("invoice adapter: {error}")))?;
         self.invoice_adapter = Some(adapter);
         Ok(())
     }
@@ -16124,35 +16159,34 @@ impl CampusRuntime {
         self.invalidate_bank_payment_session();
         self.ensure_info_session(user).await?;
 
-        let transport = self.identity.transport().clone();
-        let handoff = match self.info_adapter.as_ref() {
-            Some(info) => info.additional_roaming(ledger.webvpn_target()).await,
-            None => return Err(self.record_error("INFO 服务会话尚未建立")),
-        };
-        let roaming_url = handoff.map_err(|error| {
-            self.record_business_failure(
-                "bank_payment",
-                "bank_payment_handoff",
-                info_failure_code(&error),
-            )
-        })?;
-        let mut base_url = Url::parse(roaming_url.as_str())
-            .map_err(|_| self.record_error("银行到款 roaming URL is invalid"))?;
+        // The payroll ledger is addressed at its own fixed WebVPN mapping.  The
+        // reference client reaches this host through its `"default"` roam, and
+        // that roam's *last* action is `return await uFetch(url)` — a plain GET
+        // of this very mapping's `/yhdfcx/search.do` page, whose `<option>`
+        // values are the years.  The portal leg before it only discovers the
+        // mapped URL, which this engine already holds as a constant, and this
+        // engine's own `read_years` performs exactly that GET.  Dispatching the
+        // portal leg as well therefore adds a request the reference does not
+        // require the caller to depend on, and one the portal answers for this
+        // selector with a login requirement.  The INFO session above stays the
+        // precondition and is what authenticates the mapping, and the adapter
+        // keeps its own expiry classification for a mapping that has since
+        // lapsed.
+        let mut base_url = self
+            .info_adapter
+            .as_ref()
+            .map(|info| info.config().webvpn_base_url.clone())
+            .ok_or_else(|| self.record_error("INFO 服务会话尚未建立"))?;
         let expected = Url::parse(BANK_WEBVPN_BASE_URL).expect("static bank mapping");
-        if !base_url.path().starts_with(expected.path()) {
-            return Err(self.record_business_failure(
-                "bank_payment",
-                "bank_payment_handoff",
-                "bank_mapping_rejected",
-            ));
-        }
-        // The handoff query is consumed here.  Only the proved target mapping
-        // configures the read endpoint that follows.
         base_url.set_path(expected.path());
         base_url.set_query(None);
         base_url.set_fragment(None);
-        let adapter = BankPaymentAdapter::try_with_transport(base_url, ledger, transport)
-            .map_err(|error| self.record_error(format!("银行到款 adapter: {error}")))?;
+        let adapter = BankPaymentAdapter::try_with_transport(
+            base_url,
+            ledger,
+            self.identity.transport().clone(),
+        )
+        .map_err(|error| self.record_error(format!("银行到款 adapter: {error}")))?;
         self.bank_payment_adapter = Some(adapter);
         Ok(())
     }
@@ -16435,35 +16469,49 @@ impl CampusRuntime {
     async fn prepare_sports_adapter(&mut self, user: &UserIdentity) -> Result<(), String> {
         self.invalidate_sports_session();
         self.ensure_info_session(user).await?;
-
-        let transport = self.identity.transport().clone();
-        let handoff = match self.info_adapter.as_ref() {
-            Some(info) => {
-                info.additional_roaming(crate::sports_read::SPORTS_WEBVPN_TARGET)
-                    .await
-            }
-            None => return Err(self.record_error("INFO 服务会话尚未建立")),
-        };
-        let roaming_url = handoff.map_err(|error| {
-            self.record_business_failure("sports", "sports_handoff", info_failure_code(&error))
-        })?;
-        let mut base_url = Url::parse(roaming_url.as_str())
-            .map_err(|_| self.record_error("sports roaming URL is invalid"))?;
-        let expected = Url::parse(SPORTS_WEBVPN_BASE_URL).expect("static sports mapping");
-        if !base_url.path().starts_with(expected.path()) {
-            return Err(self.record_business_failure(
-                "sports",
-                "sports_handoff",
-                "sports_mapping_rejected",
-            ));
+        if self
+            .coordinator
+            .registry()
+            .snapshot_for(ServiceId::Info)
+            .user
+            .as_ref()
+            != Some(user)
+        {
+            return self.fail("体育场馆服务会话用户不匹配");
         }
-        // The handoff query is consumed here.  Only the proved target mapping
-        // configures the read endpoints that follow.
-        base_url.set_path(expected.path());
+        if !self.service_session_is_proven(ServiceId::Info) {
+            return Err(self.record_error("INFO 服务会话尚未建立"));
+        }
+
+        // Every sports-venue read is addressed at the booking application's own
+        // fixed WebVPN mapping, exactly as the reference client does:
+        // `getSportsResources`, `getSportsReservationRecords` and their
+        // siblings are all `async () => uFetch(SPORTS_*_URL)`, so the roam body
+        // is a parameter the operation never reads.  The reference's
+        // `"default"` payload is therefore only its expiry-recovery path, and
+        // `roamingWrapper` reaches it by calling the operation first and
+        // roaming only when that call threw.  Roaming first — as this engine
+        // used to — spends a portal request on every read and makes the whole
+        // domain depend on an envelope the portal answers with a redirect the
+        // WebVPN refuses.  The INFO session above is still the precondition and
+        // is what authenticates the mapping, and the adapter keeps its own
+        // expiry classification for a mapping that has since lapsed.
+        // The mapping path is this constant's, but the origin must stay the
+        // INFO session's own WebVPN origin: a second, hard-coded origin would
+        // split the Cookie and handoff boundary that `ensure_info_session`
+        // deliberately keeps single.
+        let mut base_url = self
+            .info_adapter
+            .as_ref()
+            .map(|info| info.config().webvpn_base_url.clone())
+            .ok_or_else(|| self.record_error("INFO 服务会话尚未建立"))?;
+        let mapping = Url::parse(SPORTS_WEBVPN_BASE_URL).expect("static sports mapping");
+        base_url.set_path(mapping.path());
         base_url.set_query(None);
         base_url.set_fragment(None);
-        let adapter = SportsAdapter::try_with_transport(base_url, transport)
-            .map_err(|error| self.record_error(format!("sports adapter: {error}")))?;
+        let adapter =
+            SportsAdapter::try_with_transport(base_url, self.identity.transport().clone())
+                .map_err(|error| self.record_error(format!("sports adapter: {error}")))?;
         self.sports_adapter = Some(adapter);
         Ok(())
     }
@@ -16672,8 +16720,19 @@ impl CampusRuntime {
         // dispatched here.  The INFO session above is still the precondition
         // and is what authenticates the mapping, and the adapter keeps its own
         // expiry classification for a mapping that has since lapsed.
-        let base_url = Url::parse(RESERVES_WEBVPN_BASE_URL)
-            .map_err(|_| self.record_error("教参服务地址配置无效"))?;
+        // The mapping path is this constant's, but the origin must stay the
+        // INFO session's own WebVPN origin: a second, hard-coded origin would
+        // split the Cookie and handoff boundary that `ensure_info_session`
+        // deliberately keeps single.
+        let mut base_url = self
+            .info_adapter
+            .as_ref()
+            .map(|info| info.config().webvpn_base_url.clone())
+            .ok_or_else(|| self.record_error("INFO 服务会话尚未建立"))?;
+        let mapping = Url::parse(RESERVES_WEBVPN_BASE_URL).expect("static reserves mapping");
+        base_url.set_path(mapping.path());
+        base_url.set_query(None);
+        base_url.set_fragment(None);
         let adapter =
             ReservesAdapter::try_with_transport(base_url, self.identity.transport().clone())
                 .map_err(|error| self.record_error(format!("reserves adapter: {error}")))?;
@@ -16882,8 +16941,20 @@ impl CampusRuntime {
         // here.  The INFO session above is still the precondition and is what
         // authenticates the mapping, and the adapter keeps its own expiry
         // classification for a mapping that has since lapsed.
-        let base_url = Url::parse(LIBRARY_ROOM_WEBVPN_BASE_URL)
-            .map_err(|_| self.record_error("研读间服务地址配置无效"))?;
+        // The mapping path is this constant's, but the origin must stay the
+        // INFO session's own WebVPN origin: a second, hard-coded origin would
+        // split the Cookie and handoff boundary that `ensure_info_session`
+        // deliberately keeps single.
+        let mut base_url = self
+            .info_adapter
+            .as_ref()
+            .map(|info| info.config().webvpn_base_url.clone())
+            .ok_or_else(|| self.record_error("INFO 服务会话尚未建立"))?;
+        let mapping =
+            Url::parse(LIBRARY_ROOM_WEBVPN_BASE_URL).expect("static library-room mapping");
+        base_url.set_path(mapping.path());
+        base_url.set_query(None);
+        base_url.set_fragment(None);
         let adapter =
             LibraryRoomAdapter::try_with_transport(base_url, self.identity.transport().clone())
                 .map_err(|error| self.record_error(format!("library_room adapter: {error}")))?;
@@ -17157,37 +17228,49 @@ impl CampusRuntime {
         }
         self.invalidate_physical_exam_session();
         self.ensure_info_session(user).await?;
-
-        let transport = self.identity.transport().clone();
-        let handoff = match self.info_adapter.as_ref() {
-            Some(info) => {
-                info.additional_roaming(crate::physical_exam_read::PHYSICAL_EXAM_WEBVPN_TARGET)
-                    .await
-            }
-            None => return Err(self.record_error("INFO 服务会话尚未建立")),
-        };
-        let roaming_url = handoff.map_err(|error| {
-            self.record_business_failure(
-                "physical_exam",
-                "physical_exam_handoff",
-                info_failure_code(&error),
-            )
-        })?;
-        let mut base_url = Url::parse(roaming_url.as_str())
-            .map_err(|_| self.record_error("physical-exam roaming URL is invalid"))?;
-        let expected = Url::parse(REGISTRAR_WEBVPN_BASE_URL).expect("static registrar mapping");
-        if !base_url.path().starts_with(expected.path()) {
-            return Err(self.record_business_failure(
-                "physical_exam",
-                "physical_exam_handoff",
-                "physical_exam_mapping_rejected",
-            ));
+        if self
+            .coordinator
+            .registry()
+            .snapshot_for(ServiceId::Info)
+            .user
+            .as_ref()
+            != Some(user)
+        {
+            return self.fail("体测成绩服务会话用户不匹配");
         }
-        base_url.set_path(expected.path());
+        if !self.service_session_is_proven(ServiceId::Info) {
+            return Err(self.record_error("INFO 服务会话尚未建立"));
+        }
+
+        // The report is addressed at the registrar's fixed WebVPN mapping,
+        // exactly as the reference client does: `getPhysicalExamResult` calls
+        // the absolute `PHYSICAL_EXAM_URL` as `() => uFetch(PHYSICAL_EXAM_URL)`,
+        // so the roam body is a parameter the operation never reads.  The
+        // reference's `"default"` payload is therefore only its
+        // expiry-recovery path, and `roamingWrapper` reaches it by calling the
+        // operation first and roaming only when that call threw.  The report's
+        // selector nevertheless resolves against this same mapping, which is
+        // why the base URL is this module's own constant rather than anything
+        // taken from a response.  The INFO session above is still the
+        // precondition and is what authenticates the mapping, and the adapter
+        // keeps its own expiry classification for a mapping that has since
+        // lapsed.
+        // The mapping path is this constant's, but the origin must stay the
+        // INFO session's own WebVPN origin: a second, hard-coded origin would
+        // split the Cookie and handoff boundary that `ensure_info_session`
+        // deliberately keeps single.
+        let mut base_url = self
+            .info_adapter
+            .as_ref()
+            .map(|info| info.config().webvpn_base_url.clone())
+            .ok_or_else(|| self.record_error("INFO 服务会话尚未建立"))?;
+        let mapping = Url::parse(REGISTRAR_WEBVPN_BASE_URL).expect("static physical-exam mapping");
+        base_url.set_path(mapping.path());
         base_url.set_query(None);
         base_url.set_fragment(None);
-        let adapter = PhysicalExamAdapter::try_with_transport(base_url, transport)
-            .map_err(|error| self.record_error(format!("physical-exam adapter: {error}")))?;
+        let adapter =
+            PhysicalExamAdapter::try_with_transport(base_url, self.identity.transport().clone())
+                .map_err(|error| self.record_error(format!("physical-exam adapter: {error}")))?;
         let read = match adapter.read_result_with_proof().await {
             Ok(read) => read,
             Err(error) => {
@@ -17282,8 +17365,20 @@ impl CampusRuntime {
         }
         // THUInfo getLibraryList has no roaming policy. The authenticated
         // booking-token SSO is separate and is not needed for this area read.
-        let base = Url::parse(LIBRARY_WEBVPN_BASE_URL)
-            .map_err(|_| String::from("图书馆服务地址配置无效"))?;
+        // The mapping path is this constant's, but the origin must stay the
+        // INFO session's own WebVPN origin: a second, hard-coded origin would
+        // split the Cookie and handoff boundary that `ensure_info_session`
+        // deliberately keeps single.  `ensure_info_session` above is what
+        // makes the adapter available here.
+        let mut base = self
+            .info_adapter
+            .as_ref()
+            .map(|info| info.config().webvpn_base_url.clone())
+            .ok_or_else(|| self.record_error("INFO 服务会话尚未建立"))?;
+        let mapping = Url::parse(LIBRARY_WEBVPN_BASE_URL).expect("static library mapping");
+        base.set_path(mapping.path());
+        base.set_query(None);
+        base.set_fragment(None);
         self.establish_library_read_at(user, base).await
     }
 

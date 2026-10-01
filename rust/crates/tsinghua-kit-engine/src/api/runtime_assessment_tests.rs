@@ -1,10 +1,10 @@
 //! Runtime-level fixtures for the teaching-evaluation list read.
 //!
 //! These use only loopback responses.  They verify that the list is reachable
-//! inside the existing INFO/WebVPN session, that the consumed handoff query
-//! never becomes the adapter's base URL, that the service's closed-window
-//! answer reaches the caller as its own state rather than as an empty list,
-//! and that the per-row form routes stay inside Rust.
+//! inside the existing INFO/WebVPN session, that the read addresses the
+//! evaluation host's own fixed mapping rather than any handoff query, that the
+//! service's closed-window answer reaches the caller as its own state rather
+//! than as an empty list, and that the per-row form routes stay inside Rust.
 
 use super::*;
 
@@ -83,17 +83,12 @@ fn list_page() -> String {
     )
 }
 
-/// The evaluation handoff: the portal answers with the target host's own
-/// portal entry point, and the mapping page is a same-origin HTML document.
-fn assessment_handoff_replies(page: &str) -> Vec<Reply> {
-    vec![
-        Reply::html("XSRF-TOKEN=fixture-assessment-csrf;"),
-        Reply::json(
-            r#"{"object":{"roamingurl":"http://jxgl.cic.tsinghua.edu.cn/portal3rd.do?ticket=FIXTURE&mode=home"}}"#,
-        ),
-        Reply::html("<html>session handoff</html>"),
-        Reply::html(page),
-    ]
+/// The reference reads the questionnaire list at its own absolute mapped URL,
+/// with the proven INFO session as the precondition rather than as a request in
+/// front of the read.  The list page is therefore the first and only request of
+/// a list read, and no portal handoff is dispatched to reach it.
+fn assessment_list_replies(page: &str) -> Vec<Reply> {
+    vec![Reply::html(page)]
 }
 
 /// A form page shaped like the legacy one: the transaction container, the
@@ -142,7 +137,7 @@ fn fixture_answers(reference: crate::assessment_read::AssessmentRef) -> Assessme
 
 #[tokio::test]
 async fn backend_repair_assessment_form_reads_through_the_row_reference() {
-    let mut replies = assessment_handoff_replies(&list_page());
+    let mut replies = assessment_list_replies(&list_page());
     replies.push(Reply::html(&form_page()));
     let server = FixtureServer::new(replies);
     let mut runtime = assessment_runtime(&server);
@@ -170,21 +165,21 @@ async fn backend_repair_assessment_form_reads_through_the_row_reference() {
     assert!(form.field_count > 0);
 
     // The form read uses the route the list row named, inside the mapping.
+    // Only two requests exist: the list read and the form read.
     let requests = server.requests();
-    assert_eq!(requests.len(), 5);
+    assert_eq!(requests.len(), 2);
     assert!(
-        requests[4].starts_with(&format!(
+        requests[1].starts_with(&format!(
             "GET /http/{ASSESSMENT_MAPPING}/jxpg/f/jxpg/wj/xs/pgkcForm?wjid=1001&kcbh=1 "
         )),
         "unexpected form request: {}",
-        requests[4]
+        requests[1]
     );
-    assert!(!requests[4].contains("ticket=FIXTURE"));
 }
 
 #[tokio::test]
 async fn backend_repair_assessment_submission_applies_answers_and_is_one_shot() {
-    let mut replies = assessment_handoff_replies(&list_page());
+    let mut replies = assessment_list_replies(&list_page());
     replies.push(Reply::html(&form_page()));
     replies.push(Reply::json("{\"result\":\"success\"}"));
     let server = FixtureServer::new(replies);
@@ -206,8 +201,8 @@ async fn backend_repair_assessment_submission_applies_answers_and_is_one_shot() 
         .expect("submission confirmed");
 
     let requests = server.requests();
-    assert_eq!(requests.len(), 6);
-    let post = &requests[5];
+    assert_eq!(requests.len(), 3);
+    let post = &requests[2];
     assert!(
         post.starts_with(&format!(
             "POST /http/{ASSESSMENT_MAPPING}{} ",
@@ -236,12 +231,12 @@ async fn backend_repair_assessment_submission_applies_answers_and_is_one_shot() 
         .submit_assessment_form(&answers)
         .await
         .expect_err("the dispatched questionnaire is not available again");
-    assert_eq!(server.requests().len(), 6);
+    assert_eq!(server.requests().len(), 3);
 }
 
 #[tokio::test]
 async fn backend_repair_assessment_unconfirmed_submission_is_not_replayed() {
-    let mut replies = assessment_handoff_replies(&list_page());
+    let mut replies = assessment_list_replies(&list_page());
     replies.push(Reply::html(&form_page()));
     replies.push(Reply::json("{\"result\":\"error\",\"msg\":\"问卷已提交\"}"));
     let server = FixtureServer::new(replies);
@@ -269,12 +264,12 @@ async fn backend_repair_assessment_unconfirmed_submission_is_not_replayed() {
 
     // The one dispatched POST is the only one: the outcome is unknown, so it
     // is reported rather than repeated.
-    assert_eq!(server.requests().len(), 6);
+    assert_eq!(server.requests().len(), 3);
 }
 
 #[tokio::test]
 async fn backend_repair_assessment_rejects_answers_for_a_row_that_is_not_open() {
-    let server = FixtureServer::new(assessment_handoff_replies(&list_page()));
+    let server = FixtureServer::new(assessment_list_replies(&list_page()));
     let mut runtime = assessment_runtime(&server);
 
     let list = runtime
@@ -288,12 +283,12 @@ async fn backend_repair_assessment_rejects_answers_for_a_row_that_is_not_open() 
         .submit_assessment_form(&answers)
         .await
         .expect_err("a questionnaire that was never opened is not submitted");
-    assert_eq!(server.requests().len(), 4);
+    assert_eq!(server.requests().len(), 1);
 }
 
 #[tokio::test]
 async fn backend_repair_assessment_list_reads_inside_the_proven_info_session() {
-    let server = FixtureServer::new(assessment_handoff_replies(&list_page()));
+    let server = FixtureServer::new(assessment_list_replies(&list_page()));
     let mut runtime = assessment_runtime(&server);
 
     let result = runtime
@@ -315,25 +310,25 @@ async fn backend_repair_assessment_list_reads_inside_the_proven_info_session() {
     assert!(runtime.assessment_service_is_proven());
     assert!(runtime.service_session_is_proven(ServiceId::Info));
 
-    // The handoff's ticket must never become the adapter's base URL: the
-    // fourth request carries only the mapping root and the list's own path.
+    // The read addresses the mapping root and the list's own path, and it is
+    // the only request a list read dispatches: the proven INFO session is the
+    // precondition, not a portal handoff in front of the read.
     let requests = server.requests();
-    assert_eq!(requests.len(), 4);
-    let read = &requests[3];
+    assert_eq!(requests.len(), 1);
+    let read = &requests[0];
     assert!(
         read.starts_with(&format!(
             "GET /http/{ASSESSMENT_MAPPING}{ASSESSMENT_LIST_PATH} "
         )),
         "unexpected read request: {read}"
     );
-    assert!(!read.contains("ticket=FIXTURE"));
 }
 
 #[tokio::test]
 async fn backend_repair_assessment_closed_window_is_not_an_empty_list() {
     // The window is closed: the service answers 200 with its own notice.  The
     // caller must see that state, not a validated empty list.
-    let server = FixtureServer::new(assessment_handoff_replies(&format!(
+    let server = FixtureServer::new(assessment_list_replies(&format!(
         "<html><body>{}</body></html>",
         crate::assessment_read::ASSESSMENT_NOT_OPEN_MARKER
     )));
@@ -351,7 +346,7 @@ async fn backend_repair_assessment_closed_window_is_not_an_empty_list() {
 async fn backend_repair_assessment_failure_is_not_a_stale_list() {
     // The handoff succeeds but the list itself is an expiry page.  A list from
     // an earlier read must not be presented as the current one.
-    let server = FixtureServer::new(assessment_handoff_replies(
+    let server = FixtureServer::new(assessment_list_replies(
         "time out用户登陆超时或访问内容不存在。请重试",
     ));
     let mut runtime = assessment_runtime(&server);
@@ -380,7 +375,7 @@ async fn backend_repair_assessment_requires_a_proven_account() {
 
 #[tokio::test]
 async fn backend_repair_assessment_routes_do_not_survive_the_session() {
-    let server = FixtureServer::new(assessment_handoff_replies(&list_page()));
+    let server = FixtureServer::new(assessment_list_replies(&list_page()));
     let mut runtime = assessment_runtime(&server);
 
     runtime

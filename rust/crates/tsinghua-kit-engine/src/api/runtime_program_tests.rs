@@ -1,9 +1,10 @@
 //! Runtime-level fixtures for the degree-program completion read.
 //!
 //! These use only loopback responses. They verify that the completion read is
-//! reachable inside the existing INFO/WebVPN session, that the consumed
-//! handoff query never becomes the adapter's base URL, and that a failed live
-//! read is reported as a failure rather than as a stale report.
+//! reachable inside the existing INFO/WebVPN session, that the read addresses
+//! the registrar host's own fixed mapping rather than any handoff query, and
+//! that a failed live read is reported as a failure rather than as a stale
+//! report.
 
 use super::*;
 
@@ -71,22 +72,17 @@ fn program_completion_page() -> String {
         .to_owned()
 }
 
-/// The registrar handoff: the portal answers with the target's own portal
-/// entry point, and the mapping page is a same-origin HTML document.
-fn program_handoff_replies(page: &str) -> Vec<Reply> {
-    vec![
-        Reply::html("XSRF-TOKEN=fixture-program-csrf;"),
-        Reply::json(
-            r#"{"object":{"roamingurl":"http://zhjw.cic.tsinghua.edu.cn/portal3rd.do?ticket=FIXTURE&mode=home"}}"#,
-        ),
-        Reply::html("<html>session handoff</html>"),
-        Reply::html(page),
-    ]
+/// The reference reads the completion report at its own absolute mapped URL,
+/// with the proven INFO session as the precondition rather than as a request in
+/// front of the read.  The report page is therefore the first and only request
+/// of a completion read, and no portal handoff is dispatched to reach it.
+fn program_report_replies(page: &str) -> Vec<Reply> {
+    vec![Reply::html(page)]
 }
 
 #[tokio::test]
 async fn backend_repair_program_completion_reads_inside_the_proven_info_session() {
-    let server = FixtureServer::new(program_handoff_replies(&program_completion_page()));
+    let server = FixtureServer::new(program_report_replies(&program_completion_page()));
     let mut runtime = program_runtime(&server);
 
     let result = runtime
@@ -101,11 +97,12 @@ async fn backend_repair_program_completion_reads_inside_the_proven_info_session(
     assert!(runtime.program_service_is_proven());
     assert!(runtime.service_session_is_proven(ServiceId::Info));
 
-    // The handoff's ticket must never become the adapter's base URL: the
-    // fourth request carries only the mapping root and the report's own path.
+    // The read addresses the mapping root and the report's own path, and it is
+    // the only request a completion read dispatches: the proven INFO session is
+    // the precondition, not a portal handoff in front of the read.
     let requests = server.requests();
-    assert_eq!(requests.len(), 4);
-    let read = &requests[3];
+    assert_eq!(requests.len(), 1);
+    let read = &requests[0];
     assert!(
         read.starts_with(
             "GET /http/77726476706e69737468656265737421eaff4b8b69336153301c9aa596522b20bc86e6e559a9b290/jhBks.by_fascjgmxb_gr.do?"
@@ -113,21 +110,15 @@ async fn backend_repair_program_completion_reads_inside_the_proven_info_session(
         "unexpected read request: {read}"
     );
     assert!(read.contains("xsViewFlag=pyfa"));
-    assert!(!read.contains("ticket=FIXTURE"));
 }
 
 #[tokio::test]
 async fn backend_repair_program_completion_failure_is_not_a_stale_report() {
-    // The handoff succeeds, but the report itself is an expiry page. The
+    // The INFO session is proven, but the report itself is an expiry page. The
     // caller must see a failure rather than a report from an earlier read.
-    let server = FixtureServer::new(vec![
-        Reply::html("XSRF-TOKEN=fixture-program-csrf;"),
-        Reply::json(
-            r#"{"object":{"roamingurl":"http://zhjw.cic.tsinghua.edu.cn/portal3rd.do?ticket=FIXTURE&mode=home"}}"#,
-        ),
-        Reply::html("<html>session handoff</html>"),
-        Reply::html("time out用户登陆超时或访问内容不存在。请重试"),
-    ]);
+    let server = FixtureServer::new(program_report_replies(
+        "time out用户登陆超时或访问内容不存在。请重试",
+    ));
     let mut runtime = program_runtime(&server);
 
     let error = runtime
