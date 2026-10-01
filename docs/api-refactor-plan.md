@@ -2277,6 +2277,10 @@ seq 46  identity_handoff   phase=primary_handoff handoff_proven=false reason=mis
 
 `prepare_reserves_adapter`、`prepare_library_room_adapter`、`establish_info_and_library_fresh` 仍用 `Url::parse(<硬编码常量>)` 直接取整个 URL；同一批里其它六个 `prepare_*` 已经改成"取 INFO 适配器自己的 `config().webvpn_base_url`，只覆盖 path"。本轮把这三处补齐为同一形状（origin 必须留在 `ensure_info_session` 保持单一的那条 Cookie/交接边界上，第二个硬编码 origin 会把它劈成两半）。映射路径仍来自各模块自己的常量，账号绑定与过期分类一条都没放宽。
 
-**测试结果**：新增/受影响定向——`-- news_catalog` 11 通过 / 0 失败；`-- library_write library_read reserves library_room read_only_acceptance news_catalog service_repair_tests` 222 通过 / 7 失败，7 条全部在 `/tmp/after.txt` 的改动前基线里（其中 `backend_repair_cached_library_read_uses_existing_expiry_gate` 与另两条 `service_repair_tests` 也已用 `git stash` 在未修改状态逐一复现）。全量 `--lib` 运行推进到 2117 项时，出现的失败项按名字比对**全部落在基线集合内**；该次运行随后停在既有的 `backend_repair_runtime_electricity_history_refreshes_business_proof`（>60 s 无进展，与 §71 记录的同一条卡死一致），因此**本轮没有拿到一份完整的全量运行**，已主动终止而不是让它继续占用运行时。`cargo check --workspace --all-targets` exit 0；`cargo fmt --all -- --check` 干净；`git diff --check` 干净。
+**测试结果**：新增/受影响定向——`-- news_catalog` 11 通过 / 0 失败；`-- library_write library_read reserves library_room read_only_acceptance news_catalog service_repair_tests` 222 通过 / 7 失败，7 条全部在 `/tmp/after.txt` 的改动前基线里（其中 `backend_repair_cached_library_read_uses_existing_expiry_gate` 与另两条 `service_repair_tests` 也已用 `git stash` 在未修改状态逐一复现）。
+
+全量 `--lib` 运行随后补齐：第一次推进到 2117 项时出现的失败项按名字比对全部落在基线集合内，但该次运行停在既有的 `backend_repair_runtime_electricity_history_refreshes_business_proof`（>60 s 无进展，与 §71 记录的同一条卡死一致）；改为 `--skip backend_repair_runtime_electricity_history_refreshes_business_proof`（`RUST_MIN_STACK` 调大以避开已知的栈溢出用例）重跑后**完整跑完**，结果为 `2001 passed; 116 failed; 0 ignored; 0 measured; 1 filtered out; finished in 7.98s`。这 116 条与改动前基线 `/tmp/base-names.txt` 逐名比对后只多出 `backend_repair_business_library_day_request_uses_resolved_section_not_library` 与 `backend_repair_runtime_info_search_and_detail_reach_safe_dtos` 两条，而这两条已用 `git stash` 在未修改的 HEAD 上逐一复现（同样失败），属于改动前既有失败：**本轮改动没有引入任何新的失败项**。
+
+`cargo check --workspace --all-targets` exit 0；`cargo fmt --all -- --check` 干净；`git diff --check` 干净。
 
 **线上验证：待办**。第一项的判定依据是主证据（同一 30354 字节页面重复出现、以及通过了的 `library_session` 那次 46485 字节主页读），第二项依据是 404 状态码与引擎自己的降级契约；两者的效果只有用户在自己的交互终端重跑 §71 的脚本、且 `library_reservations` 与 `info_catalog` 在真实账号下重跑之后才能标成已验证。本轮未执行任何真实账号请求。
